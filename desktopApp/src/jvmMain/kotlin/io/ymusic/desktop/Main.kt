@@ -1,0 +1,1887 @@
+package io.ymusic.desktop
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.window.WindowDraggableArea
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.center
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.toAwtImage
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import com.sun.jna.Native
+import io.sentry.kotlin.multiplatform.Sentry
+import io.ymusic.desktop.media.MacDock
+import io.ymusic.desktop.media.connectMediaSession
+import io.ymusic.desktop.resources.ymusic_logo_dock
+import io.ymusic.desktop.update.DesktopAppUpdates
+import io.ymusic.desktop.update.UpdateService
+import io.ymusic.desktop.update.desktopArch
+import io.ymusic.desktop.update.desktopPlatformKey
+import io.ymusic.desktop.update.installerFor
+import io.ymusic.dynamicengine.DefaultJsSourceProvider
+import io.ymusic.dynamicengine.DynamicEngineManager
+import io.ymusic.dynamicengine.EMBEDDED_PLAYER_JS_VERSION
+import io.ymusic.dynamicengine.ENGINE_BUNDLE
+import io.ymusic.dynamicengine.desktopEngineCacheStore
+import io.ymusic.dynamicengine.player.bindMseNativeLogs
+import io.ymusic.dynamicengine.playerJsSource
+import io.ymusic.dynamicengine.yt.ytLoginStatus
+import io.ymusic.imageloader.DiskScaledImageCache
+import io.ymusic.imageloader.DiskVariantIndex
+import io.ymusic.imageloader.ImageLoader
+import io.ymusic.imageloader.ImageSourceCache
+import io.ymusic.imageloader.defaultMemoryCacheBudget
+import io.ymusic.imageloader.fileFetcher
+import io.ymusic.imageloader.networkFetcher
+import io.ymusic.logstore.DbLogger
+import io.ymusic.logstore.LogStore
+import io.ymusic.logstore.jvmLogDatabaseDriver
+import io.ymusic.mediascanner.FfmpegMetadataExtractor
+import io.ymusic.mediascanner.FileSystemDocumentsProvider
+import io.ymusic.mediascanner.MediaScanner
+import io.ymusic.mediastore.BetterMediaStore
+import io.ymusic.mediastore.mediaStoreJdbcDriver
+import io.ymusic.mediastore.model.BucketDraft
+import io.ymusic.mse.DesktopVideoSurface
+import io.ymusic.mse.FileAvNative
+import io.ymusic.mse.MseLibrary
+import io.ymusic.mse.PresentMode
+import io.ymusic.player.LocalPlayerContext
+import io.ymusic.player.PlaybackStatus
+import io.ymusic.player.PlayerEngines
+import io.ymusic.player.PlayerError
+import io.ymusic.player.createLocalPlayer
+import io.ymusic.player.createPlayer
+import io.ymusic.quickjs.QuickJsRuntime
+import io.ymusic.remoteconfig.HttpApiService
+import io.ymusic.remoteconfig.RemoteConfig
+import io.ymusic.remoteconfig.RunningBundles
+import io.ymusic.remoteconfig.StatUsage
+import io.ymusic.settings.AppSettings
+import io.ymusic.settings.anonymousDeviceId
+import io.ymusic.settings.flow
+import io.ymusic.settings.put
+import io.ymusic.telemetry.SentryLogger
+import io.ymusic.telemetry.applyYMusicTelemetry
+import io.ymusic.telemetry.bindCrashReporting
+import io.ymusic.telemetry.bindErrorPolicy
+import io.ymusic.telemetry.bindSentryTags
+import io.ymusic.telemetry.captureFeedbackReport
+import io.ymusic.telemetry.installErrorLogs
+import io.ymusic.telemetry.installSentryDesktopOsContext
+import io.ymusic.telemetry.installSentryDeviceId
+import io.ymusic.telemetry.installSentryEngineVersion
+import io.ymusic.telemetry.installSentryPlayerVersion
+import io.ymusic.telemetry.installSentryRemoteTags
+import io.ymusic.telemetry.shareLogTraceWithSentry
+import io.ymusic.ui.APP_HTTP_TIMEOUT
+import io.ymusic.ui.ActionIcon
+import io.ymusic.ui.App
+import io.ymusic.ui.AppGraph
+import io.ymusic.ui.AppHttpClients
+import io.ymusic.ui.CatalogueScreen
+import io.ymusic.ui.FolderWriteProblem
+import io.ymusic.ui.IncomingLinks
+import io.ymusic.ui.ScanResult
+import io.ymusic.ui.VideoOverlayNative
+import io.ymusic.ui.YMusicTheme
+import io.ymusic.ui.YtEngineSabrSpecResolver
+import io.ymusic.ui.bundleConfig
+import io.ymusic.ui.designPaletteFor
+import io.ymusic.ui.downloadLocationFolder
+import io.ymusic.ui.ensureAppLanguage
+import io.ymusic.ui.importSessionCookies
+import io.ymusic.ui.isDarkTheme
+import io.ymusic.ui.loaderYoutubeArt
+import io.ymusic.ui.mediaStoreArtFetcher
+import io.ymusic.ui.playhistory.PlayHistoryStore
+import io.ymusic.ui.playhistory.playHistoryJdbcDriver
+import io.ymusic.ui.registerCompletedDownload
+import io.ymusic.ui.resources.Res
+import io.ymusic.ui.resources.cd_always_on_top
+import io.ymusic.ui.resources.cd_close
+import io.ymusic.ui.resources.cd_fullscreen
+import io.ymusic.ui.resources.cd_minimize
+import io.ymusic.ui.resources.error_generic
+import io.ymusic.ui.resources.folder_picker_title
+import io.ymusic.ui.resources.playlist_menu_backup
+import io.ymusic.ui.resources.playlist_menu_restore
+import io.ymusic.ui.resources.sound_volume
+import io.ymusic.ui.resources.ymusic_logo
+import io.ymusic.ui.sponsorblock.SqliteSponsorBlockStore
+import io.ymusic.ui.sponsorblock.sponsorBlockJdbcDriver
+import io.ymusic.ui.startupFailedMessage
+import io.ymusic.ytmedia.cache.DiskMediaBlobCache
+import io.ymusic.ytmedia.cache.MediaCache
+import io.ymusic.ytmedia.cache.SqlDelightBlobIndex
+import io.ymusic.ytmedia.cache.SqlDelightCacheStats
+import io.ymusic.ytmedia.cache.SqlDelightSegmentIndex
+import io.ymusic.ytmedia.cache.jvmSegmentDatabaseDriver
+import io.ymusic.ytmedia.proxy.LocalMediaProxy
+import kmpcommon.log.Logger
+import kmpcommon.log.TeeLogger
+import kmpcommon.uri.Uri
+import kmpcommon.uri.filePath
+import kmpcommon.uri.fileUri
+import kmpffmpeg.metadata.FfmpegMetadataGetter
+import kmphttp.KmpHttpClient
+import kmphttp.RedirectOptions
+import kmphttp.create
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import okio.FileSystem
+import okio.Path.Companion.toOkioPath
+import okio.Path.Companion.toPath
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
+import projectcommon.error.PLAYBACK_UNAVAILABLE_CODE
+import projectcommon.error.TechnicalException
+import java.awt.BorderLayout
+import java.awt.Canvas
+import java.awt.Desktop
+import java.awt.FileDialog
+import java.awt.Frame
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.GraphicsEnvironment
+import java.awt.RenderingHints
+import java.awt.desktop.AppReopenedListener
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import java.awt.image.BufferedImage
+import java.io.File
+import javax.swing.JPanel
+import javax.swing.SwingUtilities
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
+import java.awt.Color as AwtColor
+
+/**
+ * The desktop shell: boots the scraping engine, assembles the [AppGraph] (player facade over ffmpeg
+ * local + MSE YouTube playback), and runs the shared [App].
+ */
+private val logStore = LogStore(jvmLogDatabaseDriver(File(ymusicDataDir().apply { mkdirs() }, "logs.db").path))
+
+// The app log + Sentry events (no-op when Sentry wasn't initialized), and stdout in debug builds only.
+private val rootLogger: Logger =
+    TeeLogger(
+        DbLogger(logStore),
+        if (DEBUG_BUILD) TeeLogger(SentryLogger(), StdoutLogger()) else SentryLogger(),
+    ).also { it.bindMseNativeLogs() }
+
+private val LOG_FLUSH_TIMEOUT = 3.seconds
+
+/** An exit that skips the application's quit still writes the log: the worker's threads are daemons. */
+private fun flushLogBeforeExit() {
+    kotlinx.coroutines.runBlocking { withTimeoutOrNull(LOG_FLUSH_TIMEOUT) { logStore.flush() } }
+}
+
+// Long enough for the recorders to write what clearing the queue triggers (watch time, the Play again play-head).
+private val QUIT_SAVE_DELAY = 500.milliseconds
+
+/** The installed YMusic.exe (jpackage launcher); null under `gradlew run`, where tasks have nothing to relaunch. */
+private val jumpListExe: String? = System.getProperty("jpackage.app-path")?.takeIf { isWindows }
+
+/** Ticks when the OS hands over a link or the app icon is clicked, so a window hidden to the tray comes back. */
+private val showWindowRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+/** The video hole in CSS pixels (last size seen), and the player it goes to; player.js reports it after the
+ *  BotGuard snapshot. Main thread only. */
+private var mseViewport: Pair<Int, Int>? = null
+private var mseViewportPlayer: io.ymusic.player.mse.MsePlayer? = null
+
+/** The main window, owner of the file dialogs: an ownerless FileDialog opens at the screen's top-left on Windows. */
+@Volatile
+private var mainWindow: Frame? = null
+
+fun main(args: Array<String>) {
+    if (isWindows) WindowsAppId.claim(rootLogger.fork("app-id"))
+    defaultLinuxSoftwareRendering()
+    // The log moved to logs.db: the text log files of older builds go.
+    File(ymusicDataDir(), "logs").listFiles { file -> file.name.startsWith("ymusic.log") }?.forEach { it.delete() }
+    val launchFiles = launchFileUris(args.toList())
+    // macOS LaunchServices already keeps one app process; Windows and Linux start one per launch.
+    val instance = if (isWindows || isLinux) {
+        val command = InstanceCommand.of(args.toList())
+        val log = rootLogger.fork("instance")
+        val claim = try {
+            SingleInstance.claim(ymusicDataDir(), command, launchFiles, log)
+        } catch (e: InstanceHandoffException) {
+            log.log(Logger.Level.ERROR, "another instance holds the lock but did not answer", e)
+            flushLogBeforeExit()
+            return
+        } catch (e: java.io.IOException) {
+            log.log(Logger.Level.WARN, "single-instance setup failed, starting without it", e)
+            null
+        }
+        // Handed to the running app; or a Jump List task with no app running, which has nothing to control.
+        if (claim == InstanceClaim.HandedOver || command != InstanceCommand.Show) {
+            flushLogBeforeExit()
+            return
+        }
+        (claim as InstanceClaim.Owner?)?.instance
+    } else {
+        null
+    }
+    IncomingFiles.open(launchFiles)
+    useBundledMseNatives()
+    QuickJsRuntime.hostVersions = hostVersions()
+    // macOS delivers ymusic:// opens (Info.plist CFBundleURLTypes) as Apple Events to the running
+    // instance — set before the toolkit starts so a cold-launch link is not lost.
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_OPEN_URI)) {
+        Desktop.getDesktop().setOpenURIHandler { event ->
+            IncomingLinks.open(event.uri.toString())
+            showWindowRequests.tryEmit(Unit)
+        }
+    }
+    // Finder's Open With, delivered the same way: Info.plist CFBundleDocumentTypes.
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_OPEN_FILE)) {
+        Desktop.getDesktop().setOpenFileHandler { event ->
+            IncomingFiles.open(event.files.map { fileUri(it.path).toString() })
+            showWindowRequests.tryEmit(Unit)
+        }
+    }
+    // Dock / Finder / Launchpad click on the running instance (kAEReopenApplication).
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_EVENT_REOPENED)) {
+        Desktop.getDesktop().addAppEventListener(AppReopenedListener { showWindowRequests.tryEmit(Unit) })
+    }
+    // Opened before anything else: crash-reporting consent lives here.
+    val appStore = AppStore.open(ymusicDataDir(), rootLogger.fork("app-store"))
+    val settings = kotlinx.coroutines.runBlocking {
+        AppStoreSettings.open(appStore).also {
+            // First launch decides the app language (device if supported, else English) and persists it.
+            ensureAppLanguage(it)
+        }
+    }
+    // Whether this launch is dark, decided before any window exists: it drives both the OS window
+    // decorations and the colour the frame wears before Compose has drawn a thing.
+    val darkChrome = settings.flow(AppSettings.theme).value != "light"
+    applyWindowChrome(darkChrome)
+    // Crash reporting is consent-gated and LIVE: init runs once (crash handlers install and
+    // stay), but nothing leaves the process unless the Settings toggle says yes (default off).
+    if (SENTRY_DSN.isNotEmpty()) {
+        val telemetryDeviceId = kotlinx.coroutines.runBlocking { settings.anonymousDeviceId() }
+        bindCrashReporting(
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            consent = settings.flow(AppSettings.crashReports),
+        ) {
+            Sentry.initWithPlatformOptions {
+                it.applyYMusicTelemetry()
+                it.dsn = SENTRY_DSN
+                // The commit in the release traces an event to git history (no source upload).
+                it.release = SENTRY_RELEASE
+                it.environment = if (DEBUG_BUILD) "debug" else "production"
+            }
+            installSentryDeviceId(telemetryDeviceId)
+            installSentryDesktopOsContext()
+            installSentryRemoteTags()
+            shareLogTraceWithSentry()
+        }
+    }
+    // Before the first window needs the answer, and off the EDT: this loads every libav DLL.
+    val mediaFailure = MseLibrary.loadFailure
+    val mediaProblem = mediaFailure?.let {
+        classifyNativeLoadFailure(it, NativeComponent.Media, windowsPolicyMessages(rootLogger.fork("native-libs")))
+    }
+
+    application {
+        // Dock ignores Window(icon=). Vector is 192dp; Density(1024/192) makes the
+        // VectorPainter cache 1024px. Size must stay 192: macOS getResolutionVariants
+        // rasterizes size and size*density (Size(1024) was a 5461px / 113MB CGImage).
+        val dockTile = painterResource(io.ymusic.desktop.resources.Res.drawable.ymusic_logo_dock)
+        LaunchedEffect(dockTile) {
+            runCatching {
+                if (java.awt.Taskbar.isTaskbarSupported()) {
+                    val taskbar = java.awt.Taskbar.getTaskbar()
+                    if (taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
+                        taskbar.iconImage = dockTile.toAwtImage(
+                            Density(1024f / 192f),
+                            LayoutDirection.Ltr,
+                            androidx.compose.ui.geometry.Size(192f, 192f),
+                        )
+                    }
+                }
+            }.onFailure { rootLogger.fork("dock").log(Logger.Level.WARN, "dock icon set failed", it) }
+        }
+        if (isLinux) {
+            val logo = painterResource(Res.drawable.ymusic_logo)
+            LaunchedEffect(logo) {
+                val image = if (isLinuxDebInstall) null else logo.rasterize(256, scale = 0.875f)
+                withContext(Dispatchers.IO) {
+                    runCatching { syncLinuxDesktopEntry(image) }
+                        .onFailure { rootLogger.fork("desktop-entry").log(Logger.Level.WARN, "desktop entry install failed", it) }
+                }
+            }
+        }
+        var graph by remember { mutableStateOf<AppGraph?>(null) }
+        // Hoisted out of the window: whether the window may show at all depends on it.
+        var bootError by remember { mutableStateOf<String?>(null) }
+        var bootProblem by remember { mutableStateOf<NativeLoadProblem?>(null) }
+        var lockedCookies by remember { mutableStateOf<CookieStoreOpen.Locked?>(null) }
+        var windowVisible by remember { mutableStateOf(true) }
+        val (initialSize, initialPosition) = remember { loadWindowPrefs() }
+        val windowState = rememberWindowState(size = initialSize, position = initialPosition)
+        val frame = remember { DesktopFrame(windowState, initialSize, initialPosition) }
+        val quitScope = rememberCoroutineScope()
+        var quitting by remember { mutableStateOf(false) }
+        fun quit() {
+            if (quitting) return
+            quitting = true
+            if (!frame.fullscreen) {
+                saveWindowPrefs(frame.persistSize(), frame.persistPosition())
+            }
+            try {
+                instance?.stopListening()
+            } catch (e: java.io.IOException) {
+                rootLogger.fork("instance").log(Logger.Level.WARN, "instance stop listening failed", e)
+            }
+            windowVisible = false
+            graph?.player?.clearQueue()
+            quitScope.launch {
+                delay(QUIT_SAVE_DELAY)
+                // A pinned button keeps its Jump List after exit; tasks for a closed app would only relaunch it.
+                if (jumpListExe != null) {
+                    withContext(WindowsJumpList.dispatcher) {
+                        runCatching { WindowsJumpList.clear() }
+                            .onFailure { rootLogger.fork("jump-list").log(Logger.Level.WARN, "jump list clear failed", it) }
+                    }
+                }
+                videoUnderlay.dispose()
+                withTimeoutOrNull(LOG_FLUSH_TIMEOUT) { logStore.flush() }
+                try {
+                    instance?.release()
+                } catch (e: java.io.IOException) {
+                    rootLogger.fork("instance").log(Logger.Level.WARN, "instance release failed", e)
+                }
+                exitApplication()
+            }
+        }
+        LaunchedEffect(windowState) {
+            snapshotFlow { windowState.size to windowState.position }
+                .collectLatest { (size, position) ->
+                    delay(500)
+                    frame.noteFloatingIfIdle()
+                    if (!frame.fullscreen && !frame.zoomed) {
+                        withContext(Dispatchers.IO) { saveWindowPrefs(size, position) }
+                    }
+                }
+        }
+        LaunchedEffect(Unit) {
+            showWindowRequests.collect {
+                windowVisible = true
+                windowState.isMinimized = false
+                // Showing raises a hidden window; one already shown but behind other apps needs the nudge.
+                mainWindow?.takeIf { it.isShowing }?.toFront()
+            }
+        }
+        LaunchedEffect(windowVisible, windowState.isMinimized) {
+            videoUnderlay.shown = windowVisible && !windowState.isMinimized
+        }
+        val volumeToastScope = rememberCoroutineScope()
+        val showVolume: (Float) -> Unit = { volume ->
+            volumeToastScope.launch {
+                io.ymusic.ui.GlobalShortcutActions.showMessage(getString(Res.string.sound_volume, (volume * 100).roundToInt()))
+            }
+        }
+        Window(
+            // Held back until the graph is ready: an empty window that then repaints is a flash of
+            // whatever the toolkit felt like showing. Composed all along, so paintWindowGround has
+            // already coloured it by the time it appears.
+            visible = windowVisible && (graph != null || bootError != null || bootProblem != null || lockedCookies != null),
+            onCloseRequest = {
+                // A non-empty queue → the close button minimizes to the system tray and playback
+                // carries on; an empty queue → quit.
+                if (graph?.player?.queue?.value?.items?.isNotEmpty() == true) windowVisible = false else quit()
+            },
+            title = "YMusic",
+            icon = null,
+            state = windowState,
+            undecorated = true,
+            transparent = true,
+            onPreviewKeyEvent = preview@{ event ->
+                if (event.type != KeyEventType.KeyDown) return@preview false
+                if (handleGlobalShortcut(event, graph?.player, graph?.pip?.nowPlayingOpen, frame)) return@preview true
+                val refresh = event.key == Key.F5 ||
+                    ((event.isMetaPressed || event.isCtrlPressed) && event.key == Key.R)
+                if (refresh) graph?.requestRefresh()
+                refresh
+            },
+            onKeyEvent = { event -> handleArrowShortcut(event, graph?.player, showVolume) },
+        ) {
+            paintWindowGround(Color.Transparent)
+            LaunchedEffect(window) { window.minimumSize = minimumWindowSize() }
+            // Not Window(icon=): that is one 32dp raster the OS nearest-scales into each of its
+            // icon slots (Windows: 16/20/24/32/40/48/64/256 px by DPI). One exact raster per slot.
+            // macOS ignores window icons (the Dock tile is set above).
+            if (!isMac) {
+                val windowIcon = painterResource(Res.drawable.ymusic_logo)
+                LaunchedEffect(window, windowIcon) {
+                    window.iconImages = listOf(16, 20, 24, 32, 40, 48, 64, 128, 256).map { windowIcon.rasterize(it) }
+                }
+            }
+            val closeApp = {
+                if (graph?.player?.queue?.value?.items?.isNotEmpty() == true) windowVisible = false else quit()
+            }
+            val themePref by settings.flow(AppSettings.theme).collectAsState()
+            val darkBar = isDarkTheme(themePref, isSystemInDarkTheme())
+            val accentPref by settings.flow(AppSettings.themeAccent).collectAsState()
+            val palette = designPaletteFor(themePref, isSystemInDarkTheme(), accentPref)
+            val frameBorder =
+                if (darkBar) Color.White.copy(alpha = 0.14f) else palette.OutlineSoft
+            CompositionLocalProvider(LocalAppWindow provides window) {
+                EscapeCascade(graph?.pip?.nowPlayingOpen, frame)
+                DisposableEffect(window) {
+                    frame.host = window
+                    mainWindow = window
+                    if (mediaFailure == null) {
+                        FileAvNative.onFullScreen = { on ->
+                            SwingUtilities.invokeLater { frame.onNativeFullscreen(on) }
+                        }
+                        SwingUtilities.invokeLater { FileAvNative.prepareFullscreen(window) }
+                    }
+                    onDispose {
+                        if (mediaFailure == null) FileAvNative.onFullScreen = null
+                        if (mainWindow === window) mainWindow = null
+                    }
+                }
+                var shortcutsHelpOpen by remember { mutableStateOf(false) }
+                DisposableEffect(Unit) {
+                    io.ymusic.ui.GlobalShortcutActions.toggleShortcutsHelp = { shortcutsHelpOpen = !shortcutsHelpOpen }
+                    onDispose { io.ymusic.ui.GlobalShortcutActions.toggleShortcutsHelp = {} }
+                }
+                if (shortcutsHelpOpen) YMusicTheme(palette) { ShortcutsHelpDialog(onDismiss = { shortcutsHelpOpen = false }) }
+                val rootFocusManager = androidx.compose.ui.platform.LocalFocusManager.current
+                Column(
+                    Modifier.fillMaxSize()
+                        .then(if (frame.fullscreen) Modifier else Modifier.border(1.dp, frameBorder))
+                        // Arrows nothing inside consumed (lists, text fields) move focus geometrically;
+                        // with Ctrl/Cmd/Alt they go on to the window's media shortcuts.
+                        .onKeyEvent { event ->
+                            if (event.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onKeyEvent false
+                            if (event.isCtrlPressed || event.isMetaPressed || event.isAltPressed) return@onKeyEvent false
+                            val dir = when (event.key) {
+                                androidx.compose.ui.input.key.Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
+                                androidx.compose.ui.input.key.Key.DirectionUp -> androidx.compose.ui.focus.FocusDirection.Up
+                                androidx.compose.ui.input.key.Key.DirectionLeft -> androidx.compose.ui.focus.FocusDirection.Left
+                                androidx.compose.ui.input.key.Key.DirectionRight -> androidx.compose.ui.focus.FocusDirection.Right
+                                else -> return@onKeyEvent false
+                            }
+                            rootFocusManager.moveFocus(dir)
+                        },
+                ) {
+                    if (!frame.fullscreen) Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
+                            .background(palette.SurfaceElevated)
+                            .pointerInput(Unit) {
+                                detectTapGestures(onDoubleTap = { frame.toggleZoom() })
+                            },
+                    ) {
+                        WindowDraggableArea(Modifier.fillMaxSize()) { Box(Modifier.fillMaxSize()) }
+                        Row(
+                            Modifier.align(Alignment.CenterStart).padding(start = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            MacTrafficLight(Color(0xFFFF5F57), stringResource(Res.string.cd_close), TrafficGlyph.Close, closeApp)
+                            MacTrafficLight(
+                                Color(0xFFFEBC2E),
+                                stringResource(Res.string.cd_minimize),
+                                TrafficGlyph.Minimize,
+                            ) { window.extendedState = java.awt.Frame.ICONIFIED }
+                            MacTrafficLight(
+                                Color(0xFF28C840),
+                                stringResource(Res.string.cd_fullscreen),
+                                TrafficGlyph.Fullscreen,
+                                onClick = { frame.toggleFullscreen() },
+                            )
+                        }
+                        Text(
+                            "YMusic",
+                            color = if (darkBar) Color.White else palette.InkStrong,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                        var alwaysOnTop by remember { mutableStateOf(window.isAlwaysOnTop) }
+                        LaunchedEffect(alwaysOnTop) {
+                            // Both peer windows need the bit or one falls behind other apps; setting it
+                            // raises the video frame last, so restack it under the UI.
+                            window.isAlwaysOnTop = alwaysOnTop
+                            videoUnderlay.frame.isAlwaysOnTop = alwaysOnTop
+                            videoUnderlay.orderJustBehind(window)
+                        }
+                        ActionIcon(
+                            icon = if (alwaysOnTop) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = stringResource(Res.string.cd_always_on_top),
+                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp),
+                            iconSize = 14.dp,
+                            hitSize = 28.dp,
+                            tint = when {
+                                alwaysOnTop -> palette.Accent
+                                darkBar -> Color.White.copy(alpha = 0.70f)
+                                else -> palette.InkSecondary
+                            },
+                            onClick = { alwaysOnTop = !alwaysOnTop },
+                        )
+                    }
+
+                    val g = graph
+                    val resizePulse = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST) }
+                    DisposableEffect(window) {
+                        VideoOverlayNative.onOverlayPress = { videoUnderlay.orderJustBehind(window) }
+                        videoUnderlay.ownerWindow = window
+                        val stack = object : java.awt.event.WindowAdapter() {
+                            override fun windowActivated(e: java.awt.event.WindowEvent) {
+                                videoUnderlay.orderJustBehind(window)
+                            }
+                        }
+                        window.addWindowListener(stack)
+                        onDispose {
+                            window.removeWindowListener(stack)
+                            VideoOverlayNative.onOverlayPress = null
+                            videoUnderlay.ownerWindow = null
+                        }
+                    }
+                    DisposableEffect(window, g) {
+                        if (g == null) return@DisposableEffect onDispose { }
+                        var lastW = -1
+                        var lastH = -1
+                        val listener = object : ComponentAdapter() {
+                            override fun componentResized(e: ComponentEvent) {
+                                val w = window.width
+                                val h = window.height
+                                if (w == lastW && h == lastH) return
+                                val first = lastW < 0
+                                lastW = w
+                                lastH = h
+                                if (first) return
+                                g.windowResizing.value = true
+                                resizePulse.tryEmit(Unit)
+                            }
+                        }
+                        window.addComponentListener(listener)
+                        onDispose {
+                            window.removeComponentListener(listener)
+                            g.windowResizing.value = false
+                        }
+                    }
+                    LaunchedEffect(g) {
+                        if (g == null) return@LaunchedEffect
+                        resizePulse.collectLatest {
+                            delay(300)
+                            g.windowResizing.value = false
+                        }
+                    }
+
+                    val bootScope = rememberCoroutineScope()
+
+                    suspend fun boot(open: suspend () -> CookieSession?) {
+                        val log = rootLogger.fork("boot")
+                        try {
+                            val session = open() ?: return
+                            graph = buildGraph(settings, session, mediaProblem)
+                        } catch (c: kotlinx.coroutines.CancellationException) {
+                            throw c // the effect was disposed — not a boot failure
+                        } catch (t: Throwable) {
+                            val problem = classifyNativeLoadFailure(t, NativeComponent.Engine, windowsPolicyMessages(log))
+                            if (problem == null) {
+                                log.captureError(t)
+                                bootError = t.message ?: t.toString()
+                            } else {
+                                bootProblem = problem
+                                reportNativeLoadProblem(problem, NativeComponent.Engine, t, settings, APP_VERSION_CODE, log)
+                            }
+                            return
+                        }
+                        if (mediaProblem != null && mediaFailure != null) {
+                            reportNativeLoadProblem(mediaProblem, NativeComponent.Media, mediaFailure, settings, APP_VERSION_CODE, log)
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        boot {
+                            when (val opened = openCookieStore(appStore, ymusicDataDir().apply { mkdirs() }, rootLogger.fork("cookies"))) {
+                                is CookieStoreOpen.Ready -> opened.session
+                                is CookieStoreOpen.Locked -> {
+                                    lockedCookies = opened
+                                    null
+                                }
+                            }
+                        }
+                    }
+
+                    // App applies its own theme; the boot screens before it need this one.
+                    Box(Modifier.weight(1f)) {
+                        YMusicTheme(palette) {
+                            when {
+                                bootError != null -> Booting {
+                                    Text(startupFailedMessage("$bootError"), color = MaterialTheme.colorScheme.error)
+                                }
+                                bootProblem != null -> Booting { AppUnavailableMessage(bootProblem!!) }
+                                graph == null && lockedCookies != null -> CookieUnlockScreen(
+                                    locked = lockedCookies!!,
+                                    logger = rootLogger.fork("cookies"),
+                                    onSession = { session ->
+                                        lockedCookies = null
+                                        bootScope.launch { boot { session } }
+                                    },
+                                )
+                                // No spinner while the graph builds: the window paints the app's own ground until
+                                // the first frame has something in it.
+                                graph == null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                                else -> WithMediaBanner(mediaProblem) {
+                                    App(graph!!, catalogue = if (DEBUG_BUILD) ({ CatalogueScreen() }) else null)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The tray icon lives whenever there is a queue to control — window open or not — and
+        // always while the window is hidden (it is the only way back then). A plain click opens
+        // the notification-style mini player anchored under the icon; a right-click the player menu.
+        var miniOpen by remember { mutableStateOf(false) }
+        var miniAnchor by remember { mutableStateOf<java.awt.Point?>(null) }
+        var queueNotEmpty by remember { mutableStateOf(false) }
+        LaunchedEffect(graph) {
+            graph?.player?.queue?.collect {
+                queueNotEmpty = it.items.isNotEmpty()
+                // On the transition only: a tray click with an empty queue still opens it (the way back to a hidden window).
+                if (!queueNotEmpty) miniOpen = false
+            }
+        }
+        val playing = graph?.player?.status?.collectAsState()?.value?.playWhenReady == true
+        val playerMenu = rememberPlayerMenu(
+            playing = playing,
+            hasQueue = queueNotEmpty,
+            withQuit = !isMac,
+            onTogglePlay = { graph?.player?.togglePlay() },
+            onStop = {
+                miniOpen = false
+                graph?.player?.clearQueue()
+            },
+            onQuit = { quit() },
+        )
+        if (isMac) DockMenu(playerMenu)
+        // Gone while quitting: the queue clear would otherwise republish tasks after quit cleared them.
+        if (jumpListExe != null && !quitting) JumpListTasks(jumpListExe, playing, queueNotEmpty, rootLogger.fork("jump-list"))
+        LaunchedEffect(instance) {
+            instance?.requests?.collect { request ->
+                if (quitting) return@collect
+                IncomingFiles.open(request.fileUris)
+                when (request.command) {
+                    InstanceCommand.Show -> showWindowRequests.tryEmit(Unit)
+                    InstanceCommand.TogglePlay -> graph?.player?.togglePlay()
+                    InstanceCommand.Stop -> {
+                        miniOpen = false
+                        graph?.player?.clearQueue()
+                    }
+                    InstanceCommand.Quit -> quit()
+                }
+            }
+        }
+        LaunchedEffect(graph) {
+            val ready = graph ?: return@LaunchedEffect
+            val metadata = withContext(Dispatchers.IO) { resolveFfmpeg() }?.let { FfmpegMetadataExtractor(FfmpegMetadataGetter(it)) }
+            IncomingFiles.uris.collect { uris ->
+                try {
+                    ready.playFiles(uris, metadata)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val error = TechnicalException("E60067", "opening ${uris.size} file(s) failed", cause = e)
+                    rootLogger.fork("open-file").captureError(error)
+                    io.ymusic.ui.GlobalShortcutActions.showMessage(getString(Res.string.error_generic, error.code))
+                }
+                showWindowRequests.tryEmit(Unit)
+            }
+        }
+        if (!quitting && (queueNotEmpty || !windowVisible)) {
+            PlayerTray(
+                painterResource(Res.drawable.ymusic_logo),
+                rootLogger.fork("tray"),
+                menu = playerMenu.takeUnless { isMac },
+            ) { point ->
+                miniAnchor = point
+                miniOpen = !miniOpen
+            }
+        }
+        val g = graph
+        if (miniOpen && g != null) {
+            MiniPlayerWindow(
+                graph = g,
+                anchor = miniAnchor,
+                onOpenApp = {
+                    windowVisible = true
+                    miniOpen = false
+                },
+                onDismiss = {
+                    // End the listening session: the queue clears (which retires the tray icon),
+                    // and with no window left the app exits; an open window keeps running.
+                    miniOpen = false
+                    g.player.clearQueue()
+                    if (!windowVisible) quit()
+                },
+                onClose = { miniOpen = false },
+            )
+        }
+        // Tray-only mode also drops the Dock icon (macOS accessory activation); restoring the
+        // window brings it back and re-activates the app.
+        LaunchedEffect(windowVisible) { MacDock.setDockIconVisible(windowVisible, rootLogger.fork("mac-dock")) }
+    }
+}
+
+private suspend fun buildGraph(settings: AppStoreSettings, session: CookieSession, mediaProblem: NativeLoadProblem?): AppGraph {
+    val dataDir = ymusicDataDir().apply { mkdirs() }
+    // File-backed jar for YouTube (engine cookie/get|set + player + proxy) and the YMusic API.
+    // Desktop has no WebView cookie store: sign-in imports cookies from a phone QR or a browser paste.
+    val cookies = session.jar
+    // One client stack, one disk cache. The engine HTTP client stays jar-less — JS cooks Cookie
+    // headers against [cookies] — while the API client / media proxy use the jar directly.
+    val http = AppHttpClients(File(session.cacheRoot, HTTP_CACHE_DIR).absolutePath.toPath(), logger = rootLogger)
+    val deviceId = settings.anonymousDeviceId()
+
+    // The one client of the YMusic service; null when this build has no service url.
+    val runningBundles = RunningBundles(
+        engineFloor = maxOf(ENGINE_JS_VERSION.toInt(), settings.flow(AppSettings.lastLoadedEngineJsVer).value),
+        playerFloor = maxOf(EMBEDDED_PLAYER_JS_VERSION.toInt(), settings.flow(AppSettings.lastLoadedPlayerJsVer).value),
+    )
+    val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val api = REMOTE_CONFIG_URL.takeIf { it.isNotBlank() }?.let { baseUrl ->
+        HttpApiService(
+            client = http.engine.newBuilder().apply {
+                cookieJar = cookies
+            }.build(),
+            os = desktopOsKey(),
+            osVersion = System.getProperty("os.version") ?: "",
+            appVersionCode = APP_VERSION_CODE,
+            appVersionName = APP_VERSION_NAME,
+            deviceId = deviceId,
+            baseUrl = baseUrl,
+            now = { System.currentTimeMillis() },
+            arch = desktopArch(),
+            bundles = runningBundles,
+        )
+    }
+    // Flags, the newest JS bundle revisions, and update availability. Started here so the first
+    // fetch overlaps the rest of startup; nothing waits on it, the JS bundles follow what it publishes.
+    val remoteConfig = RemoteConfig(
+        api = api,
+        cacheFile = File(dataDir, "remote-config.json").absolutePath.toPath(),
+        fileSystem = FileSystem.SYSTEM,
+        scope = backgroundScope,
+        now = { System.currentTimeMillis() },
+        log = rootLogger.fork("remote-config"),
+    ).also { it.checkUpdate() } // app open is itself a hotpoint
+    installErrorLogs(logStore, remoteConfig, APP_VERSION_CODE)
+    bindErrorPolicy(backgroundScope, remoteConfig, rootLogger.fork("error-policy"))
+    bindSentryTags(backgroundScope, remoteConfig)
+    backgroundScope.launch {
+        // The cap waits for the loaded config: the store trims nothing until it has one.
+        remoteConfig.awaitLoaded()
+        remoteConfig.features.collect { logStore.setMaxLines(it.logLines) }
+    }
+    // Anonymous usage stats — held by the graph so any screen can record events. The "Send
+    // anonymous stats" answer is read per event, so the Settings switch applies live, and a
+    // disabled gate costs nothing.
+    val stats = StatUsage(
+        api = api,
+        enabled = { settings.flow(AppSettings.stats).value },
+        queueFile = File(dataDir, "stat-queue.json").absolutePath.toPath(),
+        fileSystem = FileSystem.SYSTEM,
+        scope = backgroundScope,
+        now = { System.currentTimeMillis() },
+        log = rootLogger.fork("stats"),
+    ).also { it.onAppStart() }
+
+    // The engine bundle: jar-resource embed (no compiled-in constant) + file cache + the revision
+    // the config service publishes, which the manager follows from start.
+    val engineSource = DefaultJsSourceProvider(
+        client = http.engine,
+        config = remoteConfig.bundleConfig(remoteConfig.engineJs),
+        name = ENGINE_BUNDLE,
+        publicKey = BUNDLE_PUBLIC_KEY,
+        embedVersion = ENGINE_JS_VERSION,
+        embedSource = { readAppResource("engine_ymusic.js") },
+        fileSystem = FileSystem.SYSTEM,
+        directory = File(dataDir, "engine-js").absolutePath.toPath(),
+        now = { System.currentTimeMillis() },
+        logger = rootLogger,
+        ioDispatcher = Dispatchers.IO,
+    )
+    val engineCache = desktopEngineCacheStore(File(session.cacheRoot, ENGINE_CACHE_DIR), rootLogger)
+    val engines = withContext(Dispatchers.IO) {
+        DynamicEngineManager(
+            http.engine,
+            appVersion = APP_VERSION_CODE,
+            logger = rootLogger,
+            cacheStore = engineCache,
+            cookieJar = cookies,
+            settings = settings,
+            remoteFeature = { remoteConfig.awaitLoaded().features.getByKey(it) },
+            strictStints = DEBUG_BUILD,
+            // Every Sentry event and service call names the engine-js bundle that was live (start + each swap).
+            onBackendVersion = { version ->
+                installSentryEngineVersion(version)
+                runningBundles.engine = version
+                backgroundScope.launch { settings.put(AppSettings.lastLoadedEngineJsVer, version) }
+            },
+            jsSource = engineSource,
+        )
+    }
+    engines.start()
+
+    val mediaStore = withContext(Dispatchers.IO) {
+        BetterMediaStore.create(mediaStoreJdbcDriver(File(dataDir, "media-store.db").absolutePath))
+    }
+
+    // Thumbnails: everything is a fetcher — http on a cache-less client (originals stream to the
+    // fetcher's disk cache, decode from file) + local files + ffmpeg-extracted embedded art
+    // (absent ffmpeg just keeps art:// urls unresolved → placeholder boxes).
+    val imageNetworkFetcher = networkFetcher(
+        http.image,
+        FileSystem.SYSTEM,
+        File(dataDir, "image-source-cache").absolutePath.toPath(),
+    )
+    var loaderRef: ImageLoader? = null
+    val imageLoader = ImageLoader(
+        fetchers = listOfNotNull(
+            imageNetworkFetcher,
+            fileFetcher(),
+            resolveFfmpeg()?.let {
+                mediaStoreArtFetcher(
+                    FfmpegMetadataGetter(it),
+                    mediaStore,
+                    loaderYoutubeArt { checkNotNull(loaderRef) },
+                    coverCache = ImageSourceCache(FileSystem.SYSTEM, File(dataDir, "image-cover-cache").absolutePath.toPath(), 64L * 1024 * 1024),
+                )
+            },
+        ),
+        scaledCache = DiskScaledImageCache(FileSystem.SYSTEM, File(dataDir, "image-scaled-cache").absolutePath.toPath()),
+        logger = rootLogger,
+        memoryCacheBytes = defaultMemoryCacheBudget(),
+        variantIndex = DiskVariantIndex(FileSystem.SYSTEM, File(dataDir, "image-variants").absolutePath.toPath()),
+    ).also { loaderRef = it }
+
+    val mseSurface = io.ymusic.mse.MseVideoSurface(videoSurface)
+
+    // Player cache: SABR miss is forwarded and teed to disk so re-plays/downloads reuse it.
+    // The player cache; shared read-only with the download stack so a download reuses segments already
+    // cached from playback (never writing into it).
+    val playerCache = withContext(Dispatchers.IO) {
+        val cacheRoot = File(dataDir, "player-cache").apply { mkdirs() }
+        // One persistent DB for both the blob-span index and the segment index.
+        val driver = jvmSegmentDatabaseDriver("jdbc:sqlite:${File(cacheRoot, "cache-index.db").absolutePath}")
+        MediaCache(
+            DiskMediaBlobCache(
+                cacheRoot.absolutePath.toPath(),
+                FileSystem.SYSTEM,
+                SqlDelightBlobIndex(driver, now = { System.currentTimeMillis() }),
+                logger = rootLogger.fork("player-cache"),
+            ),
+            SqlDelightSegmentIndex(driver, now = { System.currentTimeMillis() }),
+            SqlDelightCacheStats(driver),
+            logger = rootLogger.fork("player-cache"),
+        )
+    }
+    val mediaProxy = withContext(Dispatchers.IO) {
+        val client = KmpHttpClient.create {
+            defaultExecuteTimeout = APP_HTTP_TIMEOUT
+            logger = rootLogger.fork("kmphttp")
+            cookieJar = cookies
+            defaultRedirectOptions = RedirectOptions(followRedirects = true, followSslRedirects = true)
+        }
+        LocalMediaProxy(
+            playerCache, client,
+            userAgent = DESKTOP_CHROME_UA,
+            logger = rootLogger,
+            // Chatty per-part/decision logs; -Dio.ymusic.player.verbose overrides the build default.
+            verbose = System.getProperty("io.ymusic.player.verbose")?.toBoolean() ?: DEBUG_BUILD,
+            // -Dymusic.player.serveSabrHits=false → fill-only, to test whether synthesized hits wedge switches.
+            serveSabrHits = System.getProperty("io.ymusic.player.serveSabrHits", "true").toBoolean(),
+            cacheEnabled = { remoteConfig.config.value.features.playerCacheEnabled },
+        )
+    }
+
+    var ytEngine: io.ymusic.player.YtEngine? = null
+    val player = withContext(Dispatchers.Main) {
+        if (mediaProblem == null) wireVideoOnce(backgroundScope)
+        createPlayer(
+            PlayerEngines(
+                local = { createLocalPlayer(LocalPlayerContext(videoSurface, resolveFfmpeg())) },
+                youtube = {
+                    io.ymusic.player.mse.MsePlayer.create(
+                        client = http.engine,
+                        appVersion = APP_VERSION_CODE,
+                        logger = rootLogger,
+                        cacheStore = engineCache,
+                        cookieJar = cookies,
+                        settings = settings,
+                        remoteFeature = { remoteConfig.awaitLoaded().features.getByKey(it) },
+                        videoSurface = mseSurface,
+                        main = engines,
+                        mediaProxy = mediaProxy,
+                        playerJs = playerJsSource(
+                            client = http.engine,
+                            config = remoteConfig.bundleConfig(remoteConfig.playerJs),
+                            publicKey = BUNDLE_PUBLIC_KEY,
+                            fileSystem = FileSystem.SYSTEM,
+                            directory = File(dataDir, "player-js").absolutePath.toPath(),
+                            now = { System.currentTimeMillis() },
+                            logger = rootLogger,
+                            ioDispatcher = Dispatchers.IO,
+                        ),
+                        onPlayerJsVersion = { version ->
+                            installSentryPlayerVersion(version)
+                            runningBundles.player = version
+                            backgroundScope.launch { settings.put(AppSettings.lastLoadedPlayerJsVer, version) }
+                        },
+                    ).also {
+                        ytEngine = it
+                        mseViewportPlayer = it
+                        mseViewport?.let { (w, h) -> it.setViewport(w, h) }
+                    }
+                },
+                unavailable = mediaProblem?.let {
+                    PlayerError(PlayerError.PLAYBACK_UNAVAILABLE, "media library did not load", canRetry = false)
+                },
+            ),
+        )
+    }
+
+    // OS media surface + media keys (macOS Now Playing, Linux MPRIS, Windows SMTC). Commands come
+    // back on the Main dispatcher, where the player is driven.
+    connectMediaSession(player, CoroutineScope(Dispatchers.Main), imageLoader, rootLogger.fork("now-playing")) {
+        showWindowRequests.tryEmit(Unit)
+    }
+
+    // Offline downloads: SABR stack over ffmpeg. Spec comes from the MSE engine's cached
+    // /player + decoded googlevideo URL (preload if that video is not already cached).
+    val downloadService = withContext(Dispatchers.IO) {
+        val ffmpegPath = resolveFfmpeg()
+        if (ffmpegPath == null) rootLogger.fork("ffmpeg").log(Logger.Level.WARN, "no executable ffmpeg found")
+        val ffmpeg = ffmpegPath?.let { io.ymusic.download.Ffmpeg(it) }
+        // Probes a finished download's metadata into its Library bucket (same path as the folder scan);
+        // null without ffmpeg → registerCompletedDownload falls back to a hand-built draft.
+        val downloadScanner = ffmpegPath?.let {
+            MediaScanner.create(
+                mediaStore,
+                FileSystemDocumentsProvider(FileSystem.SYSTEM),
+                FfmpegMetadataExtractor(FfmpegMetadataGetter(it)),
+            )
+        }
+        val store = io.ymusic.download.DownloadStore(
+            io.ymusic.download.downloadDatabaseJdbcDriver("jdbc:sqlite:${File(dataDir, "downloads.db").absolutePath}"),
+            rootLogger,
+        )
+        val sabrClient = KmpHttpClient.create {
+            defaultExecuteTimeout = APP_HTTP_TIMEOUT
+            logger = rootLogger.fork("kmphttp")
+            cookieJar = cookies
+            defaultRedirectOptions = RedirectOptions(followRedirects = false, followSslRedirects = false)
+        }
+        val resolver = YtEngineSabrSpecResolver {
+            withContext(Dispatchers.Main) { player.prepareYoutubeEngine() }
+            ytEngine ?: if (mediaProblem != null) {
+                throw TechnicalException(PLAYBACK_UNAVAILABLE_CODE, "media library did not load")
+            } else {
+                error("youtube engine missing")
+            }
+        }
+        // Own segment index (byte range per segment) → SABR resume across pause/re-attest. Separate from
+        // the player cache DB: downloads store bytes in their own file, not the player blob cache.
+        val segmentIndex = SqlDelightSegmentIndex(
+            jvmSegmentDatabaseDriver("jdbc:sqlite:${File(dataDir, "download-segments.db").absolutePath}"),
+            now = { System.currentTimeMillis() },
+        )
+        io.ymusic.download.DownloadService(
+            store = store,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            now = { System.currentTimeMillis() },
+            resolver = resolver,
+            client = sabrClient,
+            userAgent = DESKTOP_CHROME_UA,
+            ffmpeg = ffmpeg,
+            storage = io.ymusic.download.DefaultDownloadStorage(
+                FileSystem.SYSTEM,
+                File(dataDir, "download-work").absolutePath.toPath(),
+            ),
+            mediaCache = playerCache, // read-only (see YtStreamDownloader): reuse cached playback bytes
+            segmentIndex = segmentIndex,
+            // The user's chosen download location — always set: the download flow requires picking one
+            // before enqueue.
+            downloadFolder = { settings.downloadLocationFolder()!! },
+            onCompleted = { task, result -> registerCompletedDownload(mediaStore, settings, downloadScanner, task, result) },
+            logger = rootLogger,
+            playerResponse = resolver::playerResponse,
+        )
+    }
+
+    // Self-update: the config service's appUpdate, verified against the pinned update key.
+    // Disabled outright without a key — an unverifiable update is worse than none.
+    val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val updateService = UpdateService(
+        client = http.engine,
+        publicKey = UPDATE_PUBLIC_KEY,
+        currentVersionCode = APP_VERSION_CODE,
+        platform = desktopPlatformKey(desktopOsKey()),
+        downloadDir = File(dataDir, "update"),
+        installer = installerFor(desktopOsKey()),
+        scope = updateScope,
+        configUpdates = remoteConfig.appUpdate,
+        logger = rootLogger,
+        autoDownload = { settings.flow(AppSettings.autoDownloadUpdates).value },
+        autoDownloadFailed = { settings.flow(AppSettings.updateAutoDownloadFailed).value },
+        rememberAutoDownloadFailed = { settings.put(AppSettings.updateAutoDownloadFailed, it) },
+    )
+    val desktopUpdates = if (updateService.isEnabled) {
+        updateService.pruneDownloads()
+        DesktopAppUpdates(
+            updateService,
+            updateScope,
+            freshConfig = { remoteConfig.awaitFresh(timeoutMs = 3_000L) },
+            downloadSite = { remoteConfig.config.value.features.downloadPageUrl },
+        )
+    } else {
+        null
+    }
+
+    val windowResizing = MutableStateFlow(false)
+    return AppGraph(
+        engines,
+        player,
+        logger = rootLogger,
+        playerCache = playerCache,
+        mediaStore = mediaStore,
+        playHistory = PlayHistoryStore(playHistoryJdbcDriver(File(dataDir, "play-history.db").absolutePath)),
+        sponsorBlockStore = SqliteSponsorBlockStore(
+            sponsorBlockJdbcDriver(File(dataDir, "sponsor-block.db").absolutePath),
+        ),
+        scanLibraryFolder = { onProgress -> scanPickedFolder(mediaStore, onProgress) },
+        libraryFolderPicker = { pickAndRegisterFolder(mediaStore) },
+        canWriteFolder = { uri -> File(Uri.parse(uri).filePath()).let { it.isDirectory && it.canWrite() } },
+        probeDownloadFolder = { uri -> probeDownloadFolder(File(Uri.parse(uri).filePath())) },
+        rescanLibrary = { folderUri, onProgress -> rescanKnownRoots(mediaStore, folderUri, onProgress) },
+        deleteFromDisk = { item ->
+            withContext(Dispatchers.IO) {
+                check(item.uri.scheme.contentEquals("file")) { "not a local file: ${item.uri}" }
+                // mustExist=false: an already-gone file still clears its library row.
+                FileSystem.SYSTEM.delete(item.uri.filePath().toPath(), mustExist = false)
+            }
+        },
+        fileRenaming = DesktopFileRenaming,
+        revealInFolder = { uri ->
+            withContext(Dispatchers.IO) {
+                val path = Uri.parse(uri).filePath()
+                runCatching { revealInFileManager(path) }
+                    .onFailure { rootLogger.fork("reveal").log(Logger.Level.WARN, "file manager reveal failed for $path", it) }
+            }
+        },
+        revealInFolderLabel = fileManagerRevealLabel(),
+        appVersion = "$APP_VERSION_NAME · ${desktopArch()}",
+        appVersionName = APP_VERSION_NAME,
+        appVersionCode = APP_VERSION_CODE,
+        runningBundles = runningBundles,
+        imageLoader = imageLoader,
+        settings = settings,
+        // MSE blit and ffmpeg frames scale; safe to display at art-tile size.
+        surfaceScalesDown = true,
+        loginBrowser = null,
+        guest = session.isGuest,
+        cookieSignIn = if (session.isGuest) null else { onComplete, onBack ->
+            DesktopCookieSignIn(
+                api = api,
+                importCookies = { cookies.importSessionCookies(it) },
+                loginStatus = { engines.ytLoginStatus() },
+                protectWithPassword = if (session.canProtect) session::protect else null,
+                logger = rootLogger,
+                onComplete = onComplete,
+                onBack = onBack,
+            )
+        },
+        downloads = downloadService,
+        updates = desktopUpdates,
+        stats = stats,
+        api = api,
+        remoteConfig = remoteConfig.config,
+        captureFeedbackReport = captureFeedbackReportAction.takeIf { SENTRY_DSN.isNotEmpty() },
+        platformInfo = "${System.getProperty("os.name")} ${System.getProperty("os.version")} · ${desktopArch()}",
+        createDocument = { name, _ -> pickSaveFile(name)?.let { file -> withContext(Dispatchers.IO) { FileSystem.SYSTEM.sink(file.toOkioPath()) } } },
+        openDocument = { _ -> pickOpenFile()?.let { file -> withContext(Dispatchers.IO) { FileSystem.SYSTEM.source(file.toOkioPath()) } } },
+        windowResizing = windowResizing,
+    ) { modifier ->
+        DesktopPlayerSurface(windowResizing, player.status, modifier)
+    }
+}
+
+/**
+ * EDT, once per process, before any engine loads: puts the one video Canvas in the underlay. Never
+ * attach it again: a new Canvas peer is a new HWND / NSView, hence a new swapchain or overlay. Linux has
+ * no Canvas: its CPU pictures go to [ComposeVideoFrame].
+ */
+private fun wireVideoOnce(scope: CoroutineScope) {
+    if (!videoWired.compareAndSet(false, true)) return
+    FileAvNative.overlayMouse = FileAvNative.OverlayMouse { id, _, _, _, _, _, _ ->
+        // Do not dispatchEvent into Skia from this JNI click — that froze AppKit.
+        if (id == MouseEvent.MOUSE_RELEASED) {
+            SwingUtilities.invokeLater { VideoOverlayNative.poke() }
+        }
+    }
+    if (isLinux) {
+        videoSurface.onCpuBgra = ComposeVideoFrame::publish
+        return
+    }
+    videoSurface.onCpuFrame = { videoPanel.setImage(it) }
+    scope.launch(Dispatchers.Main) {
+        videoSurface.mode.collect { videoPanel.setHardware(it == PresentMode.GPU) }
+    }
+    videoUnderlay.attach(videoPanel)
+}
+
+@Composable
+private fun DesktopPlayerSurface(
+    windowResizing: MutableStateFlow<Boolean>,
+    playbackStatus: kotlinx.coroutines.flow.StateFlow<PlaybackStatus>,
+    modifier: Modifier,
+) {
+    val status by playbackStatus.collectAsState()
+    val windowResizingNow by windowResizing.collectAsState()
+    LaunchedEffect(status.playWhenReady, windowResizingNow) {
+        if (status.playWhenReady && !windowResizingNow) videoPanel.setCovered(false)
+    }
+    val hostWindow = LocalAppWindow.current
+    val density = LocalDensity.current
+    var still by remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(windowResizingNow) {
+        if (windowResizingNow) {
+            still = videoPanel.captureStill()?.toComposeImageBitmap()
+            videoPanel.setCovered(true)
+        } else {
+            still = null
+            videoPanel.setCovered(false)
+        }
+    }
+    Box(
+        modifier
+            .onSizeChanged {
+                if (it.width > 0 && it.height > 0) {
+                    videoSurface.setSize(it.width, it.height)
+                    val css = (it.width / density.density).roundToInt() to (it.height / density.density).roundToInt()
+                    mseViewport = css
+                    mseViewportPlayer?.setViewport(css.first, css.second)
+                }
+            }
+            .onGloballyPositioned { coords ->
+                val win = hostWindow ?: return@onGloballyPositioned
+                val loc = try {
+                    win.locationOnScreen
+                } catch (_: Exception) {
+                    return@onGloballyPositioned
+                }
+                val p = coords.positionInWindow()
+                val insets = win.insets
+                with(density) {
+                    // Round outward so the hole always covers the whole video box.
+                    val left = floor(p.x.toDp().value).toInt()
+                    val top = floor(p.y.toDp().value).toInt()
+                    val right = ceil((p.x + coords.size.width).toDp().value).toInt()
+                    val bottom = ceil((p.y + coords.size.height).toDp().value).toInt()
+                    videoUnderlay.setHole(
+                        loc.x + insets.left + left,
+                        loc.y + insets.top + top,
+                        right - left,
+                        bottom - top,
+                    )
+                }
+            },
+    ) {
+        if (isLinux) ComposeVideoFrame.Layer()
+        if (windowResizingNow && !isLinux) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                still?.let { bmp ->
+                    Image(bmp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                }
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        surfaceMountCount++
+        onDispose {
+            surfaceMountCount--
+            // A swap disposes the old site before the new one mounts, in the same apply: check once it has.
+            SwingUtilities.invokeLater {
+                if (surfaceMountCount == 0) videoUnderlay.setHole(0, 0, 0, 0)
+            }
+        }
+    }
+}
+
+/**
+ * Heavyweight [Canvas] whose peer is [video]'s presenter target (D3D11 swapchain / VT overlay); CPU
+ * [setImage] when the presenter paints on the CPU. [contains] always misses so Compose keeps clicks.
+ */
+private class MseVideoPanel(private val video: DesktopVideoSurface) : JPanel(BorderLayout()) {
+    @Volatile private var img: BufferedImage? = null
+
+    @Volatile private var hardware = false
+
+    /** Latest native-present state, kept while [covered] so uncovering restores it. */
+    @Volatile private var nativeLive = false
+    var covered = false
+        private set
+
+    private val pending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var overlayX = Int.MIN_VALUE
+    private var overlayY = Int.MIN_VALUE
+    private var overlayW = 0
+    private var overlayH = 0
+    private val canvas =
+        object : Canvas() {
+            override fun addNotify() {
+                super.addNotify()
+                if (!covered && width > 0 && height > 0) video.setCanvas(this)
+            }
+
+            override fun removeNotify() {
+                overlayX = Int.MIN_VALUE
+                if (!covered) video.setCanvas(null)
+                super.removeNotify()
+            }
+
+            override fun contains(x: Int, y: Int): Boolean = false
+
+            override fun paint(g: Graphics) {
+                val image = img
+                if (image == null || hardware) {
+                    /* HW overlay letterbox is transparent; this fill is the hole, not a VT sample. */
+                    g.color = AwtColor.BLACK
+                    g.fillRect(0, 0, width, height)
+                    return
+                }
+                video.painting = image
+                val g2 = g as Graphics2D
+                val scale = min(width / image.width.toDouble(), height / image.height.toDouble())
+                val dw = (image.width * scale).toInt().coerceAtLeast(1)
+                val dh = (image.height * scale).toInt().coerceAtLeast(1)
+                val x = (width - dw) / 2
+                val y = (height - dh) / 2
+                // Bars only: this Graphics draws straight to screen, so clearing under the frame flashes black.
+                g.color = AwtColor.BLACK
+                if (y > 0) {
+                    g.fillRect(0, 0, width, y)
+                    g.fillRect(0, y + dh, width, height - y - dh)
+                }
+                if (x > 0) {
+                    g.fillRect(0, y, x, dh)
+                    g.fillRect(x + dw, y, width - x - dw, dh)
+                }
+                if (dw == image.width && dh == image.height) {
+                    g2.drawImage(image, x, y, null)
+                } else {
+                    g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+                    g2.drawImage(image, x, y, dw, dh, null)
+                }
+            }
+
+            override fun update(g: Graphics) = paint(g)
+        }
+
+    init {
+        isOpaque = true
+        background = AwtColor.BLACK
+        isFocusable = false
+        isRequestFocusEnabled = false
+        canvas.background = AwtColor.BLACK
+        canvas.isFocusable = false
+        // HW Canvas / VT NSView sit above Skia. Do not copy AWT events into
+        // Compose — that freeze is AppKit re-entry. Click toggles chrome.
+        val overlayClicks = object : MouseAdapter() {
+            override fun mouseReleased(e: MouseEvent) {
+                SwingUtilities.invokeLater { VideoOverlayNative.poke() }
+            }
+        }
+        canvas.addMouseListener(overlayClicks)
+        canvas.addComponentListener(
+            object : ComponentAdapter() {
+                override fun componentResized(e: ComponentEvent) {
+                    if (covered || canvas.width <= 0 || canvas.height <= 0) return
+                    // addNotify is often 0×0: the first non-empty size hands the Canvas over.
+                    if (!hardware) video.setCanvas(canvas)
+                    else layoutOverlay()
+                }
+
+                override fun componentMoved(e: ComponentEvent) {
+                    if (!covered && hardware) layoutOverlay()
+                }
+            },
+        )
+        add(canvas, BorderLayout.CENTER)
+    }
+
+    override fun doLayout() {
+        canvas.setBounds(0, 0, width, height)
+    }
+
+    private fun layoutOverlay() {
+        if (!canvas.isShowing || canvas.width <= 0 || canvas.height <= 0) return
+        val loc = try {
+            canvas.locationOnScreen
+        } catch (_: Exception) {
+            return
+        }
+        if (loc.x == overlayX && loc.y == overlayY && canvas.width == overlayW && canvas.height == overlayH) return
+        overlayX = loc.x
+        overlayY = loc.y
+        overlayW = canvas.width
+        overlayH = canvas.height
+        video.layout(loc.x, loc.y, canvas.width, canvas.height)
+    }
+
+    override fun contains(x: Int, y: Int): Boolean = false
+
+    fun captureStill(): BufferedImage? = video.snapshot()
+
+    fun setCovered(covered: Boolean) {
+        if (this.covered == covered) return
+        this.covered = covered
+        if (covered) {
+            val snap = captureStill()
+            video.setOverlayHidden(true)
+            hardware = false
+            img = snap
+            canvas.repaint()
+        } else {
+            video.setOverlayHidden(false)
+            hardware = nativeLive
+            if (nativeLive) img = null
+            overlayX = Int.MIN_VALUE
+            layoutOverlay()
+            canvas.repaint()
+        }
+    }
+
+    fun setHardware(on: Boolean) {
+        nativeLive = on
+        if (covered) return
+        hardware = on
+        if (on) img = null
+        canvas.repaint()
+    }
+
+    fun setImage(image: BufferedImage?) {
+        if (hardware || covered) return
+        img = image
+        if (pending.compareAndSet(false, true)) {
+            SwingUtilities.invokeLater {
+                pending.set(false)
+                canvas.repaint()
+            }
+        }
+    }
+}
+
+/** FileDialog pick + full scan into [store]; returns how it ended, or null when the pick was canceled. */
+private suspend fun scanPickedFolder(store: BetterMediaStore, onProgress: (Int) -> Unit): ScanResult? {
+    val picked = pickFolder() ?: return null
+    val rootUri = fileUri(picked.absolutePath)
+    return scanUris(store, listOf(rootUri), onProgress)
+}
+
+/** Pick a folder and register it as a Library bucket (no media scan — works even when empty), returning
+ *  its uri. Used to choose a download location. */
+private suspend fun pickAndRegisterFolder(store: BetterMediaStore): String? {
+    val picked = pickFolder() ?: return null
+    val uri = fileUri(picked.absolutePath)
+    store.upsertBucket(BucketDraft(uri = uri, name = picked.name))
+    return uri.toString()
+}
+
+/** Creates, writes and deletes a scratch file in [folder] — the steps a finished download takes. */
+private suspend fun probeDownloadFolder(folder: File): FolderWriteProblem? = withContext(Dispatchers.IO) {
+    val log = rootLogger.fork("download-folder-probe", mapOf("folder" to folder.path))
+    if (!folder.isDirectory) return@withContext FolderWriteProblem.Missing
+    val probe = try {
+        java.nio.file.Files.createTempFile(folder.toPath(), ".ymusic-write-test", null)
+    } catch (e: java.nio.file.AccessDeniedException) {
+        log.log(Logger.Level.WARN, "test file refused", e)
+        return@withContext FolderWriteProblem.NoPermission
+    } catch (e: java.nio.file.NoSuchFileException) {
+        log.log(Logger.Level.WARN, "folder gone", e)
+        return@withContext FolderWriteProblem.Missing
+    } catch (e: Exception) {
+        log.log(Logger.Level.WARN, "test file not created", e)
+        return@withContext FolderWriteProblem.CannotCreateFiles
+    }
+    try {
+        java.nio.file.Files.write(probe, byteArrayOf(0))
+        null
+    } catch (e: java.nio.file.AccessDeniedException) {
+        log.log(Logger.Level.WARN, "test file not writable", e)
+        FolderWriteProblem.NoPermission
+    } catch (e: Exception) {
+        log.log(Logger.Level.WARN, "test file not writable", e)
+        FolderWriteProblem.CannotCreateFiles
+    } finally {
+        try {
+            java.nio.file.Files.deleteIfExists(probe)
+        } catch (e: Exception) {
+            log.log(Logger.Level.WARN, "test file left behind", e)
+        }
+    }
+}
+
+/** Re-scans [folderUri] (and its children) in place, or every already-added root when null. */
+private suspend fun rescanKnownRoots(store: BetterMediaStore, folderUri: String?, onProgress: (Int) -> Unit): ScanResult? {
+    val uris = if (folderUri != null) {
+        listOf(Uri.parse(folderUri))
+    } else {
+        val roots = store.childBuckets(null)
+        if (roots.isEmpty()) return ScanResult.NoFolders
+        roots.map { it.uri }
+    }
+    return scanUris(store, uris, onProgress)
+}
+
+/** Scans each root [uris] into [store], reporting the running file count through [onProgress] and
+ *  returning the combined result. */
+private suspend fun scanUris(store: BetterMediaStore, uris: List<Uri>, onProgress: (Int) -> Unit): ScanResult {
+    val ffmpeg = resolveFfmpeg()
+        ?: return ScanResult.ExtractorMissing
+    val scanner = MediaScanner.create(
+        store,
+        FileSystemDocumentsProvider(FileSystem.SYSTEM),
+        FfmpegMetadataExtractor(FfmpegMetadataGetter(ffmpeg)),
+    )
+    var scanned = 0
+    var added = 0
+    var updated = 0
+    var deleted = 0
+    var failed = 0
+    for (uri in uris) {
+        val progress = scanner.scan(uri).onEach { onProgress(scanned + it.scanned) }.last()
+        progress.errors.forEach { rootLogger.fork("library-scan").log(Logger.Level.WARN, "scan error at ${it.uri}", it.cause) }
+        scanned += progress.scanned
+        added += progress.added
+        updated += progress.updated
+        deleted += progress.deleted
+        failed += progress.errors.size
+    }
+    return ScanResult.Done(scanned, added, updated, deleted, failed)
+}
+
+// The window-geometry memory lives in its OWN tiny file, read synchronously before the first
+// frame — the settings store only exists once the async graph build runs, too late to size the
+// window.
+/**
+ * Everything the app persists lives here: engine + image caches, the media store, downloads,
+ * cookies, window geometry. `$YMUSIC_DATA_DIR` relocates the lot — a packaged build's launcher
+ * passes neither JVM args nor JAVA_TOOL_OPTIONS through, so an env var is the only way to run a
+ * second copy (testing a release build while the dev one is open) or to keep state on an external
+ * disk.
+ */
+internal fun ymusicDataDir(): File =
+    System.getenv("YMUSIC_DATA_DIR")?.takeIf { it.isNotBlank() }?.let(::File)
+        ?: File(System.getProperty("user.home"), ".ymusic")
+
+private val windowPrefsFile = File(ymusicDataDir(), "window.properties")
+private val defaultWindowSize = DpSize(480.dp, 860.dp)
+
+private fun loadWindowPrefs(): Pair<DpSize, WindowPosition> {
+    val p = java.util.Properties()
+    runCatching { windowPrefsFile.inputStream().use(p::load) } // no file yet / unreadable → defaults
+    val w = p.getProperty("width")?.toFloatOrNull()
+    val h = p.getProperty("height")?.toFloatOrNull()
+    // Sanity floor: never restore a degenerate size a bad write (or a past bug) left behind.
+    val fits = w != null && h != null && w >= MIN_WINDOW_WIDTH && h >= MIN_WINDOW_HEIGHT
+    val size = if (fits) DpSize(w.dp, h.dp) else defaultWindowSize
+    val x = p.getProperty("x")?.toFloatOrNull()
+    val y = p.getProperty("y")?.toFloatOrNull()
+    val position = when {
+        x == null || y == null -> WindowPosition.PlatformDefault
+        // The saved spot may be gone (monitor unplugged, resolution change) — a window whose title
+        // bar lands on no screen can't be grabbed back, so it resets to center instead.
+        isOnScreen(x, y) -> WindowPosition(x.dp, y.dp)
+        else -> WindowPosition.Aligned(Alignment.Center)
+    }
+    return linuxFloatingFrame(size, position)
+}
+
+/** True when a title-bar point of a window at ([x], [y]) lands on some connected screen. */
+private fun isOnScreen(x: Float, y: Float): Boolean = runCatching {
+    java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.any { device ->
+        val b = device.defaultConfiguration.bounds
+        x + 100 > b.x && x + 100 < b.x + b.width && y + 20 > b.y && y + 20 < b.y + b.height
+    }
+}.getOrDefault(true) // can't enumerate screens → don't block the restore
+
+private fun saveWindowPrefs(size: DpSize, position: WindowPosition) {
+    val p = java.util.Properties()
+    p.setProperty("width", size.width.value.toString())
+    p.setProperty("height", size.height.value.toString())
+    if (position.isSpecified) {
+        p.setProperty("x", position.x.value.toString())
+        p.setProperty("y", position.y.value.toString())
+    }
+    try {
+        windowPrefsFile.parentFile?.mkdirs()
+        windowPrefsFile.outputStream().use { p.store(it, null) }
+    } catch (e: java.io.IOException) {
+        // Environmental (disk full, permissions) — the window still works, only the memory is lost.
+        rootLogger.fork("window").log(Logger.Level.WARN, "window prefs save failed", e)
+    }
+}
+
+/** Sends the app logs as one anonymous Sentry report for the Feedback screen. */
+private val captureFeedbackReportAction: suspend (String, String?) -> Unit = { subject, message ->
+    withContext(Dispatchers.IO) {
+        val export = File(System.getProperty("java.io.tmpdir"), FEEDBACK_LOG_NAME)
+        // The report still goes without the log when the export fails or the log store is stuck.
+        val attachments = try {
+            withTimeoutOrNull(FEEDBACK_EXPORT_TIMEOUT_MS) { logStore.exportGzip(FileSystem.SYSTEM, export.absolutePath.toPath()) }
+                ?.let { listOf(io.sentry.kotlin.multiplatform.Attachment(export.absolutePath, FEEDBACK_LOG_NAME, "application/gzip")) }
+                ?: emptyList<io.sentry.kotlin.multiplatform.Attachment>().also {
+                    rootLogger.fork("feedback").log(Logger.Level.WARN, "log export for feedback timed out")
+                }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            rootLogger.fork("feedback").log(Logger.Level.WARN, "log export for feedback failed", e)
+            emptyList()
+        }
+        captureFeedbackReport(subject, message, attachments)
+    }
+}
+
+/** The "save as" dialog for a playlist backup; null when canceled. */
+private suspend fun pickSaveFile(suggestedName: String): File? {
+    val title = getString(Res.string.playlist_menu_backup)
+    return withContext(Dispatchers.Main) {
+        val dialog = FileDialog(mainWindow, title, FileDialog.SAVE)
+        dialog.file = suggestedName
+        dialog.isVisible = true
+        dialog.file?.let { File(dialog.directory, it) }
+    }
+}
+
+/** The open dialog for a playlist backup; null when canceled. */
+private suspend fun pickOpenFile(): File? {
+    val title = getString(Res.string.playlist_menu_restore)
+    return withContext(Dispatchers.Main) {
+        val dialog = FileDialog(mainWindow, title, FileDialog.LOAD)
+        dialog.setFilenameFilter { _, name -> name.endsWith(".json", ignoreCase = true) }
+        dialog.isVisible = true
+        dialog.file?.let { File(dialog.directory, it) }
+    }
+}
+
+// Windows gets the native Explorer folder picker. macOS's AWT FileDialog only picks directories
+// while this property is set.
+private suspend fun pickFolder(): File? {
+    val title = getString(Res.string.folder_picker_title)
+    if (desktopOsKey() == "linux") return LinuxFolderPicker.pick(mainWindow, title)
+    if (desktopOsKey() == "windows") {
+        val owner = withContext(Dispatchers.Main) { mainWindow?.let { Native.getComponentPointer(it) } }
+        try {
+            return WindowsFolderPicker.pick(owner, title)
+        } catch (c: kotlinx.coroutines.CancellationException) {
+            throw c
+        } catch (e: Exception) {
+            rootLogger.fork("folder-picker").log(Logger.Level.WARN, "native folder picker failed, using FileDialog", e)
+        }
+    }
+    return withContext(Dispatchers.Main) {
+        val prop = "apple.awt.fileDialogForDirectories"
+        val previous = System.getProperty(prop)
+        System.setProperty(prop, "true")
+        try {
+            val dialog = FileDialog(mainWindow, title, FileDialog.LOAD)
+            dialog.isVisible = true
+            dialog.file?.let { File(dialog.directory, it) }
+        } finally {
+            if (previous == null) System.clearProperty(prop) else System.setProperty(prop, previous)
+        }
+    }
+}
+
+/** The coarse platform name the config service keys releases by. */
+internal fun desktopOsKey(): String {
+    val os = System.getProperty("os.name").lowercase()
+    return when {
+        os.contains("mac") || os.contains("darwin") -> "macos"
+        os.contains("win") -> "windows"
+        else -> "linux"
+    }
+}
+
+/**
+ * The ffmpeg this run should use, or null when the host has none.
+ *
+ * One ladder for every caller (tag reading, artwork, download muxing, local playback) so they can
+ * never disagree about which binary is in play: an explicit override, then the copy packed into the
+ * app, then the PATH.
+ *
+ * A dev run takes the first rung: `:desktopApp:run` and the tests are given -Dio.ymusic.ffmpeg
+ * pointing at the staged host pack's CLI (libav sits next to it; rpath, not LD_LIBRARY_PATH).
+ * A packaged build has no such property and uses the CLI next to the compose resources.
+ */
+internal fun resolveFfmpeg(): String? {
+    System.getProperty("io.ymusic.ffmpeg")?.let { return File(it).takeIf { f -> f.canExecute() }?.absolutePath }
+    System.getenv("YMUSIC_FFMPEG")?.let { if (File(it).canExecute()) return it }
+    packedFfmpeg()?.let { return it.absolutePath }
+    val os = System.getProperty("os.name").lowercase()
+    val name = if (os.contains("win")) "ffmpeg.exe" else "ffmpeg"
+    val dirs = System.getenv("PATH").orEmpty().split(File.pathSeparator) +
+        listOf("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
+    return dirs.asSequence().map { File(it, name) }.firstOrNull { it.canExecute() }?.absolutePath
+}
+
+/** A packaged build ships the MSE JNI beside the libav it links, in app resources, not in its jar. */
+/** Device facts every engine sees in `versions`; the default display in physical pixels for YouTube's quality cap. */
+private fun hostVersions(): Map<String, Any> = buildMap {
+    put("os", desktopOsKey())
+    put("osVersion", System.getProperty("os.version").orEmpty())
+    if (!GraphicsEnvironment.isHeadless()) {
+        val config = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
+        val scale = config.defaultTransform.scaleX
+        val bounds = config.bounds
+        if (bounds.width > 0 && bounds.height > 0 && scale > 0) {
+            put("screenWidth", (bounds.width * scale).roundToInt())
+            put("screenHeight", (bounds.height * scale).roundToInt())
+            put("screenDensity", scale)
+        }
+    }
+}
+
+private fun useBundledMseNatives() {
+    val dir = System.getProperty("compose.application.resources.dir") ?: return
+    if (File(dir, System.mapLibraryName("mseffmpegjni")).isFile) System.setProperty("mse.native.dir", dir)
+}
+
+/** The ffmpeg shipped inside a packaged build (`compose.application.resources.dir`). */
+private fun packedFfmpeg(): File? {
+    val dir = System.getProperty("compose.application.resources.dir") ?: return null
+    val name = if (System.getProperty("os.name").lowercase().contains("win")) "ffmpeg.exe" else "ffmpeg"
+    return File(dir, name).takeIf { it.canExecute() }
+}
+
+/**
+ * Match the OS window decorations — title bar, traffic lights — to the theme the app will render in.
+ *
+ * macOS reads this once when AWT starts its toolkit, so it must be set before any window exists, and
+ * a theme change in Settings only reaches the title bar on the next launch. The value is an explicit
+ * appearance rather than "system": the app's theme is its own setting, and a dark app under a light
+ * OS should not get a white title bar.
+ *
+ * Windows would need DwmSetWindowAttribute per window and Linux is at the window manager's
+ * discretion; neither is wired up, so both keep the system default for now.
+ */
+private fun applyWindowChrome(dark: Boolean) {
+    // A JFrame takes its background from UIManager's "control" colour AT CONSTRUCTION — before any
+    // composable, effect or window property of ours can run. That is the whole launch flash: the
+    // frame is built white and Compose only covers it when it first draws. Setting the colour here,
+    // before the toolkit builds anything, is the only place early enough.
+    // https://github.com/JetBrains/compose-multiplatform/issues/1794
+    val ground = java.awt.Color(groundColorFor(dark).toArgb(), true)
+    // "control" alone is not enough: it colours the frame and its root pane, but the content pane
+    // inside them is an opaque JPanel that takes Aqua's own system colour (a SystemColorProxy at
+    // #EEEEEE) and stays white. That panel is what actually flashes, so every key the Swing window
+    // is assembled from has to be set, not just the one the issue names.
+    listOf("control", "Panel.background", "RootPane.background", "Viewport.background")
+        .forEach { javax.swing.UIManager.put(it, ground) }
+
+    if (!System.getProperty("os.name").lowercase().contains("mac")) return
+    System.setProperty(
+        "apple.awt.application.appearance",
+        if (dark) "NSAppearanceNameDarkAqua" else "NSAppearanceNameAqua",
+    )
+}
+
+/**
+ * GPU skiko is not trustworthy on Linux: NVIDIA's GL and Vulkan under Xwayland render frames that
+ * never reach the screen, and nothing errors for skiko to fall back on. SKIKO_RENDER_API or
+ * -Dskiko.renderApi opts back into the GPU.
+ */
+private fun defaultLinuxSoftwareRendering() {
+    if (!System.getProperty("os.name").lowercase().contains("linux")) return
+    if (System.getenv("SKIKO_RENDER_API") != null || System.getProperty("skiko.renderApi") != null) return
+    System.setProperty("skiko.renderApi", "SOFTWARE_FAST")
+}
+
+private val LocalAppWindow = staticCompositionLocalOf<java.awt.Window?> { null }
+
+private val videoUnderlay by lazy { VideoUnderlay() }
+
+/** Process-wide, shared by both engines and every [DesktopPlayerSurface] call site: one Canvas, one presenter. */
+private val videoSurface by lazy { DesktopVideoSurface() }
+private val videoPanel by lazy { MseVideoPanel(videoSurface) }
+private val videoWired = java.util.concurrent.atomic.AtomicBoolean(false)
+
+/** Mounted [DesktopPlayerSurface] call sites; the hole closes only when none is left. EDT only. */
+private var surfaceMountCount = 0
+
+private const val DESKTOP_CHROME_UA =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+
+/** A file packed into the app jar (the staged engine bundle + version — see stageEngineJs). */
+private fun readAppResource(name: String): String =
+    checkNotNull(object {}.javaClass.getResourceAsStream("/" + name)) { name + " missing from app resources" }
+        .readBytes().decodeToString()
+
+@Composable
+private fun MacTrafficLight(color: Color, label: String, glyph: TrafficGlyph, onClick: () -> Unit) {
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    Box(
+        Modifier
+            .size(12.dp)
+            .clip(CircleShape)
+            .background(color)
+            // Stroked from the exact centre: a Text centres its font's line box, not the glyph.
+            .drawWithContent {
+                drawContent()
+                if (hovered) drawTrafficGlyph(glyph)
+            }
+            .hoverable(hover)
+            // Out of the Tab cycle like other apps' window chrome; the keyboard has Alt+F4 / Win+Down / F11.
+            .focusProperties { canFocus = false }
+            .clickable(indication = null, interactionSource = hover, role = Role.Button, onClick = onClick)
+            // Drops the glyph's Text; `text`, not contentDescription, which the a11y bridge reads twice.
+            .clearAndSetSemantics {
+                text = AnnotatedString(label)
+                role = Role.Button
+            },
+    )
+}
+
+private enum class TrafficGlyph { Close, Minimize, Fullscreen }
+
+private fun DrawScope.drawTrafficGlyph(glyph: TrafficGlyph) {
+    val ink = Color(0x99000000)
+    val stroke = 1.2.dp.toPx()
+    val c = size.center
+    fun line(dx0: Float, dy0: Float, dx1: Float, dy1: Float) =
+        drawLine(ink, Offset(c.x + dx0, c.y + dy0), Offset(c.x + dx1, c.y + dy1), stroke, StrokeCap.Round)
+    when (glyph) {
+        TrafficGlyph.Close -> {
+            val a = 2.2.dp.toPx()
+            line(-a, -a, a, a)
+            line(a, -a, -a, a)
+        }
+        TrafficGlyph.Minimize -> {
+            val a = 3.dp.toPx()
+            line(-a, 0f, a, 0f)
+        }
+        TrafficGlyph.Fullscreen -> {
+            val a = 3.dp.toPx()
+            line(-a, 0f, a, 0f)
+            line(0f, -a, 0f, a)
+        }
+    }
+}
+
+@Composable
+private fun Booting(content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) { content() }
+}
+
+private const val FEEDBACK_LOG_NAME = "ymusic-log.txt.gz"
+private const val FEEDBACK_EXPORT_TIMEOUT_MS = 15_000L
