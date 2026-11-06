@@ -53,10 +53,10 @@ android {
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "io.ymusic.android"
+        applicationId = "com.prvn.music"
         minSdk = Versions.minSdk
         targetSdk = Versions.targetSdk
-        versionCode = 22
+        versionCode = 1
         versionName = appVersionName
         buildConfigField("String", "SENTRY_DSN", "\"${sentryDsn()}\"")
         buildConfigField("String", "GIT_COMMIT", "\"${gitCommit()}\"")
