@@ -597,7 +597,7 @@ class YMusicApplication : Application() {
         val mediaProxy = LocalMediaProxy(
             playerCache,
             mediaProxyClient,
-            userAgent = WebSettings.getDefaultUserAgent(applicationContext),
+            userAgent = DESKTOP_CHROME_UA,
             logger = rootLogger,
             // Per-request media-path logging — debug builds only, it narrates the hot path.
             verbose = BuildConfig.DEBUG,
@@ -668,7 +668,7 @@ class YMusicApplication : Application() {
                 now = { System.currentTimeMillis() },
                 resolver = ytResolver,
                 client = sabrClient,
-                userAgent = WebSettings.getDefaultUserAgent(applicationContext),
+                userAgent = DESKTOP_CHROME_UA,
                 ffmpeg = ffmpegBin?.let { bin -> io.ymusic.download.Ffmpeg(bin) },
                 // Handles file:// (app dirs) via okio and user-picked SAF folders (content://) via SAF.
                 // App data, not cacheDir (trimmed mid-download under storage pressure); no_backup keeps
@@ -1089,3 +1089,7 @@ private class MseSurfaceBridge(private val textureView: TextureView, private val
 
 private const val FEEDBACK_LOG_NAME = "ymusic-log.txt.gz"
 private const val FEEDBACK_EXPORT_TIMEOUT_MS = 15_000L
+
+private const val DESKTOP_CHROME_UA =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Play glyph from ymusic_logo.xml, placed with the ring background in the
-     adaptive-icon safe zone (1024 art on a 1536 canvas = inner 72 of 108 dp). -->
+<!-- PRVN Music Unique Cyber-Equalizer Play Insignia -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -9,8 +8,72 @@
     <group
         android:translateX="256"
         android:translateY="256">
+        <!-- Outer Glowing Equalizer Arc - Left (Cyan) -->
         <path
-            android:pathData="M366.92,382.68 Q366.92,277.28 461.19,324.4 L742.11,464.86 Q836.38,512 742.11,559.14 L461.19,699.6 Q366.92,746.72 366.92,641.32 Z"
+            android:pathData="M230,512 C230,356 356,230 512,230"
+            android:strokeWidth="24"
+            android:strokeColor="#06B6D4"
+            android:strokeLineCap="round" />
+
+        <!-- Outer Glowing Equalizer Arc - Right (Neon Violet) -->
+        <path
+            android:pathData="M794,512 C794,668 668,794 512,794"
+            android:strokeWidth="24"
+            android:strokeColor="#A855F7"
+            android:strokeLineCap="round" />
+
+        <!-- Equalizer Sound Wave Bars -->
+        <!-- Bar 1 (Left low) -->
+        <path
+            android:pathData="M310,460 L310,564"
+            android:strokeWidth="16"
+            android:strokeColor="#06B6D4"
+            android:strokeLineCap="round" />
+        <!-- Bar 2 (Left mid) -->
+        <path
+            android:pathData="M350,420 L350,604"
+            android:strokeWidth="16"
+            android:strokeColor="#38BDF8"
+            android:strokeLineCap="round" />
+
+        <!-- Futuristic PRVN Multi-Faceted Crystal Play Glyph -->
+        <!-- Drop shadow / Back facet -->
+        <path
+            android:pathData="M430,340 L700,512 L430,684 Z"
+            android:fillColor="#3B0764" />
+        <!-- Top neon violet facet -->
+        <path
+            android:pathData="M420,330 L685,512 L420,512 Z"
+            android:fillColor="#C084FC" />
+        <!-- Bottom cyber cyan facet -->
+        <path
+            android:pathData="M420,512 L685,512 L420,694 Z"
+            android:fillColor="#06B6D4" />
+        <!-- Center pure white energy core -->
+        <path
+            android:pathData="M440,390 L610,512 L440,634 Z"
             android:fillColor="#FFFFFF" />
+
+        <!-- Sound Wave Bars (Right) -->
+        <!-- Bar 3 (Right mid) -->
+        <path
+            android:pathData="M710,430 L710,594"
+            android:strokeWidth="16"
+            android:strokeColor="#C084FC"
+            android:strokeLineCap="round" />
+        <!-- Bar 4 (Right low) -->
+        <path
+            android:pathData="M750,465 L750,559"
+            android:strokeWidth="16"
+            android:strokeColor="#A855F7"
+            android:strokeLineCap="round" />
+
+        <!-- Cyber accent dots -->
+        <path
+            android:pathData="M512,200m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0"
+            android:fillColor="#38BDF8" />
+        <path
+            android:pathData="M512,824m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0"
+            android:fillColor="#C084FC" />
     </group>
 </vector>

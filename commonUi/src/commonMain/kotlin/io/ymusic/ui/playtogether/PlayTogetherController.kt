@@ -41,6 +41,159 @@ class PlayTogetherController(
         refreshPublicRooms()
     }
 
+    val radioCatalog = listOf(
+        PlayTogetherTrack(
+            id = "4NRXx6U8ABQ",
+            title = "Blinding Lights",
+            artist = "The Weeknd",
+            artworkUrl = "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
+            durationMs = 200000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "34Na4j8AVgA",
+            title = "Starboy",
+            artist = "The Weeknd ft. Daft Punk",
+            artworkUrl = "https://i.ytimg.com/vi/34Na4j8AVgA/hqdefault.jpg",
+            durationMs = 230000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "H5v3k2nn9pc",
+            title = "As It Was",
+            artist = "Harry Styles",
+            artworkUrl = "https://i.ytimg.com/vi/H5v3k2nn9pc/hqdefault.jpg",
+            durationMs = 167000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "kTJczUoc56U",
+            title = "Stay",
+            artist = "The Kid LAROI, Justin Bieber",
+            artworkUrl = "https://i.ytimg.com/vi/kTJczUoc56U/hqdefault.jpg",
+            durationMs = 141000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "TUVcZfQe-Kw",
+            title = "Levitating",
+            artist = "Dua Lipa",
+            artworkUrl = "https://i.ytimg.com/vi/TUVcZfQe-Kw/hqdefault.jpg",
+            durationMs = 203000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "JGwWNGJdvx8",
+            title = "Shape of You",
+            artist = "Ed Sheeran",
+            artworkUrl = "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg",
+            durationMs = 233000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "DyDfgMOUjCI",
+            title = "bad guy",
+            artist = "Billie Eilish",
+            artworkUrl = "https://i.ytimg.com/vi/DyDfgMOUjCI/hqdefault.jpg",
+            durationMs = 194000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "XXYlFuWEuKI",
+            title = "Save Your Tears",
+            artist = "The Weeknd",
+            artworkUrl = "https://i.ytimg.com/vi/XXYlFuWEuKI/hqdefault.jpg",
+            durationMs = 215000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "mRD0-GxqHVo",
+            title = "Heat Waves",
+            artist = "Glass Animals",
+            artworkUrl = "https://i.ytimg.com/vi/mRD0-GxqHVo/hqdefault.jpg",
+            durationMs = 239000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "ApXoWvfEYVU",
+            title = "Sunflower",
+            artist = "Post Malone, Swae Lee",
+            artworkUrl = "https://i.ytimg.com/vi/ApXoWvfEYVU/hqdefault.jpg",
+            durationMs = 158000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "syFZfO_wfMQ",
+            title = "Night Changes",
+            artist = "One Direction",
+            artworkUrl = "https://i.ytimg.com/vi/syFZfO_wfMQ/hqdefault.jpg",
+            durationMs = 227000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "G7KNmW9a75Y",
+            title = "Flowers",
+            artist = "Miley Cyrus",
+            artworkUrl = "https://i.ytimg.com/vi/G7KNmW9a75Y/hqdefault.jpg",
+            durationMs = 200000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "7wtfhZwyrcc",
+            title = "Believer",
+            artist = "Imagine Dragons",
+            artworkUrl = "https://i.ytimg.com/vi/7wtfhZwyrcc/hqdefault.jpg",
+            durationMs = 204000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+        PlayTogetherTrack(
+            id = "UTHLK93Hio0",
+            title = "INDUSTRY BABY",
+            artist = "Lil Nas X, Jack Harlow",
+            artworkUrl = "https://i.ytimg.com/vi/UTHLK93Hio0/hqdefault.jpg",
+            durationMs = 212000L,
+            isYouTube = true,
+            addedBy = "PRVN Auto-Radio",
+            isAutoRadio = true,
+        ),
+    )
+
+    fun pickRandomRadioTrack(excludeId: String? = null): PlayTogetherTrack {
+        val candidates = radioCatalog.filter { it.id != excludeId }
+        return if (candidates.isNotEmpty()) {
+            candidates[Random.nextInt(candidates.size)]
+        } else {
+            radioCatalog[Random.nextInt(radioCatalog.size)]
+        }
+    }
+
+
     /**
      * Refreshes the public room discovery list from the backend.
      */
@@ -90,14 +243,26 @@ class PlayTogetherController(
                                         currentTrack = next,
                                         positionMs = 0L,
                                         queue = remainingQueue,
+                                        isAutoRadio = next.isAutoRadio,
+                                        isPlaying = true,
                                     )
                                 } else {
+                                    // Queue empty: continuous playback with random radio song!
+                                    val randomRadio = pickRandomRadioTrack(excludeId = current.currentTrack.id)
                                     sendPlaybackEventInternal(
-                                        PlaybackEventType.PAUSE,
-                                        positionMs = current.currentTrack.durationMs,
-                                        isPlaying = false,
+                                        PlaybackEventType.TRACK_CHANGE,
+                                        track = randomRadio,
+                                        positionMs = 0L,
+                                        isPlaying = true,
+                                        queue = emptyList(),
                                     )
-                                    current.copy(positionMs = current.currentTrack.durationMs, isPlaying = false)
+                                    current.copy(
+                                        currentTrack = randomRadio,
+                                        positionMs = 0L,
+                                        queue = emptyList(),
+                                        isAutoRadio = true,
+                                        isPlaying = true,
+                                    )
                                 }
                             } else {
                                 current.copy(positionMs = current.currentTrack.durationMs, isPlaying = false)
@@ -384,6 +549,23 @@ class PlayTogetherController(
             if (current is PlayTogetherState.InRoom) {
                 if (!current.isHost && current.controlMode == ControlMode.HOST_ONLY) {
                     current
+                } else if (current.currentTrack == null) {
+                    val track = if (current.queue.isNotEmpty()) current.queue.first() else pickRandomRadioTrack()
+                    val remQueue = if (current.queue.isNotEmpty()) current.queue.drop(1) else emptyList()
+                    sendPlaybackEventInternal(
+                        PlaybackEventType.TRACK_CHANGE,
+                        track = track,
+                        positionMs = 0L,
+                        isPlaying = true,
+                        queue = remQueue,
+                    )
+                    current.copy(
+                        currentTrack = track,
+                        positionMs = 0L,
+                        isPlaying = true,
+                        queue = remQueue,
+                        isAutoRadio = current.queue.isEmpty(),
+                    )
                 } else {
                     val nextPlayState = !current.isPlaying
                     sendPlaybackEventInternal(
@@ -416,12 +598,33 @@ class PlayTogetherController(
                         currentTrack = next,
                         positionMs = 0L,
                         queue = remainingQueue,
+                        isAutoRadio = next.isAutoRadio,
+                        isPlaying = true,
                     )
                 } else {
-                    current
+                    // Queue empty: advance to random radio track!
+                    val randomRadio = pickRandomRadioTrack(excludeId = current.currentTrack?.id)
+                    sendPlaybackEventInternal(
+                        PlaybackEventType.TRACK_CHANGE,
+                        track = randomRadio,
+                        positionMs = 0L,
+                        isPlaying = true,
+                        queue = emptyList(),
+                    )
+                    current.copy(
+                        currentTrack = randomRadio,
+                        positionMs = 0L,
+                        queue = emptyList(),
+                        isAutoRadio = true,
+                        isPlaying = true,
+                    )
                 }
             } else current
         }
+    }
+
+    fun onTrackEnded() {
+        nextTrack()
     }
 
     fun previousTrack() {
@@ -467,6 +670,35 @@ class PlayTogetherController(
         }
     }
 
+    fun playNow(track: PlayTogetherTrack) {
+        if (!track.isYouTube || track.id.startsWith("file://") || track.id.startsWith("local_")) {
+            _state.update { current ->
+                if (current is PlayTogetherState.InRoom) {
+                    current.copy(errorMessage = "Local files cannot be shared in Play Together. Only online streams accessible to all listeners can be synchronized.")
+                } else current
+            }
+            return
+        }
+
+        _state.update { current ->
+            if (current is PlayTogetherState.InRoom) {
+                sendPlaybackEventInternal(
+                    PlaybackEventType.TRACK_CHANGE,
+                    track = track,
+                    positionMs = 0L,
+                    isPlaying = true,
+                    queue = current.queue,
+                )
+                current.copy(
+                    currentTrack = track,
+                    positionMs = 0L,
+                    isPlaying = true,
+                    isAutoRadio = false,
+                )
+            } else current
+        }
+    }
+
     fun addToQueue(track: PlayTogetherTrack) {
         if (!track.isYouTube || track.id.startsWith("file://") || track.id.startsWith("local_")) {
             _state.update { current ->
@@ -479,16 +711,31 @@ class PlayTogetherController(
 
         _state.update { current ->
             if (current is PlayTogetherState.InRoom) {
-                val newTrack = if (current.currentTrack == null) track else current.currentTrack
-                val newQueue = if (current.currentTrack == null) current.queue else current.queue + track
-                sendPlaybackEventInternal(
-                    PlaybackEventType.QUEUE_UPDATE,
-                    track = newTrack,
-                    queue = newQueue,
-                )
-                if (current.currentTrack == null) {
-                    current.copy(currentTrack = track, positionMs = 0L, isPlaying = true)
+                // If there's no current track or if playing an auto-radio filler,
+                // immediately transition to the user-queued song!
+                val shouldPlayImmediately = current.currentTrack == null || current.isAutoRadio
+                if (shouldPlayImmediately) {
+                    sendPlaybackEventInternal(
+                        PlaybackEventType.TRACK_CHANGE,
+                        track = track,
+                        positionMs = 0L,
+                        isPlaying = true,
+                        queue = current.queue,
+                    )
+                    current.copy(
+                        currentTrack = track,
+                        positionMs = 0L,
+                        isPlaying = true,
+                        isAutoRadio = false,
+                    )
                 } else {
+                    // Current track was specifically chosen: queue to play next!
+                    val newQueue = current.queue + track
+                    sendPlaybackEventInternal(
+                        PlaybackEventType.QUEUE_UPDATE,
+                        track = current.currentTrack,
+                        queue = newQueue,
+                    )
                     current.copy(queue = newQueue)
                 }
             } else current

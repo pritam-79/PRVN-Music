@@ -701,6 +701,7 @@ private fun ActiveRoomView(
                     InRoomSearchTabView(
                         graph = graph,
                         state = state,
+                        onPlayNow = { track -> controller.playNow(track) },
                         onAddToQueue = { track -> controller.addToQueue(track) },
                         onRequestSong = { track, user -> controller.submitSongRequest(track, user) },
                     )
@@ -817,12 +818,12 @@ private fun NowPlayingTabView(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(DesignColors.SettingsCard)
+                        .background(if (state.isAutoRadio || track.isAutoRadio) BrandCyan.copy(alpha = 0.15f) else DesignColors.SettingsCard)
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
                     Text(
-                        text = "Added by ${track.addedBy}",
-                        style = TextStyle(fontSize = 11.5.sp, color = DesignColors.Accent, fontWeight = FontWeight.Medium),
+                        text = if (state.isAutoRadio || track.isAutoRadio) "📻 PRVN Auto-Radio • Continuous Play" else "Added by ${track.addedBy}",
+                        style = TextStyle(fontSize = 11.5.sp, color = if (state.isAutoRadio || track.isAutoRadio) BrandCyan else DesignColors.Accent, fontWeight = FontWeight.Medium),
                     )
                 }
             }
@@ -1066,6 +1067,7 @@ private fun SharedQueueTabView(
 private fun InRoomSearchTabView(
     graph: AppGraph,
     state: PlayTogetherState.InRoom,
+    onPlayNow: (PlayTogetherTrack) -> Unit,
     onAddToQueue: (PlayTogetherTrack) -> Unit,
     onRequestSong: (PlayTogetherTrack, String) -> Unit,
 ) {
@@ -1248,36 +1250,52 @@ private fun InRoomSearchTabView(
                                 )
                             }
 
-                            // Action buttons
+                            // Action buttons: Play Now, Queue, and Request
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (state.isHost || state.controlMode == ControlMode.COLLABORATIVE) {
-                                    Button(
-                                        onClick = {
-                                            onAddToQueue(playTrack)
-                                            lastActionNotice = "Added '${playTrack.title}' to queue"
-                                        },
-                                        modifier = Modifier.height(32.dp),
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
-                                    ) {
-                                        Text("Queue", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                    }
+                                Button(
+                                    onClick = {
+                                        onPlayNow(playTrack)
+                                        lastActionNotice = "Now playing '${playTrack.title}'"
+                                    },
+                                    modifier = Modifier.height(32.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandCyan),
+                                ) {
+                                    Text("Play Now", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.ExtraBold)
                                 }
 
                                 Button(
                                     onClick = {
-                                        val selfName = state.members.firstOrNull { it.id == state.currentMemberId }?.name ?: "Listener"
-                                        onRequestSong(playTrack, selfName)
-                                        lastActionNotice = "Requested '${playTrack.title}'"
+                                        onAddToQueue(playTrack)
+                                        lastActionNotice = if (state.isAutoRadio || state.currentTrack == null) {
+                                            "Playing '${playTrack.title}'"
+                                        } else {
+                                            "Added '${playTrack.title}' to queue"
+                                        }
                                     },
                                     modifier = Modifier.height(32.dp),
                                     shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandPurpleDark),
-                                    border = ButtonDefaults.outlinedButtonBorder.copy(
-                                        brush = Brush.horizontalGradient(listOf(BrandPurpleVibrant, BrandCyan)),
-                                    ),
+                                    colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
                                 ) {
-                                    Text("Request", fontSize = 11.sp, color = BrandPurpleLight, fontWeight = FontWeight.Bold)
+                                    Text("Queue", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+
+                                if (!state.isHost && state.controlMode == ControlMode.HOST_ONLY) {
+                                    Button(
+                                        onClick = {
+                                            val selfName = state.members.firstOrNull { it.id == state.currentMemberId }?.name ?: "Listener"
+                                            onRequestSong(playTrack, selfName)
+                                            lastActionNotice = "Requested '${playTrack.title}'"
+                                        },
+                                        modifier = Modifier.height(32.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandPurpleDark),
+                                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                                            brush = Brush.horizontalGradient(listOf(BrandPurpleVibrant, BrandCyan)),
+                                        ),
+                                    ) {
+                                        Text("Request", fontSize = 11.sp, color = BrandPurpleLight, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }

@@ -143,15 +143,34 @@ val StaticDesignColors = DarkDesignColors.copy(
 )
 
 /** 2. Liquid Glass appearance: translucent glass surfaces, glowing depth, subtle reflections. */
-val LiquidGlassDesignColors = DarkDesignColors.copy(
-    Surface = Color(0xFF0E0B1A),
-    SurfaceDim = Color(0xFF140E26),
-    SurfaceElevated = Color(0xFF20153D),
-    SettingsCard = Color(0xFF1D1338),
-    Outline = Color(0x66A855F7),
-    OutlineSoft = Color(0x3306B6D4),
+val LiquidGlassDesignColors = DesignPalette(
+    isDark = true,
     Accent = Color(0xFFC084FC),
     BrandGreen = Color(0xFF38BDF8),
+    Surface = Color(0xFF0E0B1A),
+    SurfaceDim = Color(0xFF140E26),
+    SurfaceElevated = Color(0xFF221742),
+    SettingsCard = Color(0xFF1C1338),
+    FieldPill = Color(0xFF281B4E),
+    StackNear = Color(0xFF221742),
+    StackFar = Color(0xFF181030),
+    StackTab = Color(0xFF20153D),
+    Outline = Color(0x66C084FC),
+    OutlineSoft = Color(0x3338BDF8),
+    Divider = Color(0x22C084FC),
+    DividerMini = Color(0x33C084FC),
+    Placeholder = Color(0xFF221742),
+    PlaceholderDim = Color(0xFF181030),
+    PlaceholderIcon = Color(0xFF907AA9),
+    InkStrong = Color(0xFFFFFFFF),
+    Ink = Color(0xFFF3EDFD),
+    InkMuted = Color(0xFFA79BC4),
+    InkSoft = Color(0xFF8679A3),
+    InkSecondary = Color(0xFF7E729C),
+    InkFaint = Color(0xFF564B70),
+    IconDots = Color(0xFFA79BC4),
+    OnInk = Color(0xFF0E0B1A),
+    OnAccent = Color.White,
 )
 
 /** 3. AMOLED Black appearance: pure black surfaces (#000000) for OLED power saving and maximum contrast. */

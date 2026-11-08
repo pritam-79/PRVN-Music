@@ -40,6 +40,7 @@ data class PlayTogetherTrack(
     val durationMs: Long = 210000L,
     val isYouTube: Boolean = true,
     val addedBy: String = "Host",
+    val isAutoRadio: Boolean = false,
 )
 
 data class SongRequest(
@@ -95,5 +96,6 @@ sealed interface PlayTogetherState {
         val errorMessage: String? = null,
         val currentMemberId: String = "member_self",
         val allowListenerRequests: Boolean = true,
+        val isAutoRadio: Boolean = false,
     ) : PlayTogetherState
 }

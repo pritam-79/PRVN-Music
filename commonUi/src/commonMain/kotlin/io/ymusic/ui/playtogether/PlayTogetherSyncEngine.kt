@@ -44,6 +44,7 @@ class PlayTogetherSyncEngine(
 
     private var roomEventsJob: Job? = null
     private var driftMonitorJob: Job? = null
+    private var playerStatusJob: Job? = null
     private var stateObserverJob: Job? = null
     private var currentActiveRoomId: String? = null
 
@@ -112,6 +113,20 @@ class PlayTogetherSyncEngine(
                 }
             }
         }
+
+        // 3. Observe local player completion for automatic continuous transition
+        playerStatusJob?.cancel()
+        playerStatusJob = scope.launch {
+            player.status.collect { status ->
+                val s = status.state
+                if (s is PlaybackState.Prepared && s.ended) {
+                    val current = controller.state.value
+                    if (current is PlayTogetherState.InRoom && (current.isHost || current.controlMode == ControlMode.COLLABORATIVE)) {
+                        controller.onTrackEnded()
+                    }
+                }
+            }
+        }
     }
 
     private fun detachFromRoom() {
@@ -119,6 +134,8 @@ class PlayTogetherSyncEngine(
         roomEventsJob = null
         driftMonitorJob?.cancel()
         driftMonitorJob = null
+        playerStatusJob?.cancel()
+        playerStatusJob = null
     }
 
     private fun handleRoomEvent(event: RoomEvent, roomState: PlayTogetherState.InRoom) {

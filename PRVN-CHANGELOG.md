@@ -4,6 +4,21 @@ All notable changes to the PRVN Music project are documented in this file.
 
 ---
 
+## [0.0.4] — 2026-11-09
+
+### Major Highlights & Fixes
+- **Playback Error Fix (`Failed (E60033)`)**: Synchronized media proxy and download service User-Agent strings with BotGuard PO token minting (`DESKTOP_CHROME_UA`), resolving googlevideo HTTP 403 access rejections and restoring instant audio playback.
+- **Play Together Continuous Auto-Radio & Priority Queueing**:
+  - Continuous music playback: rooms never stall or pause when the queue ends; they automatically transition into curated popular radio hits (`PRVN Auto-Radio`).
+  - Priority Queueing: when any listener or host searches and adds a song to the queue, it automatically interrupts or takes priority over auto-radio tracks.
+  - Direct **"Play Now"** button in in-room search to immediately broadcast any track to all listeners.
+  - Automatic track advancement upon stream finish via native player lifecycle observation.
+- **Liquid Glass Theme Overhaul**: Complete color palette upgrade in `Theme.kt` replacing mismatched opaque slate-gray cards, pill bars, and dividers with cohesive translucent obsidian-purple and cyber-cyan glass tokens.
+- **Cybernetic Neon Launcher Icon**: Redesigned default adaptive home screen icon featuring an orbital acoustic equalizer halo, radiating frequency pulses, and a multi-faceted neon crystal play emblem.
+- **In-App Auto-Update Delivery**: Packaged release `v0.04` (Version Code 4) enabling automatic 1-tap in-app updating for existing users.
+
+---
+
 ## [0.0.3] — 2026-11-08
 
 ### Major Highlights & Playback Repair
