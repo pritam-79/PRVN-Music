@@ -48,7 +48,7 @@ The following User environment variables are permanently configured:
    ```powershell
    adb devices
    ```
-5. Install and launch the v0.02 Release APK:
+5. Install and launch the v0.03 Release APK:
    ```powershell
    adb install -r "D:\workspaces\PRVN-Music\PRVN-MUSIC-RELEASE\Android\PRVN-Music-Android.apk"
    adb shell monkey -p com.prvn.music -c android.intent.category.LAUNCHER 1

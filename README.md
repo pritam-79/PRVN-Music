@@ -6,8 +6,8 @@
   <p>High-performance Kotlin Multiplatform music player with real-time group playback (Play Together), background streaming, offline downloads, and a dark neon interface.</p>
 
   <p>
-    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.02"><img src="https://img.shields.io/badge/Release-v0.02-purple.svg?style=flat-square" alt="Version 0.02" /></a>
-    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.02"><img src="https://img.shields.io/badge/Platform-Android_ARM64-cyan.svg?style=flat-square" alt="Platform Android ARM64" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.03"><img src="https://img.shields.io/badge/Release-v0.03-purple.svg?style=flat-square" alt="Version 0.03" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.03"><img src="https://img.shields.io/badge/Platform-Android_ARM64-cyan.svg?style=flat-square" alt="Platform Android ARM64" /></a>
     <a href="docs/LICENSES.md"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=flat-square" alt="License GPL-3.0" /></a>
   </p>
 </div>
@@ -18,7 +18,7 @@
 
 | Platform | Target Architecture | Status | Release Package |
 |---|---|---|---|
-| **Android** | `arm64-v8a` (API 24+) | **Available (Verified)** | [Download APK (v0.02)](https://github.com/pritam-79/PRVN-Music/releases/download/v0.02/PRVN-Music-v0.02-arm64.apk) |
+| **Android** | `arm64-v8a` (API 24+) | **Available (Verified)** | [Download APK (v0.03)](https://github.com/pritam-79/PRVN-Music/releases/download/v0.03/PRVN-Music-v0.03-arm64.apk) |
 | **Windows** | x86_64 (Windows 10/11) | *Pending host C++ toolchain* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
 | **macOS** | Apple Silicon / x86_64 | *Pending macOS build environment* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
 | **Linux** | x86_64 (GLIBC 2.31+) | *Planned* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
@@ -34,10 +34,10 @@
 - **Application ID**: `com.prvn.music`
 - **Release Version**: `0.0.3` (Version Code `3`)
 - **Package File**: `PRVN-Music-v0.03-arm64.apk`
-- **File Size**: `9,815,272` bytes (~9.36 MB)
+- **File Size**: `9,817,744` bytes (~9.36 MB)
 - **SHA-256 Checksum**:
   ```
-  04AC358894B51E18E5687B5C50EB0117EC2961ED4683957D0B056A69F901FFE9
+  8FFF71A4206DC92542299971F9B04601716F743F1E5F6E3CD32874E5E2F6A390
   ```
 - **Signing Scheme**: Android APK Signature Scheme v2 (Verified)
 - **Minimum OS Version**: Android 7.0 (API 24)
@@ -83,13 +83,13 @@ Customize your home screen with 5 adaptive launcher themes via **Settings → Ap
 ## Quick Installation
 
 ### Standard Android Install
-1. Download [`PRVN-Music-v0.02-arm64.apk`](https://github.com/pritam-79/PRVN-Music/releases/download/v0.02/PRVN-Music-v0.02-arm64.apk).
+1. Download [`PRVN-Music-v0.03-arm64.apk`](https://github.com/pritam-79/PRVN-Music/releases/download/v0.03/PRVN-Music-v0.03-arm64.apk).
 2. Open the file in your device's Downloads folder and confirm installation.
 3. If prompted, toggle **Allow from this source** in Android Settings.
 
 ### Developer Install (ADB)
 ```bash
-adb install -r Builds/PRVN-Music-v0.02-arm64.apk
+adb install -r Builds/PRVN-Music-v0.03-arm64.apk
 ```
 
 ---
