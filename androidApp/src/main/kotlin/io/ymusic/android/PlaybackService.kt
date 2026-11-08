@@ -703,7 +703,16 @@ class PlaybackService : MediaLibraryService() {
      *  backgrounded). Playback continues; the service stays background until a later promotion. */
     private fun promote(notification: android.app.Notification): Boolean {
         return try {
-            startForeground(NOTIFICATION_ID, notification)
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                } else {
+                    0
+                },
+            )
             foregroundRefused = false
             true
         } catch (e: IllegalStateException) {

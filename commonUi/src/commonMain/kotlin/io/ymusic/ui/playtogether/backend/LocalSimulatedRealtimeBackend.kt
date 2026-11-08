@@ -6,35 +6,36 @@ import io.ymusic.ui.playtogether.PlayTogetherTrack
 import io.ymusic.ui.playtogether.RoomInfo
 import io.ymusic.ui.playtogether.RoomMember
 import io.ymusic.ui.playtogether.RoomVisibility
+import io.ymusic.ui.playtogether.SongRequest
+import io.ymusic.ui.playtogether.SongRequestStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlin.time.Clock
 import kotlin.random.Random
+import kotlin.time.Clock
 
 /**
- * Stateful in-memory and simulated network backend for Play Together.
- * Provides immediate out-of-the-box real-time presence, 4-digit code verification,
- * rate limiting, and playback broadcast without requiring external cloud credentials.
+ * Local in-memory and local-network relay for Play Together.
+ * Contains no fake bots, simulated listeners, or mock rooms.
+ * Manages genuinely created user rooms, presence, shared queue, and song requests.
  */
 class LocalSimulatedRealtimeBackend(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
 ) : PlayTogetherBackend {
 
     private data class InternalRoom(
-        val info: RoomInfo,
+        var info: RoomInfo,
         val hostId: String,
         val members: MutableList<RoomMember> = mutableListOf(),
         val queue: MutableList<PlayTogetherTrack> = mutableListOf(),
+        val songRequests: MutableList<SongRequest> = mutableListOf(),
         var currentTrack: PlayTogetherTrack? = null,
         var isPlaying: Boolean = false,
         var positionMs: Long = 0L,
@@ -45,125 +46,19 @@ class LocalSimulatedRealtimeBackend(
     private val activeRooms = mutableMapOf<String, InternalRoom>()
     private val roomEventFlow = MutableSharedFlow<Pair<String, RoomEvent>>(extraBufferCapacity = 64)
     private val presenceFlows = mutableMapOf<String, MutableStateFlow<List<RoomMember>>>()
-    private val rateLimiter = RateLimiter(maxRequests = 5, windowMs = 30_000L)
-    private var simulatedPeerJob: Job? = null
-
-    init {
-        seedInitialRooms()
-        startSimulatedPeerHeartbeat()
-    }
-
-    private fun seedInitialRooms() {
-        synchronized(roomsLock) {
-            val room1 = InternalRoom(
-                info = RoomInfo(
-                    id = "room_cosmic",
-                    code = "4821",
-                    name = "PRVN Cosmic Lounge",
-                    hostName = "Aria",
-                    visibility = RoomVisibility.PUBLIC,
-                    controlMode = ControlMode.COLLABORATIVE,
-                    memberCount = 3,
-                    currentTrack = PlayTogetherTrack(
-                        id = "track_1",
-                        title = "Midnight City Lights",
-                        artist = "PRVN Sound Collective",
-                        durationMs = 240000L,
-                        addedBy = "Aria",
-                    ),
-                ),
-                hostId = "host_aria",
-                members = mutableListOf(
-                    RoomMember("host_aria", "Aria", isHost = true, syncState = MemberSyncState.SYNCED, driftMs = 0L),
-                    RoomMember("peer_kai", "Kai", isHost = false, syncState = MemberSyncState.SYNCED, driftMs = 12L),
-                    RoomMember("peer_sora", "Sora", isHost = false, syncState = MemberSyncState.BUFFERING, driftMs = 45L),
-                ),
-                queue = mutableListOf(
-                    PlayTogetherTrack("queue_1", "Cosmic Voyager", "Solaris", durationMs = 195000L, addedBy = "Aria"),
-                    PlayTogetherTrack("queue_2", "Violet Haze", "Echo Station", durationMs = 230000L, addedBy = "Kai"),
-                ),
-                currentTrack = PlayTogetherTrack(
-                    id = "track_1",
-                    title = "Midnight City Lights",
-                    artist = "PRVN Sound Collective",
-                    durationMs = 240000L,
-                    addedBy = "Aria",
-                ),
-                isPlaying = true,
-                positionMs = 42000L,
-            )
-
-            val room2 = InternalRoom(
-                info = RoomInfo(
-                    id = "room_synth",
-                    code = "7294",
-                    name = "Synthwave & Lo-Fi Waves",
-                    hostName = "NeonK",
-                    visibility = RoomVisibility.PUBLIC,
-                    controlMode = ControlMode.HOST_ONLY,
-                    memberCount = 2,
-                    currentTrack = PlayTogetherTrack(
-                        id = "track_2",
-                        title = "Retrograde Horizon",
-                        artist = "Kavinsky & The Midnight",
-                        durationMs = 195000L,
-                        addedBy = "NeonK",
-                    ),
-                ),
-                hostId = "host_neonk",
-                members = mutableListOf(
-                    RoomMember("host_neonk", "NeonK", isHost = true, syncState = MemberSyncState.SYNCED, driftMs = 0L),
-                    RoomMember("peer_mira", "Mira", isHost = false, syncState = MemberSyncState.SYNCED, driftMs = 18L),
-                ),
-                queue = mutableListOf(
-                    PlayTogetherTrack("queue_3", "Neon Drive", "Perturbator", durationMs = 210000L, addedBy = "NeonK"),
-                ),
-                currentTrack = PlayTogetherTrack(
-                    id = "track_2",
-                    title = "Retrograde Horizon",
-                    artist = "Kavinsky & The Midnight",
-                    durationMs = 195000L,
-                    addedBy = "NeonK",
-                ),
-                isPlaying = true,
-                positionMs = 15000L,
-            )
-
-            activeRooms[room1.info.id] = room1
-            activeRooms[room2.info.id] = room2
-        }
-    }
-
-    private fun startSimulatedPeerHeartbeat() {
-        simulatedPeerJob?.cancel()
-        simulatedPeerJob = scope.launch {
-            while (isActive) {
-                delay(6000L)
-                synchronized(roomsLock) {
-                    activeRooms.values.forEach { room ->
-                        val updated = room.members.map { m ->
-                            if (!m.isHost) {
-                                val jitter = Random.nextLong(-4L, 5L)
-                                val newDrift = (m.driftMs + jitter).coerceIn(4L, 85L)
-                                m.copy(driftMs = newDrift)
-                            } else m
-                        }
-                        room.members.clear()
-                        room.members.addAll(updated)
-                        presenceFlows[room.info.id]?.value = updated
-                    }
-                }
-            }
-        }
-    }
+    private val rateLimiter = RateLimiter(maxRequests = 10, windowMs = 30_000L)
 
     override suspend fun listPublicRooms(): Result<List<RoomInfo>> {
-        delay(120L) // Simulate minimal network roundtrip
-        synchronized(roomsLock) {
+        return synchronized(roomsLock) {
             val publicRooms = activeRooms.values
                 .filter { it.info.visibility == RoomVisibility.PUBLIC }
-                .map { it.info.copy(memberCount = it.members.size, currentTrack = it.currentTrack) }
-            return Result.success(publicRooms)
+                .map { room ->
+                    room.info.copy(
+                        memberCount = room.members.size,
+                        currentTrack = room.currentTrack,
+                    )
+                }
+            Result.success(publicRooms)
         }
     }
 
@@ -173,172 +68,146 @@ class LocalSimulatedRealtimeBackend(
         hostName: String,
         visibility: RoomVisibility,
         controlMode: ControlMode,
+        password: String?,
     ): Result<RoomInfo> {
-        delay(150L)
         if (!rateLimiter.tryAcquire()) {
-            val waitSec = rateLimiter.secondsUntilReset()
-            return Result.failure(IllegalStateException("Rate limit exceeded. Please wait $waitSec seconds."))
+            return Result.failure(Exception("Too many room creation attempts. Please wait ${rateLimiter.secondsUntilReset()}s."))
         }
 
-        if (!RoomSecurityPolicy.isValidRoomCode(code)) {
-            return Result.failure(IllegalArgumentException("Room code must be exactly 4 numeric digits (e.g. 1234)."))
-        }
-
+        val cleanCode = code.trim()
         val cleanName = RoomSecurityPolicy.sanitizeRoomName(name)
         val cleanHost = RoomSecurityPolicy.sanitizeUserName(hostName)
 
+        val roomId = "room_${cleanCode}_${Random.nextLong(1000, 9999)}"
+        val hostId = "host_${Random.nextLong(1000, 9999)}"
+
+        val roomInfo = RoomInfo(
+            id = roomId,
+            code = cleanCode,
+            name = cleanName,
+            hostName = cleanHost,
+            visibility = visibility,
+            controlMode = controlMode,
+            memberCount = 1,
+            currentTrack = null,
+            password = password?.trim()?.ifBlank { null },
+        )
+
+        val hostMember = RoomMember(
+            id = hostId,
+            name = cleanHost,
+            isHost = true,
+            syncState = MemberSyncState.SYNCED,
+            driftMs = 0L,
+        )
+
+        val internalRoom = InternalRoom(
+            info = roomInfo,
+            hostId = hostId,
+            members = mutableListOf(hostMember),
+            queue = mutableListOf(),
+            songRequests = mutableListOf(),
+            currentTrack = null,
+            isPlaying = false,
+            positionMs = 0L,
+        )
+
         synchronized(roomsLock) {
-            if (activeRooms.values.any { it.info.code == code }) {
-                return Result.failure(IllegalStateException("Room code $code is already in use. Please select a different 4-digit code."))
-            }
-
-            val roomId = "room_${Random.nextLong(100000, 999999)}"
-            val hostMemberId = "host_${Random.nextLong(1000, 9999)}"
-
-            val seedTrack = PlayTogetherTrack(
-                id = "track_seed_${Random.nextLong(100, 999)}",
-                title = "PRVN Resonance",
-                artist = "PRVN Sound Collective",
-                durationMs = 214000L,
-                addedBy = cleanHost,
-            )
-
-            val roomInfo = RoomInfo(
-                id = roomId,
-                code = code,
-                name = cleanName,
-                hostName = cleanHost,
-                visibility = visibility,
-                controlMode = controlMode,
-                memberCount = 1,
-                currentTrack = seedTrack,
-            )
-
-            val hostMember = RoomMember(
-                id = hostMemberId,
-                name = cleanHost,
-                isHost = true,
-                syncState = MemberSyncState.SYNCED,
-                driftMs = 0L,
-            )
-
-            val internalRoom = InternalRoom(
-                info = roomInfo,
-                hostId = hostMemberId,
-                members = mutableListOf(hostMember),
-                queue = mutableListOf(),
-                currentTrack = seedTrack,
-                isPlaying = true,
-                positionMs = 0L,
-            )
-
             activeRooms[roomId] = internalRoom
-            getOrCreatePresenceFlow(roomId).value = listOf(hostMember)
-
-            return Result.success(roomInfo)
+            presenceFlows[roomId] = MutableStateFlow(listOf(hostMember))
         }
+
+        return Result.success(roomInfo)
     }
 
-    override suspend fun verifyAndJoinRoom(code: String, userName: String): Result<JoinRoomResult> {
-        delay(180L)
+    override suspend fun verifyAndJoinRoom(
+        code: String,
+        userName: String,
+        password: String?,
+    ): Result<JoinRoomResult> {
         if (!rateLimiter.tryAcquire()) {
-            val waitSec = rateLimiter.secondsUntilReset()
-            return Result.failure(IllegalStateException("Too many join attempts. Please wait $waitSec seconds."))
+            return Result.failure(Exception("Too many join attempts. Please wait ${rateLimiter.secondsUntilReset()}s."))
         }
 
-        if (!RoomSecurityPolicy.isValidRoomCode(code)) {
-            return Result.failure(IllegalArgumentException("Invalid room code: code must be exactly 4 numeric digits."))
-        }
-
+        val cleanCode = code.trim()
         val cleanUser = RoomSecurityPolicy.sanitizeUserName(userName)
 
-        synchronized(roomsLock) {
-            val room = activeRooms.values.firstOrNull { it.info.code == code }
-                ?: return Result.failure(NoSuchElementException("No room found with code '$code'. Check the 4-digit code and try again."))
+        val room = synchronized(roomsLock) {
+            activeRooms.values.firstOrNull { it.info.code == cleanCode }
+        } ?: return Result.failure(Exception("Room code '$cleanCode' not found. Verify the code with the host."))
 
-            // Check room capacity limit (max 20 members per synchronized session)
-            if (room.members.size >= 20) {
-                return Result.failure(IllegalStateException("Room '${room.info.name}' is currently at maximum capacity (20 listeners)."))
+        if (!room.info.password.isNullOrBlank()) {
+            val suppliedPass = password?.trim()
+            if (suppliedPass != room.info.password) {
+                return Result.failure(Exception("Incorrect password for private room."))
             }
-
-            val newMemberId = "listener_${Random.nextLong(10000, 99999)}"
-            val newMember = RoomMember(
-                id = newMemberId,
-                name = cleanUser,
-                isHost = false,
-                syncState = MemberSyncState.SYNCED,
-                driftMs = Random.nextLong(8L, 25L),
-            )
-
-            room.members.add(newMember)
-            val updatedList = room.members.toList()
-            getOrCreatePresenceFlow(room.info.id).value = updatedList
-
-            scope.launch {
-                roomEventFlow.emit(room.info.id to RoomEvent.MemberJoined(newMember))
-                roomEventFlow.emit(room.info.id to RoomEvent.MemberPresenceChanged(updatedList))
-            }
-
-            val elapsedSinceUpdate = Clock.System.now().toEpochMilliseconds() - room.lastUpdatedUtc
-            val adjustedPosition = if (room.isPlaying && room.currentTrack != null) {
-                (room.positionMs + elapsedSinceUpdate).coerceAtMost(room.currentTrack!!.durationMs)
-            } else {
-                room.positionMs
-            }
-
-            return Result.success(
-                JoinRoomResult(
-                    room = room.info.copy(memberCount = updatedList.size, currentTrack = room.currentTrack),
-                    isHost = false,
-                    currentMemberId = newMemberId,
-                    members = updatedList,
-                    currentTrack = room.currentTrack,
-                    isPlaying = room.isPlaying,
-                    positionMs = adjustedPosition,
-                    queue = room.queue.toList(),
-                )
-            )
         }
+
+        val memberId = "member_${Random.nextLong(1000, 9999)}"
+        val newMember = RoomMember(
+            id = memberId,
+            name = cleanUser,
+            isHost = false,
+            syncState = MemberSyncState.SYNCING,
+            driftMs = 0L,
+        )
+
+        synchronized(roomsLock) {
+            room.members.add(newMember)
+            room.info = room.info.copy(memberCount = room.members.size)
+            presenceFlows[room.info.id]?.value = room.members.toList()
+        }
+
+        scope.launch {
+            roomEventFlow.emit(room.info.id to RoomEvent.MemberJoined(newMember))
+            roomEventFlow.emit(room.info.id to RoomEvent.MemberPresenceChanged(room.members.toList()))
+        }
+
+        return Result.success(
+            JoinRoomResult(
+                room = room.info,
+                isHost = false,
+                currentMemberId = memberId,
+                members = room.members.toList(),
+                currentTrack = room.currentTrack,
+                isPlaying = room.isPlaying,
+                positionMs = room.positionMs,
+                queue = room.queue.toList(),
+                songRequests = room.songRequests.toList(),
+            ),
+        )
     }
 
     override suspend fun leaveRoom(roomId: String, memberId: String): Result<Unit> {
-        synchronized(roomsLock) {
+        val (wasHost, leftMember) = synchronized(roomsLock) {
             val room = activeRooms[roomId] ?: return Result.success(Unit)
             val member = room.members.firstOrNull { it.id == memberId }
+            val isHost = member?.isHost == true
             room.members.removeAll { it.id == memberId }
-            val updatedList = room.members.toList()
-            getOrCreatePresenceFlow(roomId).value = updatedList
+            room.info = room.info.copy(memberCount = room.members.size)
+            presenceFlows[roomId]?.value = room.members.toList()
 
-            if (member != null) {
-                scope.launch {
-                    roomEventFlow.emit(roomId to RoomEvent.MemberLeft(memberId, member.name))
-                    roomEventFlow.emit(roomId to RoomEvent.MemberPresenceChanged(updatedList))
-                }
-            }
-
-            // If host left and no members remain, close room
-            if (room.members.isEmpty() || member?.isHost == true && room.members.none { it.isHost }) {
+            if (isHost || room.members.isEmpty()) {
                 activeRooms.remove(roomId)
-                scope.launch {
-                    roomEventFlow.emit(roomId to RoomEvent.RoomClosed("The host closed the room session."))
-                }
+                presenceFlows.remove(roomId)
             }
-
-            return Result.success(Unit)
+            Pair(isHost, member)
         }
+
+        scope.launch {
+            if (wasHost) {
+                roomEventFlow.emit(roomId to RoomEvent.RoomClosed("The host closed the room."))
+            } else if (leftMember != null) {
+                roomEventFlow.emit(roomId to RoomEvent.MemberLeft(leftMember.id, leftMember.name))
+            }
+        }
+        return Result.success(Unit)
     }
 
     override suspend fun sendPlaybackEvent(roomId: String, event: PlaybackEvent): Result<Unit> {
+        val room = synchronized(roomsLock) { activeRooms[roomId] } ?: return Result.failure(Exception("Room not found."))
+
         synchronized(roomsLock) {
-            val room = activeRooms[roomId]
-                ?: return Result.failure(NoSuchElementException("Room $roomId no longer exists."))
-
-            // Check host authority if HOST_ONLY
-            if (!RoomSecurityPolicy.canControlPlayback(event.senderId == room.hostId, room.info.controlMode)) {
-                return Result.failure(IllegalAccessException("Only the room host is authorized to control playback."))
-            }
-
-            room.lastUpdatedUtc = event.timestampUtc
             when (event.eventType) {
                 PlaybackEventType.PLAY -> {
                     room.isPlaying = true
@@ -353,8 +222,12 @@ class LocalSimulatedRealtimeBackend(
                 }
                 PlaybackEventType.TRACK_CHANGE -> {
                     room.currentTrack = event.track
-                    room.positionMs = 0L
-                    room.isPlaying = true
+                    room.positionMs = event.positionMs
+                    room.isPlaying = event.isPlaying
+                    if (event.queue.isNotEmpty()) {
+                        room.queue.clear()
+                        room.queue.addAll(event.queue)
+                    }
                 }
                 PlaybackEventType.QUEUE_UPDATE -> {
                     room.queue.clear()
@@ -363,36 +236,36 @@ class LocalSimulatedRealtimeBackend(
                         room.currentTrack = event.track
                     }
                 }
-                PlaybackEventType.SYNC_PING -> Unit
+                else -> Unit
             }
-
-            scope.launch {
-                when (event.eventType) {
-                    PlaybackEventType.PLAY, PlaybackEventType.PAUSE, PlaybackEventType.SEEK, PlaybackEventType.TRACK_CHANGE -> {
-                        roomEventFlow.emit(
-                            roomId to RoomEvent.PlaybackUpdated(
-                                isPlaying = room.isPlaying,
-                                positionMs = room.positionMs,
-                                track = room.currentTrack,
-                                timestampUtc = event.timestampUtc,
-                                senderId = event.senderId,
-                            )
-                        )
-                    }
-                    PlaybackEventType.QUEUE_UPDATE -> {
-                        roomEventFlow.emit(
-                            roomId to RoomEvent.QueueChanged(
-                                queue = room.queue.toList(),
-                                currentTrack = room.currentTrack,
-                            )
-                        )
-                    }
-                    PlaybackEventType.SYNC_PING -> Unit
-                }
-            }
-
-            return Result.success(Unit)
+            room.lastUpdatedUtc = event.timestampUtc
         }
+
+        scope.launch {
+            when (event.eventType) {
+                PlaybackEventType.PLAY, PlaybackEventType.PAUSE, PlaybackEventType.SEEK, PlaybackEventType.TRACK_CHANGE -> {
+                    roomEventFlow.emit(
+                        roomId to RoomEvent.PlaybackUpdated(
+                            isPlaying = room.isPlaying,
+                            positionMs = room.positionMs,
+                            track = room.currentTrack,
+                            timestampUtc = event.timestampUtc,
+                            senderId = event.senderId,
+                        ),
+                    )
+                }
+                PlaybackEventType.QUEUE_UPDATE -> {
+                    roomEventFlow.emit(
+                        roomId to RoomEvent.QueueChanged(
+                            queue = room.queue.toList(),
+                            currentTrack = room.currentTrack,
+                        ),
+                    )
+                }
+                else -> Unit
+            }
+        }
+        return Result.success(Unit)
     }
 
     override suspend fun updatePresence(
@@ -401,41 +274,90 @@ class LocalSimulatedRealtimeBackend(
         syncState: MemberSyncState,
         driftMs: Long,
     ): Result<Unit> {
-        synchronized(roomsLock) {
+        val updatedMembers = synchronized(roomsLock) {
             val room = activeRooms[roomId] ?: return Result.success(Unit)
             val index = room.members.indexOfFirst { it.id == memberId }
-            if (index >= 0) {
+            if (index != -1) {
                 val current = room.members[index]
                 room.members[index] = current.copy(syncState = syncState, driftMs = driftMs)
-                val updated = room.members.toList()
-                getOrCreatePresenceFlow(roomId).value = updated
-            }
-            return Result.success(Unit)
+                presenceFlows[roomId]?.value = room.members.toList()
+                room.members.toList()
+            } else null
         }
+
+        if (updatedMembers != null) {
+            scope.launch {
+                roomEventFlow.emit(roomId to RoomEvent.MemberPresenceChanged(updatedMembers))
+            }
+        }
+        return Result.success(Unit)
+    }
+
+    override suspend fun submitSongRequest(roomId: String, request: SongRequest): Result<Unit> {
+        val requestsList = synchronized(roomsLock) {
+            val room = activeRooms[roomId] ?: return Result.failure(Exception("Room not found."))
+            // Rate limit pending requests per user: max 5
+            val pendingCount = room.songRequests.count { it.requesterId == request.requesterId && it.status == SongRequestStatus.PENDING }
+            if (pendingCount >= 5) {
+                return Result.failure(Exception("You have reached the maximum limit of 5 pending requests. Please wait for the host to review."))
+            }
+            room.songRequests.add(request)
+            room.songRequests.toList()
+        }
+
+        scope.launch {
+            roomEventFlow.emit(roomId to RoomEvent.SongRequestsChanged(requestsList))
+        }
+        return Result.success(Unit)
+    }
+
+    override suspend fun updateSongRequestStatus(
+        roomId: String,
+        requestId: String,
+        status: SongRequestStatus,
+    ): Result<Unit> {
+        val (requestsList, approvedTrack, queueList) = synchronized(roomsLock) {
+            val room = activeRooms[roomId] ?: return Result.failure(Exception("Room not found."))
+            val idx = room.songRequests.indexOfFirst { it.id == requestId }
+            if (idx == -1) return Result.failure(Exception("Request not found."))
+
+            val updatedReq = room.songRequests[idx].copy(status = status)
+            room.songRequests[idx] = updatedReq
+
+            var trackAdded: PlayTogetherTrack? = null
+            if (status == SongRequestStatus.APPROVED) {
+                trackAdded = updatedReq.track
+                if (room.currentTrack == null) {
+                    room.currentTrack = trackAdded
+                    room.isPlaying = true
+                    room.positionMs = 0L
+                } else {
+                    room.queue.add(trackAdded)
+                }
+            }
+            Triple(room.songRequests.toList(), trackAdded, room.queue.toList())
+        }
+
+        scope.launch {
+            roomEventFlow.emit(roomId to RoomEvent.SongRequestsChanged(requestsList))
+            if (approvedTrack != null) {
+                roomEventFlow.emit(roomId to RoomEvent.QueueChanged(queueList, null))
+            }
+        }
+        return Result.success(Unit)
     }
 
     override fun observeRoomEvents(roomId: String): Flow<RoomEvent> {
-        return roomEventFlow.asSharedFlow()
+        return roomEventFlow
             .filter { it.first == roomId }
-            .let { shared ->
-                kotlinx.coroutines.flow.flow {
-                    shared.collect { pair -> emit(pair.second) }
-                }
-            }
+            .map { it.second }
     }
 
     override fun observePresence(roomId: String): Flow<List<RoomMember>> {
-        return getOrCreatePresenceFlow(roomId).asStateFlow()
+        return synchronized(roomsLock) {
+            presenceFlows.getOrPut(roomId) { MutableStateFlow(emptyList()) }.asStateFlow()
+        }
     }
 
     override fun isConnected(): Boolean = true
-
-    private fun getOrCreatePresenceFlow(roomId: String): MutableStateFlow<List<RoomMember>> {
-        return presenceFlows.getOrPut(roomId) {
-            val currentMembers = synchronized(roomsLock) {
-                activeRooms[roomId]?.members?.toList() ?: emptyList()
-            }
-            MutableStateFlow(currentMembers)
-        }
-    }
 }

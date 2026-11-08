@@ -5,11 +5,13 @@ import io.ymusic.ui.playtogether.MemberSyncState
 import io.ymusic.ui.playtogether.RoomInfo
 import io.ymusic.ui.playtogether.RoomMember
 import io.ymusic.ui.playtogether.RoomVisibility
+import io.ymusic.ui.playtogether.SongRequest
+import io.ymusic.ui.playtogether.SongRequestStatus
 import kotlinx.coroutines.flow.Flow
 
 /**
  * Common backend contract for Play Together real-time room sessions, presence, and sync.
- * Compatible with both Supabase Realtime (WebSockets) and local simulated relays.
+ * Compatible with Supabase Realtime (WebSockets) and local in-memory relay.
  */
 interface PlayTogetherBackend {
 
@@ -28,14 +30,16 @@ interface PlayTogetherBackend {
         hostName: String,
         visibility: RoomVisibility = RoomVisibility.PUBLIC,
         controlMode: ControlMode = ControlMode.HOST_ONLY,
+        password: String? = null,
     ): Result<RoomInfo>
 
     /**
-     * Verifies room code, checks capacity, and establishes real-time channel session.
+     * Verifies room code, checks capacity, checks password (if private), and establishes session.
      */
     suspend fun verifyAndJoinRoom(
         code: String,
         userName: String,
+        password: String? = null,
     ): Result<JoinRoomResult>
 
     /**
@@ -65,7 +69,24 @@ interface PlayTogetherBackend {
     ): Result<Unit>
 
     /**
-     * Subscribes to real-time incoming room events (playback, queue changes, member joins/leaves).
+     * Submits a new song request to the room.
+     */
+    suspend fun submitSongRequest(
+        roomId: String,
+        request: SongRequest,
+    ): Result<Unit>
+
+    /**
+     * Updates status of a song request (APPROVED, REJECTED).
+     */
+    suspend fun updateSongRequestStatus(
+        roomId: String,
+        requestId: String,
+        status: SongRequestStatus,
+    ): Result<Unit>
+
+    /**
+     * Subscribes to real-time incoming room events (playback, queue changes, song requests, member joins/leaves).
      */
     fun observeRoomEvents(roomId: String): Flow<RoomEvent>
 

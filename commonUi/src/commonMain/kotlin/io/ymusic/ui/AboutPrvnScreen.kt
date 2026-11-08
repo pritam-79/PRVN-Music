@@ -103,7 +103,7 @@ fun AboutPrvnDialog(graph: AppGraph, onDismiss: () -> Unit) {
                 }
 
                 item {
-                    AboutInfoRow("Version", "${graph.appVersionName ?: "0.0.2"} (Build ${graph.appVersionCode ?: 2})")
+                    AboutInfoRow("Version", "${graph.appVersionName ?: "0.0.3"} (Build ${graph.appVersionCode ?: 3})")
                     AboutInfoRow("Application ID", "com.prvn.music")
                     AboutInfoRow("Developer", "PRVN")
                     AboutInfoRow("Target Architecture", "Android ARM64 (arm64-v8a)")

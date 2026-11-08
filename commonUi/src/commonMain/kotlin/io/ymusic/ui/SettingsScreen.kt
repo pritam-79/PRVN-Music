@@ -1,9 +1,15 @@
 package io.ymusic.ui
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.ui.draw.clip
 import org.jetbrains.compose.resources.painterResource
 import io.ymusic.ui.resources.ic_app_icon_dj
@@ -196,8 +202,8 @@ fun SettingsScreen(graph: AppGraph, signedIn: Boolean = false, onLogin: () -> Un
     Column(Modifier.fillMaxSize().verticalScroll(scrollState).padding(bottom = DesignSpacing.SettingsSectionGap + LocalMiniPlayerInset.current)) {
         // 1. APPEARANCE
         SettingsSection(Res.string.settings_section_appearance) {
-            ThemeRow(
-                current = theme,
+            AppearanceModesSelector(
+                currentTheme = theme,
                 onSelect = { value -> scope.launch { graph.settings.put(AppSettings.theme, value) } },
             )
             AppIconPickerRow(graph)
@@ -1081,40 +1087,100 @@ internal fun CompactSwitch(checked: Boolean) {
     Switch(checked = checked, onCheckedChange = null, modifier = Modifier.scale(0.8f))
 }
 
-/** "" = follow system, per [AppSettings.theme]. */
-private val ThemeOptions: List<Pair<String, StringResource>> = listOf(
-    "" to Res.string.settings_theme_system,
-    "light" to Res.string.settings_theme_light,
-    "dark" to Res.string.settings_theme_dark,
-    "amoled" to Res.string.settings_theme_amoled,
-)
-
 @Composable
-private fun ThemeRow(current: String, onSelect: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Row(
+private fun AppearanceModesSelector(
+    currentTheme: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(
         Modifier
             .fillMaxWidth()
-            .clickable { open = true }
             .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            stringResource(Res.string.settings_theme),
+            "Appearance Mode",
             style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
-            modifier = Modifier.weight(1f),
         )
-        // The menu anchors to the value text, so it drops on the right under the current choice —
-        // anchored to the row it would open at the far-away left edge of the screen.
-        Box {
-            Text(
-                stringResource((ThemeOptions.firstOrNull { it.first == current } ?: ThemeOptions.first()).second),
-                style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary),
-            )
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                ThemeOptions.forEach { (value, label) ->
-                    DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { onSelect(value); open = false })
+        Text(
+            "Instant runtime theme switching without restarting PRVN Music",
+            style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+            modifier = Modifier.padding(top = 2.dp, bottom = 12.dp),
+        )
+
+        val activeKey = when (currentTheme.lowercase()) {
+            "liquid_glass", "glass" -> "liquid_glass"
+            "amoled", "black" -> "amoled"
+            "neon" -> "neon"
+            "minimal" -> "minimal"
+            else -> "static"
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppearanceMode.values().forEach { mode ->
+                val isSelected = activeKey == mode.key
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) mode.surfaceColor else DesignColors.SurfaceElevated,
+                    border = BorderStroke(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) mode.primaryColor else DesignColors.OutlineSoft,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onSelect(mode.key) },
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        // Color palette swatch
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                .size(width = 36.dp, height = 36.dp),
+                        ) {
+                            Box(Modifier.weight(1f).fillMaxHeight().background(mode.primaryColor))
+                            Box(Modifier.weight(1f).fillMaxHeight().background(mode.secondaryColor))
+                        }
+
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                mode.title,
+                                style = TextStyle(
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) mode.primaryColor else DesignColors.Ink,
+                                ),
+                            )
+                            Text(
+                                mode.subtitle,
+                                style = TextStyle(
+                                    fontSize = 11.5.sp,
+                                    color = if (isSelected) DesignColors.Ink else DesignColors.InkSecondary,
+                                ),
+                            )
+                        }
+
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(mode.primaryColor),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Check,
+                                    contentDescription = "Selected",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

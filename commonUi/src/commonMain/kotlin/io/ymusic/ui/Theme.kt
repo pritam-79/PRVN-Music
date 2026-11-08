@@ -132,18 +132,89 @@ val DarkDesignColors = DesignPalette(
     BrandGreen = Color(0xFF06B6D4),
 )
 
-/** Dark with every ground pure black, for OLED screens. */
+/** 1. Static appearance: clean, flat surfaces, minimal visual effects, stable colors. */
+val StaticDesignColors = DarkDesignColors.copy(
+    Surface = Color(0xFF0B0E14),
+    SurfaceDim = Color(0xFF10141D),
+    SurfaceElevated = Color(0xFF161B26),
+    SettingsCard = Color(0xFF161B26),
+    Accent = Color(0xFFA855F7),
+    BrandGreen = Color(0xFF06B6D4),
+)
+
+/** 2. Liquid Glass appearance: translucent glass surfaces, glowing depth, subtle reflections. */
+val LiquidGlassDesignColors = DarkDesignColors.copy(
+    Surface = Color(0xFF0E0B1A),
+    SurfaceDim = Color(0xFF140E26),
+    SurfaceElevated = Color(0xFF20153D),
+    SettingsCard = Color(0xFF1D1338),
+    Outline = Color(0x66A855F7),
+    OutlineSoft = Color(0x3306B6D4),
+    Accent = Color(0xFFC084FC),
+    BrandGreen = Color(0xFF38BDF8),
+)
+
+/** 3. AMOLED Black appearance: pure black surfaces (#000000) for OLED power saving and maximum contrast. */
 val AmoledDesignColors = DarkDesignColors.copy(
     Surface = Color.Black,
     SurfaceDim = Color.Black,
     SurfaceElevated = Color.Black,
-    SettingsCard = Color.Black,
+    SettingsCard = Color(0xFF0A0A0A),
+    Outline = Color(0xFF222222),
+    OutlineSoft = Color(0xFF161616),
+    InkStrong = Color.White,
+    Ink = Color(0xFFF1F5F9),
+    Accent = Color(0xFFA855F7),
+    BrandGreen = Color(0xFF06B6D4),
 )
 
+/** 4. Neon appearance: deep black cyberpunk aesthetic with glowing purple and cyan accents. */
+val NeonDesignColors = DarkDesignColors.copy(
+    Surface = Color(0xFF07080F),
+    SurfaceDim = Color(0xFF0C0E1C),
+    SurfaceElevated = Color(0xFF13172E),
+    SettingsCard = Color(0xFF111428),
+    Outline = Color(0xFF06B6D4),
+    OutlineSoft = Color(0xFF8B5CF6),
+    Accent = Color(0xFFA855F7),
+    BrandGreen = Color(0xFF06B6D4),
+    InkStrong = Color(0xFFF8FAFC),
+)
+
+/** 5. Minimal appearance: ultra-clean, monochrome flat grays with distraction-free styling. */
+val MinimalDesignColors = DarkDesignColors.copy(
+    Surface = Color(0xFF121214),
+    SurfaceDim = Color(0xFF18181B),
+    SurfaceElevated = Color(0xFF202024),
+    SettingsCard = Color(0xFF1C1C20),
+    Outline = Color(0xFF2E2E34),
+    OutlineSoft = Color(0xFF24242A),
+    Accent = Color(0xFFA1A1AA),
+    BrandGreen = Color(0xFFE4E4E7),
+    InkStrong = Color(0xFFF4F4F5),
+    Ink = Color(0xFFE4E4E7),
+    InkMuted = Color(0xFFA1A1AA),
+)
+
+enum class AppearanceMode(
+    val key: String,
+    val title: String,
+    val subtitle: String,
+    val primaryColor: Color,
+    val secondaryColor: Color,
+    val surfaceColor: Color,
+) {
+    STATIC("static", "Static", "Clean flat surfaces & stable colors", Color(0xFFA855F7), Color(0xFF06B6D4), Color(0xFF0B0E14)),
+    LIQUID_GLASS("liquid_glass", "Liquid Glass", "Translucent glass surfaces & depth", Color(0xFFC084FC), Color(0xFF38BDF8), Color(0xFF0E0B1A)),
+    AMOLED_BLACK("amoled", "AMOLED Black", "Pure black surfaces & max contrast", Color(0xFFA855F7), Color(0xFFFFFFFF), Color(0xFF000000)),
+    NEON("neon", "Neon", "Cyberpunk purple & cyan glow", Color(0xFFA855F7), Color(0xFF06B6D4), Color(0xFF07080F)),
+    MINIMAL("minimal", "Minimal", "Monochrome distraction-free styling", Color(0xFFA1A1AA), Color(0xFFE4E4E7), Color(0xFF121214)),
+}
+
 /** [AppSettings.theme] value → whether the UI is dark; "" follows the system. */
-fun isDarkTheme(theme: String, systemDark: Boolean): Boolean = when (theme) {
+fun isDarkTheme(theme: String, systemDark: Boolean): Boolean = when (theme.lowercase()) {
     "light" -> false
-    "dark", "amoled" -> true
+    "static", "dark", "liquid_glass", "glass", "amoled", "black", "neon", "minimal" -> true
     else -> systemDark
 }
 
@@ -175,12 +246,16 @@ fun accentHexOf(color: Color): String {
 
 /** The palette for [AppSettings.theme] and [AppSettings.themeAccent]. */
 fun designPaletteFor(theme: String, systemDark: Boolean, accentHex: String = ""): DesignPalette {
-    val base = when {
-        theme == "amoled" -> AmoledDesignColors
-        isDarkTheme(theme, systemDark) -> DarkDesignColors
-        else -> LightDesignColors
+    val base = when (theme.lowercase()) {
+        "liquid_glass", "glass" -> LiquidGlassDesignColors
+        "amoled", "black" -> AmoledDesignColors
+        "neon" -> NeonDesignColors
+        "minimal" -> MinimalDesignColors
+        "light" -> LightDesignColors
+        "static", "dark" -> StaticDesignColors
+        else -> if (systemDark) StaticDesignColors else LightDesignColors
     }
-    val accent = accentColorOf(accentHex)
+    val accent = if (accentHex.isNotBlank()) accentColorOf(accentHex) else base.Accent
     return if (accent == base.Accent) base else base.copy(Accent = accent)
 }
 

@@ -158,6 +158,9 @@ class PlayTogetherSyncEngine(
             is RoomEvent.MemberPresenceChanged, is RoomEvent.MemberJoined, is RoomEvent.MemberLeft -> {
                 // Presence updates
             }
+            is RoomEvent.SongRequestsChanged -> {
+                // Song requests updated
+            }
             is RoomEvent.RoomClosed -> {
                 player.pause()
                 detachFromRoom()

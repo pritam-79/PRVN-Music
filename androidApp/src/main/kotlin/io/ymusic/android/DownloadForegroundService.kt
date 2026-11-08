@@ -129,7 +129,16 @@ class DownloadForegroundService : Service() {
         }
         // The startForegroundService contract: enter foreground now; the collector replaces this
         // placeholder with real progress (or finishes) as soon as the graph is up.
-        startForeground(SUMMARY_NOTIFICATION_ID, placeholderSummary())
+        ServiceCompat.startForeground(
+            this,
+            SUMMARY_NOTIFICATION_ID,
+            placeholderSummary(),
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            } else {
+                0
+            },
+        )
         foreground = true
         return START_NOT_STICKY
     }
@@ -199,7 +208,16 @@ class DownloadForegroundService : Service() {
             // The summary is content-gated the same way as the cards.
             val summarySignature = owned.size * 100_000 + aggregatePermille(tasks)
             if (!foreground || summarySignature != lastSummarySignature) {
-                startForeground(SUMMARY_NOTIFICATION_ID, workingSummary(tasks))
+                ServiceCompat.startForeground(
+                    this,
+                    SUMMARY_NOTIFICATION_ID,
+                    workingSummary(tasks),
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    } else {
+                        0
+                    },
+                )
                 lastSummarySignature = summarySignature
             }
             foreground = true

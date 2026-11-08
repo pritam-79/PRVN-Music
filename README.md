@@ -32,12 +32,12 @@
 ## Verified Release Specifications (Android)
 
 - **Application ID**: `com.prvn.music`
-- **Release Version**: `0.0.2` (Version Code `2`)
-- **Package File**: `PRVN-Music-v0.02-arm64.apk`
-- **File Size**: `9,790,544` bytes (~9.34 MB)
+- **Release Version**: `0.0.3` (Version Code `3`)
+- **Package File**: `PRVN-Music-v0.03-arm64.apk`
+- **File Size**: `9,815,272` bytes (~9.36 MB)
 - **SHA-256 Checksum**:
   ```
-  0A74F52EEA369BCFF5A0A0637BAF4A62AA55C71603217509EADACD62299301FF
+  04AC358894B51E18E5687B5C50EB0117EC2961ED4683957D0B056A69F901FFE9
   ```
 - **Signing Scheme**: Android APK Signature Scheme v2 (Verified)
 - **Minimum OS Version**: Android 7.0 (API 24)

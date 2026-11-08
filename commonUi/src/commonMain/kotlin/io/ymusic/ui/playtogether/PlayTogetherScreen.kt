@@ -1,9 +1,6 @@
 package io.ymusic.ui.playtogether
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,13 +18,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.outlined.Check
@@ -36,20 +40,29 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.QueueMusic
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,12 +71,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -72,24 +87,30 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.ymusic.dynamicengine.yt.YtFeedItem
+import io.ymusic.dynamicengine.yt.musicSearch
+import io.ymusic.imageloader.AsyncImage
 import io.ymusic.settings.AppSettings
 import io.ymusic.settings.flow
 import io.ymusic.ui.AppGraph
 import io.ymusic.ui.DesignColors
 import io.ymusic.ui.DesignSpacing
+import io.ymusic.ui.LocalImageLoader
 import io.ymusic.ui.LocalMiniPlayerInset
 import io.ymusic.ui.PlaybackCoordinator
+import io.ymusic.ui.playtogether.backend.InviteLinkHelper
 import io.ymusic.ui.playtogether.backend.PlayTogetherBackendProvider
-import io.ymusic.ui.resources.Res
-import io.ymusic.ui.resources.ymusic_logo
-import org.jetbrains.compose.resources.painterResource
+import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 private val BrandPurpleDark = Color(0xFF1E0A3C)
 private val BrandPurpleMedium = Color(0xFF3B0764)
 private val BrandPurpleVibrant = Color(0xFFA855F7)
 private val BrandPurpleLight = Color(0xFFC084FC)
+private val BrandCyan = Color(0xFF06B6D4)
 private val StatusGreen = Color(0xFF10B981)
 private val StatusAmber = Color(0xFFF59E0B)
+private val StatusRed = Color(0xFFEF4444)
 
 @Composable
 fun PlayTogetherScreen(
@@ -100,16 +121,17 @@ fun PlayTogetherScreen(
     val state by controller.state.collectAsState()
     val realtimeUrl by remember(graph) { graph.settings.flow(AppSettings.playTogetherRealtimeUrl) }.collectAsState()
     val realtimeKey by remember(graph) { graph.settings.flow(AppSettings.playTogetherAnonKey) }.collectAsState()
+
     LaunchedEffect(realtimeUrl, realtimeKey) {
         PlayTogetherBackendProvider.configure(realtimeUrl, realtimeKey)
     }
+
     val syncEngine = remember(coordinator, controller) {
         PlayTogetherSyncEngine(coordinator, controller, graph.settings)
     }
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
-    var showAddSongDialog by remember { mutableStateOf(false) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var joinPresetCode by remember { mutableStateOf("") }
 
@@ -125,6 +147,7 @@ fun PlayTogetherScreen(
                     activeRooms = s.activeRooms,
                     errorMessage = s.errorMessage,
                     isBusy = s.isBusy,
+                    onRefresh = { controller.refreshPublicRooms() },
                     onCreateClick = { showCreateDialog = true },
                     onJoinClick = {
                         joinPresetCode = ""
@@ -138,14 +161,10 @@ fun PlayTogetherScreen(
             }
             is PlayTogetherState.InRoom -> {
                 ActiveRoomView(
+                    graph = graph,
                     state = s,
-                    onTogglePlayPause = { controller.togglePlayPause() },
-                    onNext = { controller.nextTrack() },
-                    onPrevious = { controller.previousTrack() },
-                    onSeek = { pos -> controller.seekTo(pos) },
+                    controller = controller,
                     onLeaveClick = { showLeaveConfirm = true },
-                    onAddSongClick = { showAddSongDialog = true },
-                    onRemoveFromQueue = { id -> controller.removeFromQueue(id) },
                 )
             }
         }
@@ -154,9 +173,9 @@ fun PlayTogetherScreen(
         if (showCreateDialog) {
             CreateRoomDialog(
                 onDismiss = { showCreateDialog = false },
-                onCreate = { name, host, code, vis, mode ->
+                onCreate = { name, host, code, vis, mode, pass ->
                     showCreateDialog = false
-                    controller.createRoom(name, host, code, vis, mode)
+                    controller.createRoom(name, host, code, vis, mode, pass)
                 },
             )
         }
@@ -165,19 +184,9 @@ fun PlayTogetherScreen(
             JoinRoomDialog(
                 initialCode = joinPresetCode,
                 onDismiss = { showJoinDialog = false },
-                onJoin = { code, user ->
+                onJoin = { code, user, pass ->
                     showJoinDialog = false
-                    controller.joinRoom(code, user)
-                },
-            )
-        }
-
-        if (showAddSongDialog) {
-            AddSongToQueueDialog(
-                onDismiss = { showAddSongDialog = false },
-                onAdd = { track ->
-                    showAddSongDialog = false
-                    controller.addToQueue(track)
+                    controller.joinRoom(code, user, pass)
                 },
             )
         }
@@ -186,7 +195,7 @@ fun PlayTogetherScreen(
             AlertDialog(
                 onDismissRequest = { showLeaveConfirm = false },
                 title = { Text("Leave Room?", color = DesignColors.Ink, fontWeight = FontWeight.Bold) },
-                text = { Text("Are you sure you want to disconnect from this synchronized listening session?", color = DesignColors.InkSecondary) },
+                text = { Text("Are you sure you want to disconnect from this synchronized session?", color = DesignColors.InkSecondary) },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -214,10 +223,21 @@ private fun LobbyView(
     activeRooms: List<RoomInfo>,
     errorMessage: String? = null,
     isBusy: Boolean = false,
+    onRefresh: () -> Unit,
     onCreateClick: () -> Unit,
     onJoinClick: () -> Unit,
     onQuickJoin: (RoomInfo) -> Unit,
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredRooms = remember(activeRooms, searchQuery) {
+        if (searchQuery.isBlank()) activeRooms
+        else activeRooms.filter {
+            it.name.contains(searchQuery, ignoreCase = true) ||
+                it.hostName.contains(searchQuery, ignoreCase = true) ||
+                it.code == searchQuery.trim()
+        }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -238,80 +258,65 @@ private fun LobbyView(
             ) {
                 Column {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(StatusGreen),
-                        )
-                        Text(
-                            text = "REALTIME SYNCHRONIZED PLAYBACK",
-                            style = TextStyle(
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BrandPurpleLight,
-                                letterSpacing = 1.sp,
-                            ),
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (PlayTogetherBackendProvider.isLiveConfigured) StatusGreen else BrandCyan),
+                            )
+                            Text(
+                                text = "LISTEN TOGETHER",
+                                style = TextStyle(
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 1.2.sp,
+                                    color = Color(0xFFE9D5FF),
+                                ),
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onRefresh,
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
-                    Spacer(Modifier.height(8.dp))
+
+                    Spacer(Modifier.height(10.dp))
+
                     Text(
-                        text = "Listen Together Anywhere",
+                        text = "Synchronized Music Rooms",
                         style = TextStyle(
-                            fontSize = 24.sp,
+                            fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                         ),
                     )
+
                     Spacer(Modifier.height(4.dp))
+
                     Text(
-                        text = "Synchronize audio playback with friends in real time. Ultra-low drift (<50ms) across Android and desktop.",
+                        text = "Listen with friends in real time. Shared queue, song requests, and drift correction.",
                         style = TextStyle(
-                            fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.85f),
-                            lineHeight = 18.sp,
+                            fontSize = 12.5.sp,
+                            color = Color(0xFFE9D5FF).copy(alpha = 0.9f),
+                            lineHeight = 17.sp,
                         ),
                     )
-                }
-            }
-        }
-
-        if (!PlayTogetherBackendProvider.isLiveConfigured) {
-            item("transparency_banner") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E1035))
-                        .border(1.dp, Color(0xFF7C3AED).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                        .padding(14.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 4.dp)
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFA855F7)),
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = "Local Relay Mode (Offline / Preview)",
-                                style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE9D5FF)),
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "Operating on-device via local simulated relay. To sync across separate devices in real time, configure your Supabase Realtime endpoint in Settings → Play Together.",
-                                style = TextStyle(fontSize = 11.5.sp, color = Color(0xFFC084FC).copy(alpha = 0.9f), lineHeight = 16.sp),
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -323,7 +328,7 @@ private fun LobbyView(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF3B1824))
-                        .border(1.dp, Color(0xFFF43F5E), RoundedCornerShape(12.dp))
+                        .border(1.dp, StatusRed, RoundedCornerShape(12.dp))
                         .padding(12.dp),
                 ) {
                     Text(
@@ -358,7 +363,7 @@ private fun LobbyView(
                     modifier = Modifier.weight(1f).height(50.dp),
                     shape = RoundedCornerShape(14.dp),
                     border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = Brush.horizontalGradient(listOf(BrandPurpleVibrant, BrandPurpleLight)),
+                        brush = Brush.horizontalGradient(listOf(BrandPurpleVibrant, BrandCyan)),
                     ),
                 ) {
                     Icon(Icons.Outlined.Group, contentDescription = null, tint = BrandPurpleVibrant)
@@ -368,10 +373,36 @@ private fun LobbyView(
             }
         }
 
+        // Search Filter Bar
+        item("search_filter") {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search rooms by name, host, or code...", fontSize = 13.sp, color = DesignColors.InkSecondary) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = DesignColors.InkSecondary, modifier = Modifier.size(18.dp)) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = DesignColors.InkSecondary)
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = DesignColors.Accent,
+                    unfocusedBorderColor = DesignColors.OutlineSoft,
+                    focusedTextColor = DesignColors.Ink,
+                    unfocusedTextColor = DesignColors.Ink,
+                ),
+            )
+        }
+
         // Section Title: Active Rooms
         item("rooms_header") {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -380,14 +411,14 @@ private fun LobbyView(
                     style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
                 )
                 Text(
-                    text = "${activeRooms.size} live",
+                    text = "${filteredRooms.size} active",
                     style = TextStyle(fontSize = 12.sp, color = DesignColors.Accent, fontWeight = FontWeight.SemiBold),
                 )
             }
         }
 
         // Active Rooms List
-        if (activeRooms.isEmpty()) {
+        if (filteredRooms.isEmpty()) {
             item("empty_rooms") {
                 Box(
                     modifier = Modifier
@@ -396,14 +427,15 @@ private fun LobbyView(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "No public rooms active right now.\nCreate one and invite your peers!",
+                        if (searchQuery.isBlank()) "No active public rooms right now.\nTap 'Create Room' to start listening together!"
+                        else "No rooms matched '$searchQuery'.",
                         textAlign = TextAlign.Center,
-                        style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary),
+                        style = TextStyle(fontSize = 13.5.sp, color = DesignColors.InkSecondary, lineHeight = 19.sp),
                     )
                 }
             }
         } else {
-            items(activeRooms, key = { it.id }) { room ->
+            items(filteredRooms, key = { it.id }) { room ->
                 RoomCard(room = room, onJoin = { onQuickJoin(room) })
             }
         }
@@ -427,12 +459,17 @@ private fun RoomCard(room: RoomInfo, onJoin: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = room.name,
-                        style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = room.name,
+                            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (room.visibility == RoomVisibility.PRIVATE) {
+                            Icon(Icons.Default.Lock, contentDescription = "Private", tint = BrandCyan, modifier = Modifier.size(14.dp))
+                        }
+                    }
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = "Host: ${room.hostName} · Code: ${room.code}",
@@ -502,59 +539,72 @@ private fun RoomCard(room: RoomInfo, onJoin: () -> Unit) {
 
 @Composable
 private fun ActiveRoomView(
+    graph: AppGraph,
     state: PlayTogetherState.InRoom,
-    onTogglePlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
-    onSeek: (Long) -> Unit,
+    controller: PlayTogetherController,
     onLeaveClick: () -> Unit,
-    onAddSongClick: () -> Unit,
-    onRemoveFromQueue: (String) -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     var copiedNotice by remember { mutableStateOf(false) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        // Room Top Info Banner
-        item("room_header") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
+    Column(Modifier.fillMaxSize()) {
+        // Top Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = state.room.name,
+                    style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
-                        text = state.room.name,
-                        style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        text = "Code: ${state.room.code}",
+                        style = TextStyle(fontSize = 13.sp, color = DesignColors.Accent, fontWeight = FontWeight.SemiBold),
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                clipboard.setText(AnnotatedString(state.room.code))
+                                copiedNotice = true
+                            }
+                            .padding(2.dp),
                     ) {
-                        Text(
-                            text = "Code: ${state.room.code}",
-                            style = TextStyle(fontSize = 13.sp, color = DesignColors.Accent, fontWeight = FontWeight.SemiBold),
+                        Icon(
+                            Icons.Outlined.ContentCopy,
+                            contentDescription = "Copy Code",
+                            tint = DesignColors.Accent,
+                            modifier = Modifier.size(14.dp),
                         )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable {
-                                    clipboard.setText(AnnotatedString(state.room.code))
-                                    copiedNotice = true
-                                }
-                                .padding(2.dp),
-                        ) {
-                            Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy Code", tint = DesignColors.Accent, modifier = Modifier.size(14.dp))
-                        }
-                        if (copiedNotice) {
-                            Text("Copied!", fontSize = 11.sp, color = StatusGreen, fontWeight = FontWeight.Bold)
-                        }
                     }
+                    if (copiedNotice) {
+                        Text("Copied!", fontSize = 11.sp, color = StatusGreen, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Sync status indicator
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(StatusGreen.copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = "Synced · ${state.syncOffsetMs}ms",
+                        style = TextStyle(fontSize = 11.sp, color = StatusGreen, fontWeight = FontWeight.Bold),
+                    )
                 }
 
                 Button(
@@ -568,450 +618,1209 @@ private fun ActiveRoomView(
             }
         }
 
-        if (state.errorMessage != null) {
-            item("room_error_banner") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF3B1824))
-                        .border(1.dp, Color(0xFFF43F5E), RoundedCornerShape(12.dp))
-                        .padding(12.dp),
-                ) {
-                    Text(
-                        text = state.errorMessage,
-                        style = TextStyle(fontSize = 12.sp, color = Color(0xFFFDA4AF), fontWeight = FontWeight.Medium),
-                    )
-                }
-            }
-        }
+        // Tab Navigation Row
+        val tabs = RoomTab.values()
+        val selectedIndex = tabs.indexOf(state.activeTab).coerceAtLeast(0)
 
-        // Synchronized Player Hero Card
-        item("player_hero") {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp)),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    // Artwork / Logo Disc
-                    Box(
-                        modifier = Modifier
-                            .size(130.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(BrandPurpleVibrant, BrandPurpleMedium, BrandPurpleDark),
+        ScrollableTabRow(
+            selectedTabIndex = selectedIndex,
+            containerColor = DesignColors.Surface,
+            contentColor = DesignColors.Accent,
+            edgePadding = 16.dp,
+            indicator = { tabPositions ->
+                TabRowDefaults.Indicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedIndex]),
+                    color = DesignColors.Accent,
+                    height = 2.5.dp,
+                )
+            },
+            divider = { HorizontalDivider(color = DesignColors.OutlineSoft.copy(alpha = 0.3f)) },
+        ) {
+            tabs.forEach { tab ->
+                val isSelected = tab == state.activeTab
+                Tab(
+                    selected = isSelected,
+                    onClick = { controller.switchTab(tab) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = tab.label,
+                                style = TextStyle(
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) DesignColors.Accent else DesignColors.InkSecondary,
                                 ),
                             )
-                            .border(1.5.dp, BrandPurpleVibrant.copy(alpha = 0.5f), RoundedCornerShape(18.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Image(
-                            painter = painterResource(Res.drawable.ymusic_logo),
-                            contentDescription = null,
-                            modifier = Modifier.size(72.dp),
-                        )
-                    }
-
-                    Spacer(Modifier.height(14.dp))
-
-                    // Track Title & Artist
-                    Text(
-                        text = state.currentTrack?.title ?: "No Track Playing",
-                        style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = state.currentTrack?.artist ?: "Add a song to room queue",
-                        style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // Realtime Synced Progress Slider
-                    val trackDuration = state.currentTrack?.durationMs ?: 1L
-                    val currentPos = state.positionMs.coerceIn(0L, trackDuration)
-                    val sliderValue = (currentPos.toFloat() / trackDuration.toFloat()).coerceIn(0f, 1f)
-
-                    Slider(
-                        value = sliderValue,
-                        onValueChange = { frac ->
-                            val targetMs = (frac * trackDuration).toLong()
-                            onSeek(targetMs)
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = DesignColors.Accent,
-                            activeTrackColor = DesignColors.Accent,
-                            inactiveTrackColor = DesignColors.Outline,
-                        ),
-                        modifier = Modifier.fillMaxWidth().height(24.dp),
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(formatTime(currentPos), fontSize = 11.sp, color = DesignColors.InkSecondary)
-                        Text(formatTime(trackDuration), fontSize = 11.sp, color = DesignColors.InkSecondary)
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // Playback Controls
-                    val canControl = state.isHost || state.controlMode == ControlMode.COLLABORATIVE
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
-                    ) {
-                        IconButton(
-                            onClick = onPrevious,
-                            enabled = canControl,
-                        ) {
-                            Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = if (canControl) DesignColors.Ink else DesignColors.Outline, modifier = Modifier.size(28.dp))
+                            when (tab) {
+                                RoomTab.SHARED_QUEUE -> {
+                                    if (state.queue.isNotEmpty()) {
+                                        BadgePill("${state.queue.size}")
+                                    }
+                                }
+                                RoomTab.SONG_REQUESTS -> {
+                                    val pending = state.songRequests.count { it.status == SongRequestStatus.PENDING }
+                                    if (pending > 0) {
+                                        BadgePill("$pending", color = StatusAmber)
+                                    }
+                                }
+                                RoomTab.PARTICIPANTS -> {
+                                    BadgePill("${state.members.size}")
+                                }
+                                else -> Unit
+                            }
                         }
-
-                        // Big Play/Pause Button
-                        Box(
-                            modifier = Modifier
-                                .size(54.dp)
-                                .clip(CircleShape)
-                                .background(if (canControl) DesignColors.Accent else DesignColors.Outline)
-                                .clickable(enabled = canControl) { onTogglePlayPause() },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (state.isPlaying) "Pause" else "Play",
-                                tint = Color.White,
-                                modifier = Modifier.size(30.dp),
-                            )
-                        }
-
-                        IconButton(
-                            onClick = onNext,
-                            enabled = canControl,
-                        ) {
-                            Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = if (canControl) DesignColors.Ink else DesignColors.Outline, modifier = Modifier.size(28.dp))
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // Sync Status Badge
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(StatusGreen.copy(alpha = 0.12f))
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    ) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(StatusGreen))
-                        Text(
-                            text = "Synchronized (${state.syncOffsetMs} ms drift)",
-                            style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = StatusGreen),
-                        )
-                    }
-
-                    if (!canControl) {
-                        Text(
-                            text = "Host controls playback in this room",
-                            style = TextStyle(fontSize = 11.sp, color = DesignColors.InkSecondary),
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                }
-            }
-        }
-
-        // Room Members List Section
-        item("members_section") {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Room Listeners (${state.members.size})",
-                    style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+                    },
                 )
+            }
+        }
+
+        // Tab Content
+        Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            when (state.activeTab) {
+                RoomTab.NOW_PLAYING -> {
+                    NowPlayingTabView(
+                        state = state,
+                        onTogglePlayPause = { controller.togglePlayPause() },
+                        onNext = { controller.nextTrack() },
+                        onPrevious = { controller.previousTrack() },
+                        onSeek = { controller.seekTo(it) },
+                        onGoToSearch = { controller.switchTab(RoomTab.SEARCH_MUSIC) },
+                    )
+                }
+                RoomTab.SHARED_QUEUE -> {
+                    SharedQueueTabView(
+                        state = state,
+                        onRemove = { controller.removeFromQueue(it) },
+                        onMoveUp = { idx -> controller.reorderQueue(idx, idx - 1) },
+                        onMoveDown = { idx -> controller.reorderQueue(idx, idx + 1) },
+                        onClearQueue = { controller.clearQueue() },
+                        onGoToSearch = { controller.switchTab(RoomTab.SEARCH_MUSIC) },
+                    )
+                }
+                RoomTab.SEARCH_MUSIC -> {
+                    InRoomSearchTabView(
+                        graph = graph,
+                        state = state,
+                        onAddToQueue = { track -> controller.addToQueue(track) },
+                        onRequestSong = { track, user -> controller.submitSongRequest(track, user) },
+                    )
+                }
+                RoomTab.SONG_REQUESTS -> {
+                    SongRequestsTabView(
+                        state = state,
+                        onApprove = { controller.approveSongRequest(it) },
+                        onReject = { controller.rejectSongRequest(it) },
+                        onCancel = { controller.cancelSongRequest(it) },
+                    )
+                }
+                RoomTab.PARTICIPANTS -> {
+                    ParticipantsTabView(state = state)
+                }
+                RoomTab.HOST_CONTROLS -> {
+                    HostControlsTabView(
+                        state = state,
+                        controller = controller,
+                        onLeaveRoom = onLeaveClick,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BadgePill(text: String, color: Color = BrandPurpleVibrant) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(color.copy(alpha = 0.2f))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    ) {
+        Text(text, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color)
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// TAB 1: NOW PLAYING
+// -------------------------------------------------------------------------------------------------
+
+@Composable
+private fun NowPlayingTabView(
+    state: PlayTogetherState.InRoom,
+    onTogglePlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onGoToSearch: () -> Unit,
+) {
+    val track = state.currentTrack
+    val imageLoader = LocalImageLoader.current
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        // Artwork and Info
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f, fill = false)) {
+            Spacer(Modifier.height(16.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(240.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(BrandPurpleDark)
+                    .border(1.dp, BrandPurpleVibrant.copy(alpha = 0.3f), RoundedCornerShape(20.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (track?.artworkUrl != null && imageLoader != null) {
+                    AsyncImage(
+                        loader = imageLoader,
+                        url = track.artworkUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.MusicNote,
+                        contentDescription = null,
+                        tint = BrandPurpleLight,
+                        modifier = Modifier.size(72.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                text = track?.title ?: "No Song Playing",
+                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            Text(
+                text = track?.artist ?: "Search songs below to start synchronized playback",
+                style = TextStyle(fontSize = 14.sp, color = DesignColors.InkSecondary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+
+            if (track != null) {
                 Spacer(Modifier.height(8.dp))
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(DesignColors.SettingsCard)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
-                    items(state.members, key = { it.id }) { member ->
-                        MemberChip(member = member)
-                    }
+                    Text(
+                        text = "Added by ${track.addedBy}",
+                        style = TextStyle(fontSize = 11.5.sp, color = DesignColors.Accent, fontWeight = FontWeight.Medium),
+                    )
                 }
             }
         }
 
-        // Shared Queue Section
-        item("queue_header") {
+        // Playback Controls
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            val totalMs = track?.durationMs ?: 210000L
+            val currentMs = state.positionMs.coerceIn(0L, totalMs)
+            val sliderValue = if (totalMs > 0) currentMs.toFloat() / totalMs.toFloat() else 0f
+
+            Slider(
+                value = sliderValue,
+                onValueChange = { fraction ->
+                    val newPos = (fraction * totalMs).toLong()
+                    onSeek(newPos)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = DesignColors.Accent,
+                    activeTrackColor = DesignColors.Accent,
+                    inactiveTrackColor = DesignColors.OutlineSoft,
+                ),
+            )
+
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(formatDurationMs(currentMs), fontSize = 11.sp, color = DesignColors.InkSecondary)
+                Text(formatDurationMs(totalMs), fontSize = 11.sp, color = DesignColors.InkSecondary)
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Transport Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "Room Queue (${state.queue.size})",
-                    style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
-                )
+                IconButton(onClick = onPrevious, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = DesignColors.Ink, modifier = Modifier.size(30.dp))
+                }
+
+                Spacer(Modifier.width(16.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clip(CircleShape)
+                        .background(DesignColors.Accent)
+                        .clickable { onTogglePlayPause() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (state.isPlaying) "Pause" else "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(34.dp),
+                    )
+                }
+
+                Spacer(Modifier.width(16.dp))
+
+                IconButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = DesignColors.Ink, modifier = Modifier.size(30.dp))
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Button(
+                onClick = onGoToSearch,
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DesignColors.SettingsCard),
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null, tint = DesignColors.Accent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Search & Queue Songs", color = DesignColors.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// TAB 2: SHARED QUEUE
+// -------------------------------------------------------------------------------------------------
+
+@Composable
+private fun SharedQueueTabView(
+    state: PlayTogetherState.InRoom,
+    onRemove: (String) -> Unit,
+    onMoveUp: (Int) -> Unit,
+    onMoveDown: (Int) -> Unit,
+    onClearQueue: () -> Unit,
+    onGoToSearch: () -> Unit,
+) {
+    val imageLoader = LocalImageLoader.current
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Up Next (${state.queue.size})",
+                style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (state.isHost && state.queue.isNotEmpty()) {
+                    TextButton(onClick = onClearQueue) {
+                        Text("Clear All", color = StatusRed, fontSize = 12.sp)
+                    }
+                }
                 Button(
-                    onClick = onAddSongClick,
+                    onClick = onGoToSearch,
+                    modifier = Modifier.height(34.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
-                    modifier = Modifier.height(30.dp),
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Add Song", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Add Song", fontSize = 12.sp, color = Color.White)
                 }
             }
         }
 
         if (state.queue.isEmpty()) {
-            item("empty_queue") {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Outlined.QueueMusic, contentDescription = null, tint = DesignColors.InkSecondary, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(12.dp))
                     Text(
-                        "No songs in queue. Tap '+ Add Song' to queue tracks!",
-                        fontSize = 12.sp,
-                        color = DesignColors.InkSecondary,
+                        "Shared queue is empty.",
+                        style = TextStyle(fontSize = 14.sp, color = DesignColors.InkSecondary),
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = onGoToSearch,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
+                    ) {
+                        Text("Search Songs to Add", color = Color.White, fontSize = 13.sp)
+                    }
                 }
             }
         } else {
-            items(state.queue, key = { it.id }) { track ->
-                QueueTrackRow(
-                    track = track,
-                    canDelete = state.isHost || state.controlMode == ControlMode.COLLABORATIVE,
-                    onDelete = { onRemoveFromQueue(track.id) },
-                )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(state.queue, key = { index, item -> "${item.id}_$index" }) { index, track ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                "${index + 1}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = DesignColors.InkSecondary,
+                                modifier = Modifier.width(20.dp),
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(BrandPurpleDark),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (track.artworkUrl != null && imageLoader != null) {
+                                    AsyncImage(
+                                        loader = imageLoader,
+                                        url = track.artworkUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Icon(Icons.Outlined.MusicNote, contentDescription = null, tint = BrandPurpleLight, modifier = Modifier.size(20.dp))
+                                }
+                            }
+
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    track.title,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DesignColors.Ink,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "${track.artist} · Added by ${track.addedBy}",
+                                    fontSize = 11.sp,
+                                    color = DesignColors.InkSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            if (state.isHost) {
+                                if (index > 0) {
+                                    IconButton(onClick = { onMoveUp(index) }, modifier = Modifier.size(26.dp)) {
+                                        Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up", tint = DesignColors.InkSecondary, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                if (index < state.queue.size - 1) {
+                                    IconButton(onClick = { onMoveDown(index) }, modifier = Modifier.size(26.dp)) {
+                                        Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down", tint = DesignColors.InkSecondary, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                                IconButton(onClick = { onRemove(track.id) }, modifier = Modifier.size(26.dp)) {
+                                    Icon(Icons.Outlined.Delete, contentDescription = "Remove", tint = StatusRed, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
+// -------------------------------------------------------------------------------------------------
+// TAB 3: IN-ROOM MUSIC SEARCH
+// -------------------------------------------------------------------------------------------------
+
 @Composable
-private fun MemberChip(member: RoomMember) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(DesignColors.SettingsCard)
-            .border(1.dp, if (member.isHost) BrandPurpleVibrant.copy(alpha = 0.5f) else DesignColors.Outline, RoundedCornerShape(20.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(if (member.isHost) BrandPurpleVibrant else DesignColors.Outline),
-            contentAlignment = Alignment.Center,
+private fun InRoomSearchTabView(
+    graph: AppGraph,
+    state: PlayTogetherState.InRoom,
+    onAddToQueue: (PlayTogetherTrack) -> Unit,
+    onRequestSong: (PlayTogetherTrack, String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<YtFeedItem>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+    var searchError by remember { mutableStateOf<String?>(null) }
+    var lastActionNotice by remember { mutableStateOf<String?>(null) }
+    val imageLoader = LocalImageLoader.current
+
+    fun performSearch() {
+        val q = query.trim()
+        if (q.isBlank()) return
+        isSearching = true
+        searchError = null
+        scope.launch {
+            try {
+                val page = graph.engines.musicSearch(query = q, logger = graph.logger?.fork("room-search"))
+                val results = page.sections.flatMap { it.items }
+                searchResults = results.filter { it.kind == YtFeedItem.KIND_VIDEO }
+            } catch (e: Exception) {
+                searchError = e.message ?: "Search failed. Check network connection."
+            } finally {
+                isSearching = false
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("Search songs or artists on YouTube Music...", fontSize = 13.sp, color = DesignColors.InkSecondary) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = DesignColors.InkSecondary) },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear", tint = DesignColors.InkSecondary)
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = DesignColors.Accent,
+                unfocusedBorderColor = DesignColors.OutlineSoft,
+                focusedTextColor = DesignColors.Ink,
+                unfocusedTextColor = DesignColors.Ink,
+            ),
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = member.name.take(1).uppercase(),
-                style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White),
+                "Playback continues while searching",
+                fontSize = 11.5.sp,
+                color = StatusGreen,
+                fontWeight = FontWeight.Medium,
             )
+
+            Button(
+                onClick = { performSearch() },
+                modifier = Modifier.height(36.dp),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
+            ) {
+                Text("Search", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            }
         }
-        Text(
-            text = member.name,
-            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
-        )
-        if (member.isHost) {
+
+        if (lastActionNotice != null) {
+            Spacer(Modifier.height(8.dp))
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(BrandPurpleVibrant.copy(alpha = 0.2f))
-                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(StatusGreen.copy(alpha = 0.15f))
+                    .padding(8.dp),
             ) {
-                Text("HOST", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = BrandPurpleVibrant)
+                Text(lastActionNotice ?: "", fontSize = 12.sp, color = StatusGreen, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        if (searchError != null) {
+            Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(StatusRed.copy(alpha = 0.15f))
+                    .padding(8.dp),
+            ) {
+                Text(searchError ?: "", fontSize = 12.sp, color = StatusRed)
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        if (isSearching) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = DesignColors.Accent, modifier = Modifier.size(32.dp))
+            }
+        } else if (searchResults.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Search songs to add directly to the queue\nor submit a song request to the host.",
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary, lineHeight = 18.sp),
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(searchResults, key = { it.id }) { item ->
+                    val thumbUrl = item.thumbs.lastOrNull()?.url
+                    val playTrack = PlayTogetherTrack(
+                        id = item.id,
+                        title = item.title,
+                        artist = item.channelTitle ?: item.subtitleLine1 ?: "Unknown Artist",
+                        artworkUrl = thumbUrl,
+                        durationMs = item.durationMs ?: 210000L,
+                        isYouTube = true,
+                        addedBy = state.room.hostName,
+                    )
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(BrandPurpleDark),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (thumbUrl != null && imageLoader != null) {
+                                    AsyncImage(
+                                        loader = imageLoader,
+                                        url = thumbUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Icon(Icons.Outlined.MusicNote, contentDescription = null, tint = BrandPurpleLight, modifier = Modifier.size(20.dp))
+                                }
+                            }
+
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    item.title,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DesignColors.Ink,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    item.channelTitle ?: item.subtitleLine1 ?: "",
+                                    fontSize = 11.5.sp,
+                                    color = DesignColors.InkSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            // Action buttons
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (state.isHost || state.controlMode == ControlMode.COLLABORATIVE) {
+                                    Button(
+                                        onClick = {
+                                            onAddToQueue(playTrack)
+                                            lastActionNotice = "Added '${playTrack.title}' to queue"
+                                        },
+                                        modifier = Modifier.height(32.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
+                                    ) {
+                                        Text("Queue", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        val selfName = state.members.firstOrNull { it.id == state.currentMemberId }?.name ?: "Listener"
+                                        onRequestSong(playTrack, selfName)
+                                        lastActionNotice = "Requested '${playTrack.title}'"
+                                    },
+                                    modifier = Modifier.height(32.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandPurpleDark),
+                                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                                        brush = Brush.horizontalGradient(listOf(BrandPurpleVibrant, BrandCyan)),
+                                    ),
+                                ) {
+                                    Text("Request", fontSize = 11.sp, color = BrandPurpleLight, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// TAB 4: SONG REQUESTS
+// -------------------------------------------------------------------------------------------------
+
+@Composable
+private fun SongRequestsTabView(
+    state: PlayTogetherState.InRoom,
+    onApprove: (String) -> Unit,
+    onReject: (String) -> Unit,
+    onCancel: (String) -> Unit,
+) {
+    var statusFilter by remember { mutableStateOf<SongRequestStatus?>(null) }
+    val imageLoader = LocalImageLoader.current
+
+    val filtered = remember(state.songRequests, statusFilter) {
+        if (statusFilter == null) state.songRequests
+        else state.songRequests.filter { it.status == statusFilter }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(label = "All (${state.songRequests.size})", selected = statusFilter == null, onClick = { statusFilter = null })
+            FilterChip(
+                label = "Pending (${state.songRequests.count { it.status == SongRequestStatus.PENDING }})",
+                selected = statusFilter == SongRequestStatus.PENDING,
+                onClick = { statusFilter = SongRequestStatus.PENDING },
+            )
+            FilterChip(
+                label = "Approved (${state.songRequests.count { it.status == SongRequestStatus.APPROVED }})",
+                selected = statusFilter == SongRequestStatus.APPROVED,
+                onClick = { statusFilter = SongRequestStatus.APPROVED },
+            )
+            FilterChip(
+                label = "Rejected (${state.songRequests.count { it.status == SongRequestStatus.REJECTED }})",
+                selected = statusFilter == SongRequestStatus.REJECTED,
+                onClick = { statusFilter = SongRequestStatus.REJECTED },
+            )
+        }
+
+        if (filtered.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "No song requests in this category.\nListeners can submit requests from the Search tab.",
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary, lineHeight = 18.sp),
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(filtered, key = { it.id }) { req ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(BrandPurpleDark),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (req.track.artworkUrl != null && imageLoader != null) {
+                                        AsyncImage(
+                                            loader = imageLoader,
+                                            url = req.track.artworkUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    } else {
+                                        Icon(Icons.Outlined.MusicNote, contentDescription = null, tint = BrandPurpleLight, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        req.track.title,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DesignColors.Ink,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        "${req.track.artist} · By ${req.requesterName}",
+                                        fontSize = 11.5.sp,
+                                        color = DesignColors.InkSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+
+                                // Status Badge
+                                val (badgeBg, badgeText, badgeColor) = when (req.status) {
+                                    SongRequestStatus.PENDING -> Triple(StatusAmber.copy(alpha = 0.15f), "Pending", StatusAmber)
+                                    SongRequestStatus.APPROVED -> Triple(StatusGreen.copy(alpha = 0.15f), "Approved", StatusGreen)
+                                    SongRequestStatus.REJECTED -> Triple(StatusRed.copy(alpha = 0.15f), "Rejected", StatusRed)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(badgeBg)
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                ) {
+                                    Text(badgeText, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = badgeColor)
+                                }
+                            }
+
+                            // Host action buttons for PENDING requests
+                            if (state.isHost && req.status == SongRequestStatus.PENDING) {
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { onReject(req.id) },
+                                        modifier = Modifier.height(30.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                    ) {
+                                        Text("Reject", fontSize = 11.sp, color = StatusRed)
+                                    }
+
+                                    Spacer(Modifier.width(8.dp))
+
+                                    Button(
+                                        onClick = { onApprove(req.id) },
+                                        modifier = Modifier.height(30.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = StatusGreen),
+                                    ) {
+                                        Text("Approve & Queue", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            } else if (!state.isHost && req.requesterId == state.currentMemberId && req.status == SongRequestStatus.PENDING) {
+                                Spacer(Modifier.height(8.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    TextButton(onClick = { onCancel(req.id) }) {
+                                        Text("Cancel Request", fontSize = 11.sp, color = StatusRed)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun QueueTrackRow(
-    track: PlayTogetherTrack,
-    canDelete: Boolean,
-    onDelete: () -> Unit,
-) {
-    Row(
+private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(DesignColors.SettingsCard)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) DesignColors.Accent else DesignColors.SettingsCard)
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(BrandPurpleMedium),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Outlined.MusicNote, contentDescription = null, tint = BrandPurpleLight, modifier = Modifier.size(18.dp))
-        }
-
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${track.artist} · Added by ${track.addedBy}",
-                style = TextStyle(fontSize = 11.sp, color = DesignColors.InkSecondary),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
         Text(
-            text = formatTime(track.durationMs),
-            style = TextStyle(fontSize = 11.sp, color = DesignColors.InkSecondary),
+            label,
+            fontSize = 11.5.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) Color.White else DesignColors.InkSecondary,
+        )
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// TAB 5: PARTICIPANTS
+// -------------------------------------------------------------------------------------------------
+
+@Composable
+private fun ParticipantsTabView(state: PlayTogetherState.InRoom) {
+    Column(Modifier.fillMaxSize()) {
+        Text(
+            "Connected Listeners (${state.members.size})",
+            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+            modifier = Modifier.padding(bottom = 12.dp),
         )
 
-        if (canDelete) {
-            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Outlined.Delete, contentDescription = "Remove", tint = DesignColors.InkSecondary, modifier = Modifier.size(16.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(state.members, key = { it.id }) { member ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(if (member.isHost) BrandPurpleVibrant else BrandCyan),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                member.name.take(1).uppercase(),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                            )
+                        }
+
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    member.name,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = DesignColors.Ink,
+                                )
+                                if (member.isHost) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(BrandPurpleVibrant.copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                                    ) {
+                                        Text("HOST", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = BrandPurpleVibrant)
+                                    }
+                                }
+                                if (member.id == state.currentMemberId) {
+                                    Text("(You)", fontSize = 11.sp, color = DesignColors.InkSecondary)
+                                }
+                            }
+
+                            Text(
+                                "Drift: ${member.driftMs}ms",
+                                fontSize = 11.5.sp,
+                                color = DesignColors.InkSecondary,
+                            )
+                        }
+
+                        val (syncBg, syncLabel, syncColor) = when (member.syncState) {
+                            MemberSyncState.SYNCED -> Triple(StatusGreen.copy(alpha = 0.15f), "Synced", StatusGreen)
+                            MemberSyncState.BUFFERING -> Triple(StatusAmber.copy(alpha = 0.15f), "Buffering", StatusAmber)
+                            MemberSyncState.SYNCING -> Triple(BrandCyan.copy(alpha = 0.15f), "Syncing", BrandCyan)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(syncBg)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text(syncLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = syncColor)
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+// -------------------------------------------------------------------------------------------------
+// TAB 6: HOST CONTROLS
+// -------------------------------------------------------------------------------------------------
+
+@Composable
+private fun HostControlsTabView(
+    state: PlayTogetherState.InRoom,
+    controller: PlayTogetherController,
+    onLeaveRoom: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    var linkCopied by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(
+            "Room & Session Settings",
+            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+        )
+
+        // Share Invitation Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Invite Listeners", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Share the 4-digit code or deep link with friends to listen together.",
+                    fontSize = 12.sp,
+                    color = DesignColors.InkSecondary,
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val link = InviteLinkHelper.createDeepLink(state.room.code, state.room.name)
+                            clipboard.setText(AnnotatedString(link))
+                            linkCopied = true
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
+                        modifier = Modifier.height(36.dp),
+                    ) {
+                        Icon(Icons.Outlined.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (linkCopied) "Link Copied!" else "Copy Invite Link", fontSize = 12.sp, color = Color.White)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(state.room.code))
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.height(36.dp),
+                    ) {
+                        Text("Code: ${state.room.code}", fontSize = 12.sp, color = DesignColors.Ink)
+                    }
+                }
+            }
+        }
+
+        // Host Control Permissions (Only active for Host)
+        if (state.isHost) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Host Authority", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Collaborative Control", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink)
+                            Text("Allow all listeners to play, pause, and skip songs", fontSize = 11.5.sp, color = DesignColors.InkSecondary)
+                        }
+                        Switch(
+                            checked = state.controlMode == ControlMode.COLLABORATIVE,
+                            onCheckedChange = { isCollab ->
+                                controller.setControlMode(if (isCollab) ControlMode.COLLABORATIVE else ControlMode.HOST_ONLY)
+                            },
+                        )
+                    }
+
+                    HorizontalDivider(color = DesignColors.OutlineSoft.copy(alpha = 0.3f))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Allow Song Requests", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink)
+                            Text("Listeners can search and submit songs for approval", fontSize = 11.5.sp, color = DesignColors.InkSecondary)
+                        }
+                        Switch(
+                            checked = state.allowListenerRequests,
+                            onCheckedChange = { controller.toggleAllowRequests(it) },
+                        )
+                    }
+                }
+            }
+
+            // Destructive actions
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Session Actions", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink)
+
+                    Button(
+                        onClick = { controller.clearQueue() },
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusAmber.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Clear Shared Queue", fontSize = 12.sp, color = StatusAmber, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = onLeaveRoom,
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("End Session & Close Room", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        } else {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = DesignColors.SettingsCard),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Listener Status", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "You are connected as a listener. The host controls playback permissions and approves requests.",
+                        fontSize = 12.sp,
+                        color = DesignColors.InkSecondary,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Button(
+                        onClick = onLeaveRoom,
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Leave Room", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------------
+// DIALOGS
+// -------------------------------------------------------------------------------------------------
 
 @Composable
 private fun CreateRoomDialog(
     onDismiss: () -> Unit,
-    onCreate: (name: String, host: String, code: String, vis: RoomVisibility, mode: ControlMode) -> Unit,
+    onCreate: (name: String, hostName: String, code: String, visibility: RoomVisibility, mode: ControlMode, password: String?) -> Unit,
 ) {
-    var roomName by remember { mutableStateOf("PRVN Lounge") }
-    var hostName by remember { mutableStateOf("DJ PRVN") }
-    var roomCode by remember { mutableStateOf(kotlin.random.Random.nextInt(1000, 9999).toString()) }
-    var visibility by remember { mutableStateOf(RoomVisibility.PUBLIC) }
-    var controlMode by remember { mutableStateOf(ControlMode.COLLABORATIVE) }
+    var roomName by remember { mutableStateOf("PRVN Music Lounge") }
+    var hostName by remember { mutableStateOf("PRVN Host") }
+    var roomCode by remember { mutableStateOf(Random.nextInt(1000, 9999).toString()) }
+    var isPrivate by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var isCollaborative by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Play Together Room", fontWeight = FontWeight.Bold, color = DesignColors.Ink) },
+        title = { Text("Create Music Room", color = DesignColors.Ink, fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = roomName,
                     onValueChange = { roomName = it },
                     label = { Text("Room Name") },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DesignColors.Accent,
-                        focusedLabelColor = DesignColors.Accent,
-                    ),
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 OutlinedTextField(
                     value = hostName,
                     onValueChange = { hostName = it },
-                    label = { Text("Your Nickname") },
+                    label = { Text("Your Display Name") },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DesignColors.Accent,
-                        focusedLabelColor = DesignColors.Accent,
-                    ),
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 OutlinedTextField(
                     value = roomCode,
-                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) roomCode = it },
-                    label = { Text("Custom 4-Digit Room Code") },
-                    placeholder = { Text("e.g. 4821") },
+                    onValueChange = { if (it.length <= 4) roomCode = it },
+                    label = { Text("4-Digit Room Code") },
                     singleLine = true,
-                    supportingText = {
-                        if (roomCode.length != 4) {
-                            Text("Must be exactly 4 digits", color = Color(0xFFF43F5E), fontSize = 11.sp)
-                        }
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DesignColors.Accent,
-                        focusedLabelColor = DesignColors.Accent,
-                    ),
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                // Visibility selector
-                Text("Room Visibility", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RoomVisibility.entries.forEach { vis ->
-                        val selected = vis == visibility
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected) DesignColors.Accent else DesignColors.SettingsCard)
-                                .clickable { visibility = vis }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Text(
-                                text = when (vis) {
-                                    RoomVisibility.PUBLIC -> "Public"
-                                    RoomVisibility.INVITE_ONLY -> "Invite"
-                                    RoomVisibility.PRIVATE -> "Private"
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selected) Color.White else DesignColors.InkSecondary,
-                            )
-                        }
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Private Room (Password Protected)", fontSize = 12.sp, color = DesignColors.Ink)
+                    Switch(checked = isPrivate, onCheckedChange = { isPrivate = it })
                 }
 
-                // Control Mode selector
-                Text("Playback Control", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ControlMode.entries.forEach { mode ->
-                        val selected = mode == controlMode
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected) DesignColors.Accent else DesignColors.SettingsCard)
-                                .clickable { controlMode = mode }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Text(
-                                text = when (mode) {
-                                    ControlMode.HOST_ONLY -> "Host Only"
-                                    ControlMode.COLLABORATIVE -> "Anyone Controls"
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selected) Color.White else DesignColors.InkSecondary,
-                            )
-                        }
-                    }
+                if (isPrivate) {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Room Password") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Collaborative (All Can Control)", fontSize = 12.sp, color = DesignColors.Ink)
+                    Switch(checked = isCollaborative, onCheckedChange = { isCollaborative = it })
                 }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onCreate(roomName, hostName, roomCode, visibility, controlMode) },
-                enabled = roomCode.length == 4 && roomName.isNotBlank() && hostName.isNotBlank(),
+                onClick = {
+                    onCreate(
+                        roomName,
+                        hostName,
+                        roomCode,
+                        if (isPrivate) RoomVisibility.PRIVATE else RoomVisibility.PUBLIC,
+                        if (isCollaborative) ControlMode.COLLABORATIVE else ControlMode.HOST_ONLY,
+                        if (isPrivate) password else null,
+                    )
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
             ) {
-                Text("Create Session", color = Color.White)
+                Text("Create Room", color = Color.White)
             }
         },
         dismissButton = {
@@ -1027,72 +1836,51 @@ private fun CreateRoomDialog(
 private fun JoinRoomDialog(
     initialCode: String = "",
     onDismiss: () -> Unit,
-    onJoin: (code: String, userName: String) -> Unit,
+    onJoin: (code: String, userName: String, password: String?) -> Unit,
 ) {
-    var code by remember { mutableStateOf(initialCode) }
+    var roomCode by remember { mutableStateOf(initialCode) }
     var userName by remember { mutableStateOf("Listener") }
-    val clipboard = LocalClipboardManager.current
+    var password by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Join Play Together Room", fontWeight = FontWeight.Bold, color = DesignColors.Ink) },
+        title = { Text("Join Room", color = DesignColors.Ink, fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Enter the 4-digit code provided by your host:",
-                    fontSize = 13.sp,
-                    color = DesignColors.InkSecondary,
-                )
-
-                Row(
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = roomCode,
+                    onValueChange = { if (it.length <= 4) roomCode = it },
+                    label = { Text("4-Digit Room Code") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = code,
-                        onValueChange = { if (it.length <= 4) code = it },
-                        label = { Text("4-Digit Code") },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = DesignColors.Accent,
-                            focusedLabelColor = DesignColors.Accent,
-                        ),
-                        modifier = Modifier.weight(1f),
-                    )
-
-                    OutlinedButton(
-                        onClick = {
-                            val clip = clipboard.getText()?.text?.trim().orEmpty()
-                            if (clip.length == 4) code = clip
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(52.dp),
-                    ) {
-                        Text("Paste", fontSize = 12.sp, color = DesignColors.Accent)
-                    }
-                }
+                )
 
                 OutlinedTextField(
                     value = userName,
                     onValueChange = { userName = it },
-                    label = { Text("Your Nickname") },
+                    label = { Text("Your Display Name") },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DesignColors.Accent,
-                        focusedLabelColor = DesignColors.Accent,
-                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password (If private)") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (code.isNotBlank()) onJoin(code, userName) },
-                enabled = code.length == 4,
+                onClick = {
+                    onJoin(roomCode, userName, password.ifBlank { null })
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
+                enabled = roomCode.length == 4,
             ) {
-                Text("Join Room", color = Color.White)
+                Text("Join Session", color = Color.White)
             }
         },
         dismissButton = {
@@ -1104,106 +1892,7 @@ private fun JoinRoomDialog(
     )
 }
 
-@Composable
-private fun AddSongToQueueDialog(
-    onDismiss: () -> Unit,
-    onAdd: (PlayTogetherTrack) -> Unit,
-) {
-    val presets = remember {
-        listOf(
-            PlayTogetherTrack("p1", "Starfall Melody", "Starlight Synthetics", durationMs = 210000L),
-            PlayTogetherTrack("p2", "Cybernetic Rain", "PRVN Soundwave", durationMs = 185000L),
-            PlayTogetherTrack("p3", "Neon Dreams 2026", "Aether Wave", durationMs = 240000L),
-            PlayTogetherTrack("p4", "Midnight Drive", "Lofi Highways", durationMs = 195000L),
-        )
-    }
-
-    var customTitle by remember { mutableStateOf("") }
-    var customArtist by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add Song to Room Queue", fontWeight = FontWeight.Bold, color = DesignColors.Ink) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Select from recommended session tracks:", fontSize = 12.sp, color = DesignColors.InkSecondary)
-
-                presets.forEach { preset ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(DesignColors.Surface)
-                            .clickable { onAdd(preset) }
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(preset.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink)
-                            Text(preset.artist, fontSize = 10.sp, color = DesignColors.InkSecondary)
-                        }
-                        Icon(Icons.Default.Add, contentDescription = null, tint = DesignColors.Accent, modifier = Modifier.size(18.dp))
-                    }
-                }
-
-                Spacer(Modifier.height(4.dp))
-                Text("Or enter a custom track:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink)
-
-                OutlinedTextField(
-                    value = customTitle,
-                    onValueChange = { customTitle = it },
-                    label = { Text("Track Title") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DesignColors.Accent,
-                        focusedLabelColor = DesignColors.Accent,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = customArtist,
-                    onValueChange = { customArtist = it },
-                    label = { Text("Artist") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = DesignColors.Accent,
-                        focusedLabelColor = DesignColors.Accent,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (customTitle.isNotBlank()) {
-                        onAdd(
-                            PlayTogetherTrack(
-                                id = "custom_${customTitle.hashCode()}",
-                                title = customTitle,
-                                artist = customArtist.ifBlank { "Unknown Artist" },
-                            ),
-                        )
-                    }
-                },
-                enabled = customTitle.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
-            ) {
-                Text("Add", color = Color.White)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close", color = DesignColors.InkSecondary)
-            }
-        },
-        containerColor = DesignColors.SettingsCard,
-    )
-}
-
-private fun formatTime(ms: Long): String {
+private fun formatDurationMs(ms: Long): String {
     val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
     val minutes = totalSeconds / 60L
     val seconds = totalSeconds % 60L

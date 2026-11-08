@@ -841,7 +841,7 @@ class MsePlayer internal constructor(
 
     companion object {
         private const val INIT_TIMEOUT_MS = 30_000L
-        private const val LOAD_TIMEOUT_MS = 5_000L
+        private const val LOAD_TIMEOUT_MS = 20_000L
         private const val ENGINE_CLOSE_TIMEOUT_MS = 3_000L
 
         fun create(

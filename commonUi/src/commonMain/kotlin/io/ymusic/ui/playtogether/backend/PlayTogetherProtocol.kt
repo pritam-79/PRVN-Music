@@ -6,6 +6,7 @@ import io.ymusic.ui.playtogether.PlayTogetherTrack
 import io.ymusic.ui.playtogether.RoomInfo
 import io.ymusic.ui.playtogether.RoomMember
 import io.ymusic.ui.playtogether.RoomVisibility
+import io.ymusic.ui.playtogether.SongRequest
 import kotlin.time.Clock
 
 /**
@@ -18,6 +19,8 @@ enum class PlaybackEventType {
     TRACK_CHANGE,
     QUEUE_UPDATE,
     SYNC_PING,
+    SONG_REQUEST_ADD,
+    SONG_REQUEST_STATUS,
 }
 
 /**
@@ -31,6 +34,7 @@ data class PlaybackEvent(
     val positionMs: Long = 0L,
     val isPlaying: Boolean = false,
     val queue: List<PlayTogetherTrack> = emptyList(),
+    val songRequests: List<SongRequest> = emptyList(),
     val timestampUtc: Long = Clock.System.now().toEpochMilliseconds(),
 )
 
@@ -49,6 +53,10 @@ sealed interface RoomEvent {
     data class QueueChanged(
         val queue: List<PlayTogetherTrack>,
         val currentTrack: PlayTogetherTrack?,
+    ) : RoomEvent
+
+    data class SongRequestsChanged(
+        val requests: List<SongRequest>,
     ) : RoomEvent
 
     data class MemberPresenceChanged(
@@ -85,11 +93,12 @@ data class JoinRoomResult(
     val isPlaying: Boolean,
     val positionMs: Long,
     val queue: List<PlayTogetherTrack>,
+    val songRequests: List<SongRequest> = emptyList(),
     val serverTimestampUtc: Long = Clock.System.now().toEpochMilliseconds(),
 )
 
 /**
- * Sliding-window rate limiter to prevent brute-forcing 4-digit room codes or spamming room creations.
+ * Sliding-window rate limiter to prevent brute-forcing 4-digit room codes or spamming requests.
  */
 class RateLimiter(
     private val maxRequests: Int = 5,
@@ -97,10 +106,6 @@ class RateLimiter(
 ) {
     private val timestamps = mutableListOf<Long>()
 
-    /**
-     * Checks if a new request is permitted under current rate-limiting policies.
-     * Returns true if allowed, false if limit exceeded.
-     */
     fun tryAcquire(): Boolean {
         val now = Clock.System.now().toEpochMilliseconds()
         cleanOld(now)
@@ -112,9 +117,6 @@ class RateLimiter(
         }
     }
 
-    /**
-     * Seconds remaining until the rate limit window permits new attempts.
-     */
     fun secondsUntilReset(): Int {
         val now = Clock.System.now().toEpochMilliseconds()
         cleanOld(now)
@@ -138,32 +140,20 @@ class RateLimiter(
 object RoomSecurityPolicy {
     private val FOUR_DIGIT_REGEX = Regex("^[0-9]{4}$")
 
-    /**
-     * Validates whether a room code is strictly 4 numeric digits.
-     */
     fun isValidRoomCode(code: String): Boolean {
         return FOUR_DIGIT_REGEX.matches(code.trim())
     }
 
-    /**
-     * Validates and sanitizes a user-entered room name.
-     */
     fun sanitizeRoomName(name: String): String {
         val trimmed = name.trim().take(40)
         return trimmed.ifBlank { "PRVN Music Room" }
     }
 
-    /**
-     * Validates user display name.
-     */
     fun sanitizeUserName(name: String): String {
         val trimmed = name.trim().take(25)
         return trimmed.ifBlank { "Listener" }
     }
 
-    /**
-     * Verifies if a member is authorized to mutate playback state.
-     */
     fun canControlPlayback(isHost: Boolean, controlMode: ControlMode): Boolean {
         return when (controlMode) {
             ControlMode.HOST_ONLY -> isHost

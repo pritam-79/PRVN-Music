@@ -16,13 +16,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.time.Clock
 import kotlin.random.Random
+import kotlin.time.Clock
 
 /**
- * Controller managing Play Together rooms, member synchronization, and shared queue.
- * Backed by [PlayTogetherBackend] (Supabase Realtime / WebSocket Relay) with presence,
- * rate limiting, 4-digit code verification, and real-time state synchronization.
+ * Controller managing Play Together rooms, member synchronization, shared queue,
+ * in-room search, and song request management.
  */
 class PlayTogetherController(
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Main),
@@ -61,7 +60,7 @@ class PlayTogetherController(
                             current.copy(isBusy = false, errorMessage = err.message)
                         } else current
                     }
-                }
+                },
             )
         }
     }
@@ -75,7 +74,7 @@ class PlayTogetherController(
                     if (current is PlayTogetherState.InRoom && current.isPlaying && current.currentTrack != null) {
                         val newPos = current.positionMs + 1000L
                         if (newPos >= current.currentTrack.durationMs) {
-                            // Track completed
+                            // Current track finished; advance queue if host/collaborative
                             if (current.isHost || current.controlMode == ControlMode.COLLABORATIVE) {
                                 if (current.queue.isNotEmpty()) {
                                     val next = current.queue.first()
@@ -120,7 +119,7 @@ class PlayTogetherController(
             while (isActive) {
                 delay(8000L)
                 val currentState = _state.value
-                val drift = if (currentState is PlayTogetherState.InRoom) currentState.syncOffsetMs else 12L
+                val drift = if (currentState is PlayTogetherState.InRoom) currentState.syncOffsetMs else 0L
                 backend.updatePresence(
                     roomId = roomId,
                     memberId = memberId,
@@ -156,6 +155,13 @@ class PlayTogetherController(
                                     queue = event.queue,
                                     currentTrack = event.currentTrack ?: current.currentTrack,
                                 )
+                            } else current
+                        }
+                    }
+                    is RoomEvent.SongRequestsChanged -> {
+                        _state.update { current ->
+                            if (current is PlayTogetherState.InRoom && current.room.id == roomId) {
+                                current.copy(songRequests = event.requests)
                             } else current
                         }
                     }
@@ -220,12 +226,21 @@ class PlayTogetherController(
         }
     }
 
+    fun switchTab(tab: RoomTab) {
+        _state.update { current ->
+            if (current is PlayTogetherState.InRoom) {
+                current.copy(activeTab = tab)
+            } else current
+        }
+    }
+
     fun createRoom(
         name: String,
         hostName: String,
         code: String = Random.nextInt(1000, 9999).toString(),
         visibility: RoomVisibility = RoomVisibility.PUBLIC,
         controlMode: ControlMode = ControlMode.HOST_ONLY,
+        password: String? = null,
     ) {
         val cleanCode = code.trim().ifBlank { Random.nextInt(1000, 9999).toString() }
         val cleanName = RoomSecurityPolicy.sanitizeRoomName(name)
@@ -251,6 +266,7 @@ class PlayTogetherController(
                 hostName = cleanHost,
                 visibility = visibility,
                 controlMode = controlMode,
+                password = password,
             ).fold(
                 onSuccess = { room ->
                     val hostMemberId = "host_${Random.nextLong(1000, 9999)}"
@@ -267,25 +283,12 @@ class PlayTogetherController(
                         isHost = true,
                         currentMemberId = hostMemberId,
                         members = listOf(selfMember),
-                        currentTrack = room.currentTrack,
-                        isPlaying = true,
+                        currentTrack = null,
+                        isPlaying = false,
                         positionMs = 0L,
-                        queue = listOf(
-                            PlayTogetherTrack(
-                                id = "seed_2",
-                                title = "Electric Twilight",
-                                artist = "Hyperion Beats",
-                                durationMs = 188000L,
-                                addedBy = cleanHost,
-                            ),
-                            PlayTogetherTrack(
-                                id = "seed_3",
-                                title = "Afterglow Reverie",
-                                artist = "Starlight Sound",
-                                durationMs = 245000L,
-                                addedBy = cleanHost,
-                            ),
-                        ),
+                        queue = emptyList(),
+                        songRequests = emptyList(),
+                        activeTab = RoomTab.NOW_PLAYING,
                         controlMode = controlMode,
                         syncOffsetMs = 0L,
                     )
@@ -300,12 +303,12 @@ class PlayTogetherController(
                             current.copy(isBusy = false, errorMessage = err.message ?: "Failed to create room.")
                         } else current
                     }
-                }
+                },
             )
         }
     }
 
-    fun joinRoom(code: String, userName: String) {
+    fun joinRoom(code: String, userName: String, password: String? = null) {
         val cleanName = RoomSecurityPolicy.sanitizeUserName(userName)
         val cleanCode = code.trim()
 
@@ -323,7 +326,7 @@ class PlayTogetherController(
         }
 
         scope.launch {
-            backend.verifyAndJoinRoom(cleanCode, cleanName).fold(
+            backend.verifyAndJoinRoom(cleanCode, cleanName, password).fold(
                 onSuccess = { result ->
                     _state.value = PlayTogetherState.InRoom(
                         room = result.room,
@@ -334,8 +337,10 @@ class PlayTogetherController(
                         isPlaying = result.isPlaying,
                         positionMs = result.positionMs,
                         queue = result.queue,
+                        songRequests = result.songRequests,
+                        activeTab = RoomTab.NOW_PLAYING,
                         controlMode = result.room.controlMode,
-                        syncOffsetMs = 14L,
+                        syncOffsetMs = 0L,
                     )
 
                     subscribeToRoomUpdates(result.room.id)
@@ -348,7 +353,7 @@ class PlayTogetherController(
                             current.copy(isBusy = false, errorMessage = err.message ?: "Failed to join room.")
                         } else current
                     }
-                }
+                },
             )
         }
     }
@@ -482,7 +487,7 @@ class PlayTogetherController(
                     queue = newQueue,
                 )
                 if (current.currentTrack == null) {
-                    current.copy(currentTrack = track, positionMs = 0L)
+                    current.copy(currentTrack = track, positionMs = 0L, isPlaying = true)
                 } else {
                     current.copy(queue = newQueue)
                 }
@@ -493,12 +498,173 @@ class PlayTogetherController(
     fun removeFromQueue(trackId: String) {
         _state.update { current ->
             if (current is PlayTogetherState.InRoom) {
-                val newQueue = current.queue.filter { it.id != trackId }
+                if (!current.isHost && current.controlMode == ControlMode.HOST_ONLY) {
+                    current
+                } else {
+                    val newQueue = current.queue.filter { it.id != trackId }
+                    sendPlaybackEventInternal(
+                        PlaybackEventType.QUEUE_UPDATE,
+                        queue = newQueue,
+                    )
+                    current.copy(queue = newQueue)
+                }
+            } else current
+        }
+    }
+
+    fun reorderQueue(fromIndex: Int, toIndex: Int) {
+        _state.update { current ->
+            if (current is PlayTogetherState.InRoom) {
+                if (!current.isHost && current.controlMode == ControlMode.HOST_ONLY) {
+                    current
+                } else if (fromIndex in current.queue.indices && toIndex in current.queue.indices) {
+                    val mutable = current.queue.toMutableList()
+                    val item = mutable.removeAt(fromIndex)
+                    mutable.add(toIndex, item)
+                    sendPlaybackEventInternal(
+                        PlaybackEventType.QUEUE_UPDATE,
+                        queue = mutable,
+                    )
+                    current.copy(queue = mutable)
+                } else current
+            } else current
+        }
+    }
+
+    fun clearQueue() {
+        _state.update { current ->
+            if (current is PlayTogetherState.InRoom && current.isHost) {
                 sendPlaybackEventInternal(
                     PlaybackEventType.QUEUE_UPDATE,
-                    queue = newQueue,
+                    queue = emptyList(),
                 )
-                current.copy(queue = newQueue)
+                current.copy(queue = emptyList())
+            } else current
+        }
+    }
+
+    fun submitSongRequest(track: PlayTogetherTrack, requesterName: String) {
+        val current = _state.value
+        if (current !is PlayTogetherState.InRoom) return
+
+        val request = SongRequest(
+            id = "req_${Random.nextLong(10000, 99999)}",
+            track = track.copy(addedBy = requesterName),
+            requesterName = requesterName,
+            requesterId = current.currentMemberId,
+            requestTimeMs = Clock.System.now().toEpochMilliseconds(),
+            status = SongRequestStatus.PENDING,
+        )
+
+        scope.launch {
+            backend.submitSongRequest(current.room.id, request).fold(
+                onSuccess = {
+                    _state.update { s ->
+                        if (s is PlayTogetherState.InRoom) {
+                            if (s.songRequests.none { it.id == request.id }) {
+                                s.copy(songRequests = s.songRequests + request)
+                            } else s
+                        } else s
+                    }
+                },
+                onFailure = { err ->
+                    _state.update { s ->
+                        if (s is PlayTogetherState.InRoom) {
+                            s.copy(errorMessage = err.message ?: "Failed to submit request.")
+                        } else s
+                    }
+                },
+            )
+        }
+    }
+
+    fun approveSongRequest(requestId: String) {
+        val current = _state.value
+        if (current !is PlayTogetherState.InRoom || !current.isHost) return
+
+        scope.launch {
+            backend.updateSongRequestStatus(current.room.id, requestId, SongRequestStatus.APPROVED).fold(
+                onSuccess = {
+                    _state.update { s ->
+                        if (s is PlayTogetherState.InRoom) {
+                            val req = s.songRequests.firstOrNull { it.id == requestId }
+                            if (req != null) {
+                                val updatedRequests = s.songRequests.map {
+                                    if (it.id == requestId) it.copy(status = SongRequestStatus.APPROVED) else it
+                                }
+                                val newTrack = if (s.currentTrack == null) req.track else s.currentTrack
+                                val newQueue = if (s.currentTrack == null) s.queue else s.queue + req.track
+                                s.copy(
+                                    songRequests = updatedRequests,
+                                    currentTrack = newTrack,
+                                    queue = newQueue,
+                                    isPlaying = if (s.currentTrack == null) true else s.isPlaying,
+                                )
+                            } else s
+                        } else s
+                    }
+                },
+                onFailure = { err ->
+                    _state.update { s ->
+                        if (s is PlayTogetherState.InRoom) {
+                            s.copy(errorMessage = err.message)
+                        } else s
+                    }
+                },
+            )
+        }
+    }
+
+    fun rejectSongRequest(requestId: String) {
+        val current = _state.value
+        if (current !is PlayTogetherState.InRoom || !current.isHost) return
+
+        scope.launch {
+            backend.updateSongRequestStatus(current.room.id, requestId, SongRequestStatus.REJECTED).fold(
+                onSuccess = {
+                    _state.update { s ->
+                        if (s is PlayTogetherState.InRoom) {
+                            val updatedRequests = s.songRequests.map {
+                                if (it.id == requestId) it.copy(status = SongRequestStatus.REJECTED) else it
+                            }
+                            s.copy(songRequests = updatedRequests)
+                        } else s
+                    }
+                },
+                onFailure = { err ->
+                    _state.update { s ->
+                        if (s is PlayTogetherState.InRoom) {
+                            s.copy(errorMessage = err.message)
+                        } else s
+                    }
+                },
+            )
+        }
+    }
+
+    fun cancelSongRequest(requestId: String) {
+        val current = _state.value
+        if (current !is PlayTogetherState.InRoom) return
+
+        _state.update { s ->
+            if (s is PlayTogetherState.InRoom) {
+                s.copy(songRequests = s.songRequests.filterNot { it.id == requestId && it.requesterId == s.currentMemberId })
+            } else s
+        }
+    }
+
+    fun setControlMode(controlMode: ControlMode) {
+        _state.update { current ->
+            if (current is PlayTogetherState.InRoom && current.isHost) {
+                current.copy(controlMode = controlMode)
+            } else current
+        }
+    }
+
+    fun toggleAllowRequests(allow: Boolean) {
+        _state.update { current ->
+            if (current is PlayTogetherState.InRoom && current.isHost) {
+                current.copy(allowListenerRequests = allow)
             } else current
         }
     }
@@ -520,6 +686,7 @@ class PlayTogetherController(
                 positionMs = positionMs,
                 isPlaying = isPlaying,
                 queue = queue.ifEmpty { current.queue },
+                songRequests = current.songRequests,
                 timestampUtc = Clock.System.now().toEpochMilliseconds(),
             )
             scope.launch {
@@ -529,7 +696,6 @@ class PlayTogetherController(
     }
 
     companion object {
-        /** Singleton instance shared across the UI shell so room sessions persist when switching tabs. */
         val instance by lazy { PlayTogetherController() }
     }
 }

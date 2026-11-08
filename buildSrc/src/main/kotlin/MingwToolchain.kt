@@ -11,7 +11,7 @@ fun Project.mingwToolchainHome(): File? {
     if (!System.getProperty("os.name").orEmpty().startsWith("Windows")) return null
     // The JVM's arch, not the OS's: the JNI DLL must load into this JVM (an x64 JVM runs emulated on
     // Windows on ARM), and the other arch's toolchain builds DLLs it can't load.
-    val defaults = if (hostIsArm64) listOf("C:/msys64/clangarm64") else listOf("C:/msys64/mingw64", "C:/mingw64")
+    val defaults = if (hostIsArm64) listOf("C:/msys64/clangarm64") else listOf("C:/msys64/ucrt64", "C:/msys64/mingw64", "C:/mingw64")
     return (listOfNotNull(localProp("mingw.dir"), System.getenv("MINGW_HOME")) + defaults)
         .map(::File)
         .firstOrNull { mingwCCompiler(it).isFile && File(it, "bin/mingw32-make.exe").isFile }

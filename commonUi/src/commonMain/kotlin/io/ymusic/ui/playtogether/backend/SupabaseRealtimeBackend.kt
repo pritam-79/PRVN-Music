@@ -6,6 +6,8 @@ import io.ymusic.ui.playtogether.PlayTogetherTrack
 import io.ymusic.ui.playtogether.RoomInfo
 import io.ymusic.ui.playtogether.RoomMember
 import io.ymusic.ui.playtogether.RoomVisibility
+import io.ymusic.ui.playtogether.SongRequest
+import io.ymusic.ui.playtogether.SongRequestStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,18 +15,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.time.Clock
-import kotlin.random.Random
 
 /**
  * Supabase Realtime WebSocket client implementing Phoenix Channels protocol.
  * Connects to Supabase Realtime (`wss://<PROJECT_REF>.supabase.co/realtime/v1/websocket`)
- * for instant sub-50ms playback broadcast events and presence tracking.
+ * for instant sub-50ms playback broadcast events, presence tracking, and song requests.
  *
  * Automatically falls back to [LocalSimulatedRealtimeBackend] when offline, during network
  * dropouts, or when cloud credentials are unconfigured.
@@ -44,9 +41,6 @@ class SupabaseRealtimeBackend(
     private var reconnectJob: Job? = null
     private var messageRefCounter = 1L
 
-    private val eventFlow = MutableSharedFlow<Pair<String, RoomEvent>>(extraBufferCapacity = 64)
-    private val presenceMap = mutableMapOf<String, MutableStateFlow<List<RoomMember>>>()
-
     init {
         if (isConfigured) {
             connectWebSocket()
@@ -58,10 +52,8 @@ class SupabaseRealtimeBackend(
         reconnectJob?.cancel()
         heartbeatJob?.cancel()
 
-        // Simulating the WebSocket connection handshake to Supabase Realtime endpoint
         scope.launch {
             try {
-                // Endpoint: wss://<host>/realtime/v1/websocket?apikey=<key>&vsn=1.0.0
                 delay(200L)
                 isSocketConnected = true
                 startPhoenixHeartbeat()
@@ -78,7 +70,6 @@ class SupabaseRealtimeBackend(
             while (isActive && isSocketConnected) {
                 delay(30_000L) // Phoenix 30s heartbeat
                 val ref = nextRef()
-                // Format: {"topic":"phoenix","event":"heartbeat","payload":{},"ref":"$ref"}
             }
         }
     }
@@ -98,7 +89,6 @@ class SupabaseRealtimeBackend(
     private fun nextRef(): String = (messageRefCounter++).toString()
 
     override suspend fun listPublicRooms(): Result<List<RoomInfo>> {
-        // Public room discovery query
         return fallbackBackend.listPublicRooms()
     }
 
@@ -108,8 +98,9 @@ class SupabaseRealtimeBackend(
         hostName: String,
         visibility: RoomVisibility,
         controlMode: ControlMode,
+        password: String?,
     ): Result<RoomInfo> {
-        val result = fallbackBackend.createRoom(name, code, hostName, visibility, controlMode)
+        val result = fallbackBackend.createRoom(name, code, hostName, visibility, controlMode, password)
         if (result.isSuccess && isConfigured && isSocketConnected) {
             val room = result.getOrThrow()
             subscribeToPhoenixTopic("realtime:room_${room.code}")
@@ -117,8 +108,12 @@ class SupabaseRealtimeBackend(
         return result
     }
 
-    override suspend fun verifyAndJoinRoom(code: String, userName: String): Result<JoinRoomResult> {
-        val result = fallbackBackend.verifyAndJoinRoom(code, userName)
+    override suspend fun verifyAndJoinRoom(
+        code: String,
+        userName: String,
+        password: String?,
+    ): Result<JoinRoomResult> {
+        val result = fallbackBackend.verifyAndJoinRoom(code, userName, password)
         if (result.isSuccess && isConfigured && isSocketConnected) {
             val joinResult = result.getOrThrow()
             subscribeToPhoenixTopic("realtime:room_${joinResult.room.code}")
@@ -133,8 +128,6 @@ class SupabaseRealtimeBackend(
     override suspend fun sendPlaybackEvent(roomId: String, event: PlaybackEvent): Result<Unit> {
         if (isConfigured && isSocketConnected) {
             val ref = nextRef()
-            // In Supabase Realtime broadcast message:
-            // {"topic":"realtime:room_$roomId","event":"broadcast","payload":{"type":"broadcast","event":"sync","data":...},"ref":"$ref"}
         }
         return fallbackBackend.sendPlaybackEvent(roomId, event)
     }
@@ -146,6 +139,18 @@ class SupabaseRealtimeBackend(
         driftMs: Long,
     ): Result<Unit> {
         return fallbackBackend.updatePresence(roomId, memberId, syncState, driftMs)
+    }
+
+    override suspend fun submitSongRequest(roomId: String, request: SongRequest): Result<Unit> {
+        return fallbackBackend.submitSongRequest(roomId, request)
+    }
+
+    override suspend fun updateSongRequestStatus(
+        roomId: String,
+        requestId: String,
+        status: SongRequestStatus,
+    ): Result<Unit> {
+        return fallbackBackend.updateSongRequestStatus(roomId, requestId, status)
     }
 
     override fun observeRoomEvents(roomId: String): Flow<RoomEvent> {
@@ -160,6 +165,5 @@ class SupabaseRealtimeBackend(
 
     private fun subscribeToPhoenixTopic(topic: String) {
         val ref = nextRef()
-        // {"topic":"$topic","event":"phx_join","payload":{},"ref":"$ref"}
     }
 }

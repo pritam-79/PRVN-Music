@@ -17,6 +17,21 @@ enum class MemberSyncState {
     SYNCING,
 }
 
+enum class SongRequestStatus {
+    PENDING,
+    APPROVED,
+    REJECTED,
+}
+
+enum class RoomTab(val label: String) {
+    NOW_PLAYING("Now Playing"),
+    SHARED_QUEUE("Queue"),
+    SEARCH_MUSIC("Search"),
+    SONG_REQUESTS("Requests"),
+    PARTICIPANTS("Listeners"),
+    HOST_CONTROLS("Settings"),
+}
+
 data class PlayTogetherTrack(
     val id: String,
     val title: String,
@@ -25,6 +40,15 @@ data class PlayTogetherTrack(
     val durationMs: Long = 210000L,
     val isYouTube: Boolean = true,
     val addedBy: String = "Host",
+)
+
+data class SongRequest(
+    val id: String,
+    val track: PlayTogetherTrack,
+    val requesterName: String,
+    val requesterId: String,
+    val requestTimeMs: Long,
+    val status: SongRequestStatus = SongRequestStatus.PENDING,
 )
 
 data class RoomMember(
@@ -44,6 +68,7 @@ data class RoomInfo(
     val controlMode: ControlMode = ControlMode.HOST_ONLY,
     val memberCount: Int = 1,
     val currentTrack: PlayTogetherTrack? = null,
+    val password: String? = null,
 )
 
 sealed interface PlayTogetherState {
@@ -62,10 +87,13 @@ sealed interface PlayTogetherState {
         val isPlaying: Boolean,
         val positionMs: Long,
         val queue: List<PlayTogetherTrack>,
+        val songRequests: List<SongRequest> = emptyList(),
+        val activeTab: RoomTab = RoomTab.NOW_PLAYING,
         val controlMode: ControlMode = room.controlMode,
         val syncOffsetMs: Long = 14L,
         val isConnecting: Boolean = false,
         val errorMessage: String? = null,
         val currentMemberId: String = "member_self",
+        val allowListenerRequests: Boolean = true,
     ) : PlayTogetherState
 }

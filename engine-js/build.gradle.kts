@@ -75,6 +75,10 @@ fun npxArgv(): List<String> {
     val nodeOnPath = (System.getenv("PATH") ?: "").split(File.pathSeparatorChar)
         .map { File(it.trim('"'), "node.exe") }
         .firstOrNull { it.isFile }
+        ?: listOf(
+            File("C:/Program Files/nodejs/node.exe"),
+            File(System.getProperty("user.home"), ".tools/node/node-v20.18.0-win-x64/node.exe")
+        ).firstOrNull { it.isFile }
         ?: throw GradleException("node.exe not found on PATH")
     fun npxCli(node: File) = File(node.parentFile, "node_modules/npm/bin/npx-cli.js")
     // A version manager's shim (e.g. Volta) has no npm beside it; the node it launches does.
