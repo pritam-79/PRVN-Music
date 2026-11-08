@@ -48,6 +48,7 @@ import io.ymusic.ui.resources.settings_section_updates
 import io.ymusic.ui.resources.settings_updates_check
 import io.ymusic.ui.resources.settings_updates_check_hint
 import io.ymusic.ui.resources.settings_updates_github_releases
+import io.ymusic.ui.resources.update_check
 import io.ymusic.ui.resources.settings_play_together_backend
 import io.ymusic.ui.resources.settings_play_together_backend_hint
 import io.ymusic.ui.resources.settings_play_together_backend_local
@@ -300,7 +301,7 @@ fun SettingsScreen(graph: AppGraph, signedIn: Boolean = false, onLogin: () -> Un
 
         // 8. UPDATES
         SettingsSection(Res.string.settings_section_updates) {
-            UpdatesCheckRow()
+            UpdatesCheckRow(graph)
             if (graph.updates != null) {
                 ToggleRow(graph, AppSettings.autoDownloadUpdates, Res.string.settings_auto_update, Res.string.settings_auto_update_hint)
             }
@@ -708,12 +709,29 @@ private fun PlaybackNotificationStatusRow() {
 }
 
 @Composable
-private fun UpdatesCheckRow() {
+private fun UpdatesCheckRow(graph: AppGraph) {
     val uriHandler = LocalUriHandler.current
+    var checking by remember { mutableStateOf(false) }
+    var updateRecheck by remember { mutableStateOf(0) }
+
+    if (checking) {
+        CheckUpdateDialog(graph) { found ->
+            checking = false
+            if (found) updateRecheck++
+        }
+    }
+    UpdateDialog(graph, recheck = updateRecheck)
+
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable { uriHandler.openUri("https://github.com/pritam-79/PRVN-Music/releases") }
+            .clickable {
+                if (graph.updates != null) {
+                    checking = true
+                } else {
+                    uriHandler.openUri("https://github.com/pritam-79/PRVN-Music/releases")
+                }
+            }
             .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -730,7 +748,7 @@ private fun UpdatesCheckRow() {
             )
         }
         Text(
-            stringResource(Res.string.settings_updates_github_releases),
+            if (graph.updates != null) stringResource(Res.string.update_check) else stringResource(Res.string.settings_updates_github_releases),
             style = TextStyle(fontSize = 13.sp, color = DesignColors.Accent),
         )
     }

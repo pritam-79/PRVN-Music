@@ -144,7 +144,7 @@ class AndroidAppUpdates(
         val update = offer.value?.takeIf { it.release == release } ?: return@coroutineScope
         following = Following(release, this)
         val apk = apkFile(update)
-        val downloaded = update.installInApp && withContext(Dispatchers.IO) { apk.isFile && sha256Of(apk) == update.sha256 }
+        val downloaded = update.installInApp && withContext(Dispatchers.IO) { apk.isFile && (update.sha256.isEmpty() || sha256Of(apk) == update.sha256) }
         set(release, if (downloaded) UpdateDownload.Ready else UpdateDownload.Idle)
         if (!downloaded && update.installInApp && autoDownload() && update.sha256 != autoDownloadFailed()) {
             start(update, auto = true)
@@ -169,7 +169,7 @@ class AndroidAppUpdates(
      *  partial download stays for the next attempt to resume. */
     fun pruneDownloads() {
         downloadDir.listFiles().orEmpty().forEach { file ->
-            val versionCode = file.name.removePrefix("YMusic-").substringBefore('.').substringBefore('-').toIntOrNull()
+            val versionCode = file.name.removePrefix("PRVNMusic-").removePrefix("YMusic-").substringBefore('.').substringBefore('-').toIntOrNull()
             if (versionCode == null || versionCode <= currentVersionCode) file.delete()
         }
     }
@@ -204,7 +204,7 @@ class AndroidAppUpdates(
             if (!claimed) return@launch
             try {
                 val apk = apkFile(update)
-                val downloaded = withContext(Dispatchers.IO) { apk.isFile && sha256Of(apk) == update.sha256 }
+                val downloaded = withContext(Dispatchers.IO) { apk.isFile && (update.sha256.isEmpty() || sha256Of(apk) == update.sha256) }
                 if (!downloaded) withContext(Dispatchers.IO) { fetch(update) }
                 set(release, UpdateDownload.Ready)
             } catch (cancel: CancellationException) {
@@ -385,9 +385,9 @@ class AndroidAppUpdates(
     }
 
     /** Named after the version AND hash: a re-published release must not continue the old bytes. */
-    private fun partFile(update: AppUpdate) = File(downloadDir, "YMusic-${update.versionCode}-${update.sha256.take(16)}.apk.part")
+    private fun partFile(update: AppUpdate) = File(downloadDir, "PRVNMusic-${update.versionCode}-${update.sha256.take(16)}.apk.part")
 
-    private fun apkFile(update: AppUpdate) = File(downloadDir, "YMusic-${update.versionCode}.apk")
+    private fun apkFile(update: AppUpdate) = File(downloadDir, "PRVNMusic-${update.versionCode}.apk")
 }
 
 private const val BROWSER_FALLBACK_AFTER_MS = 60 * 60 * 1000L

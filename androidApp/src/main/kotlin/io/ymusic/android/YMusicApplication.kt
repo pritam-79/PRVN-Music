@@ -67,6 +67,7 @@ import io.ymusic.player.mse.MsePlayer
 import io.ymusic.player.showsVideo
 import io.ymusic.quickjs.QuickJsRuntime
 import io.ymusic.remoteconfig.ApiService
+import io.ymusic.remoteconfig.GitHubApiService
 import io.ymusic.remoteconfig.HttpApiService
 import io.ymusic.remoteconfig.RemoteConfig
 import io.ymusic.remoteconfig.RunningBundles
@@ -353,7 +354,13 @@ class YMusicApplication : Application() {
                 arch = android.os.Build.SUPPORTED_ABIS.firstOrNull(),
                 bundles = runningBundles,
             )
-        }
+        } ?: GitHubApiService(
+            client = http.engine,
+            repoOwner = "pritam-79",
+            repoName = "PRVN-Music",
+            now = { System.currentTimeMillis() },
+            logger = rootLogger,
+        )
         // Flags, the newest JS bundle revisions, and update availability. Started here so the first
         // fetch overlaps the rest of startup; nothing waits on it, the JS bundles follow what it publishes.
         val remoteConfig = RemoteConfig(

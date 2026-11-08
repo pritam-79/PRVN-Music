@@ -837,7 +837,7 @@
     <string name="settings_notifications_room">Room Notifications</string>
     <string name="settings_notifications_room_hint">Alerts for room joins, track changes, and invites</string>
     <string name="settings_updates_check">Check for Updates</string>
-    <string name="settings_updates_check_hint">PRVN Music v0.02 (ARM64 release)</string>
+    <string name="settings_updates_check_hint">Check GitHub Releases for latest updates</string>
     <string name="settings_updates_up_to_date">You are running the latest version of PRVN Music</string>
     <string name="settings_updates_github_releases">GitHub Releases</string>
     <!-- Play Together UI Strings -->

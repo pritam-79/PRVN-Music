@@ -41,7 +41,7 @@ suspend fun downloadResumable(
         offset = 0L
     }
     if (offset == size) {
-        if (sha256Of(fileSystem, part) == sha256) return
+        if (sha256.isEmpty() || sha256Of(fileSystem, part) == sha256) return
         fileSystem.delete(part)
         offset = 0L
     }
@@ -84,7 +84,7 @@ suspend fun downloadResumable(
     }
 
     val hashed = sha256Of(fileSystem, part)
-    if (hashed != sha256) {
+    if (sha256.isNotEmpty() && hashed != sha256) {
         fileSystem.delete(part)
         throw DownloadMismatchException("hashed $hashed, published $sha256")
     }
