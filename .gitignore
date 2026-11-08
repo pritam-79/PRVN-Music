@@ -70,3 +70,7 @@ gradle/gradle-daemon-jvm.properties
 *.mobileprovision
 spikes/ios-mse-lab
 Builds/
+ 
+# Release binary packages staged locally 
+PRVN-MUSIC-RELEASE/Android/*.apk 
+PRVN-MUSIC-RELEASE/Android/*.aab
