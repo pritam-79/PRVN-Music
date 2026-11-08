@@ -249,7 +249,7 @@ class MsePlayer internal constructor(
                 throw error
             } catch (error: Throwable) {
                 loadingVideoId = null
-                fail(error, "mse load failed", needReset = true)
+                fail(error, "mse load failed (${source.videoId})", needReset = true)
                 return@send
             }
         }
@@ -666,7 +666,13 @@ class MsePlayer internal constructor(
             try {
                 enginePlayer.collectStatus({
                     if (session === activeSession) loadTrace?.engineEvent()
-                    applyListen(it)
+                    try {
+                        applyListen(it)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        log?.log(Logger.Level.WARN, "applyListen error", e)
+                    }
                 }, log)
             } catch (error: CancellationException) {
                 throw error
@@ -676,7 +682,15 @@ class MsePlayer internal constructor(
         }
         activeSession.scope.launch {
             try {
-                enginePlayer.collectCatalog({ applyCatalog(it) }, log)
+                enginePlayer.collectCatalog({
+                    try {
+                        applyCatalog(it)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        log?.log(Logger.Level.WARN, "applyCatalog error", e)
+                    }
+                }, log)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
@@ -773,7 +787,8 @@ class MsePlayer internal constructor(
                 PlayerError(
                     json.stringOrNull("code") ?: "E60033",
                     json.stringOrNull("message"),
-                    userMessage = json.stringOrNull("userMessage")?.takeIf { it.isNotBlank() },
+                    userMessage = json.stringOrNull("userMessage")?.takeIf { it.isNotBlank() }
+                        ?: json.stringOrNull("message")?.takeIf { it.isNotBlank() },
                     canRetry = json.boolOrNull("canRetry") ?: true,
                     needReset = json.boolOrNull("needReset") ?: false,
                 ),
@@ -830,10 +845,18 @@ class MsePlayer internal constructor(
         error.markTrail(log)
         loadTimeoutJob?.cancel()
         loadTimeoutJob = null
+        val detail = error.message?.takeIf { it.isNotBlank() } ?: error.cause?.message ?: message
         _status.update {
             it.copy(
                 state = PlaybackState.Error(
-                    PlayerError(code, message, canRetry = true, needReset = needReset, cause = error),
+                    PlayerError(
+                        code = code,
+                        message = "$message: $detail",
+                        userMessage = if (code == "E60033") "Playback stream error ($detail)" else null,
+                        canRetry = true,
+                        needReset = needReset,
+                        cause = error,
+                    ),
                 ),
             )
         }

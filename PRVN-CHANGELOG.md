@@ -4,6 +4,18 @@ All notable changes to the PRVN Music project are documented in this file.
 
 ---
 
+## [0.0.5] — 2026-11-09
+
+### Major Highlights & Playback Engine Repair
+- **Root-Cause Resolution of `Failed (E60033)` Audio Playback Error**:
+  - **Full-Stack Desktop User-Agent Synchronization**: Injected an automatic network interceptor on `AppHttpClients` and enforced `DESKTOP_CHROME_UA` in `HttpProtocol.kt` so every YouTube InnerTube API call (`/youtubei/v1/player`, BotGuard VM script downloads, and session bootstrap) uses the exact Chrome Macintosh User-Agent required for attestation.
+  - **Media Proxy Client Integration**: Derived `mediaProxyClient` directly from `shared.http.engine` across Android and Desktop platforms, sharing disk caching, connection pooling, and attestation headers.
+  - **Status Stream Event Isolation**: Enclosed `applyListen` and `applyCatalog` within resilient exception boundaries in `MsePlayer.kt`, preventing unhandled events from severing active playback sessions.
+  - **Transparent Error Reporting**: Enhanced `MsePlayer.fail()`, `applyState`, and `NowPlaying.kt` to preserve and display detailed root-cause exception messages rather than suppressing them into a blind `Failed (E60033)` fallback.
+- **In-App Auto-Update Delivery**: Published release `v0.05` (Version Code 5, `com.prvn.music`) delivering direct 1-tap in-app upgrades.
+
+---
+
 ## [0.0.4] — 2026-11-09
 
 ### Major Highlights & Fixes

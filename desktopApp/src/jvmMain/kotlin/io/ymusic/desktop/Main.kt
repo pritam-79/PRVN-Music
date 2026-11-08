@@ -986,12 +986,10 @@ private suspend fun buildGraph(settings: AppStoreSettings, session: CookieSessio
         )
     }
     val mediaProxy = withContext(Dispatchers.IO) {
-        val client = KmpHttpClient.create {
-            defaultExecuteTimeout = APP_HTTP_TIMEOUT
-            logger = rootLogger.fork("kmphttp")
+        val client = http.engine.newBuilder().apply {
             cookieJar = cookies
             defaultRedirectOptions = RedirectOptions(followRedirects = true, followSslRedirects = true)
-        }
+        }.build()
         LocalMediaProxy(
             playerCache, client,
             userAgent = DESKTOP_CHROME_UA,

@@ -88,9 +88,13 @@ private suspend fun serveHttp(runtime: QuickJsRuntime, pipe: Pipe, client: KmpHt
                 log = protocolLogger(parked, head, "http", head.propOf("url"))
                 val method = head.stringOrNull("method") ?: "GET"
                 val url = head.stringOrNull("url") ?: ""
+                var hasUserAgent = false
                 val headers = head.arrayOrNull("headers").orEmpty().map { entry ->
                     val pair = entry.jsonArray
-                    pair[0].jsonPrimitive.content to pair[1].jsonPrimitive.content
+                    val name = pair[0].jsonPrimitive.content
+                    val value = pair[1].jsonPrimitive.content
+                    if (name.equals("User-Agent", ignoreCase = true)) hasUserAgent = true
+                    name to value
                 }
                 val opts = head.objectOrNull("opts")
                 val bodyCmd = head.stringOrNull("bodyCmd")
@@ -137,7 +141,10 @@ private suspend fun serveHttp(runtime: QuickJsRuntime, pipe: Pipe, client: KmpHt
                 PreparedRequest(
                     request = RequestBuilder()
                         .url(url)
-                        .apply { for ((name, value) in headers) addHeader(name, value) }
+                        .apply {
+                            for ((name, value) in headers) addHeader(name, value)
+                            if (!hasUserAgent) header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36")
+                        }
                         .method(method, requestBody)
                         .build(),
                     redirects = opts?.boolOrNull("followRedirects")

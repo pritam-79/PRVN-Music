@@ -1167,7 +1167,11 @@ internal fun playerErrorText(error: io.ymusic.player.PlayerError): UiText = when
         Playability.SignInRequired -> UiText.Resource(Res.string.playback_sign_in_required)
         Playability.Unavailable -> UiText.Resource(Res.string.playback_unavailable)
         Playability.RetryLater -> UiText.Resource(Res.string.playback_retry_later)
-        null -> UiText.Resource(Res.string.playback_failed, error.code)
+        null -> if (!error.message.isNullOrBlank() && error.message != error.code) {
+        UiText.Plain("Playback failed: ${error.message}")
+    } else {
+        UiText.Resource(Res.string.playback_failed, error.code)
+    }
     }
 }
 

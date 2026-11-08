@@ -8,7 +8,7 @@ This guide covers installing **PRVN Music** on supported mobile devices and oper
 
 | Platform | Current Release Status | Supported Architecture / Version | Installation Format |
 |---|---|---|---|
-| **Android** | **Available (v0.04)** | ARM64 (`arm64-v8a`), Android 7.0+ (API 24+) | `.apk` |
+| **Android** | **Available (v0.05)** | ARM64 (`arm64-v8a`), Android 7.0+ (API 24+) | `.apk` |
 | **Windows** | Pending Host Toolchain | x86_64, Windows 10/11 | `.exe` / `.msi` |
 | **macOS** | Pending Apple Host Environment | ARM64 (Apple Silicon) / x86_64, macOS 12+ | `.dmg` |
 | **Linux** | Planned | x86_64 | `.AppImage` / `.deb` |
@@ -25,7 +25,7 @@ This guide covers installing **PRVN Music** on supported mobile devices and oper
 
 ### Step-by-Step Instructions
 1. Download the verified release APK from the official GitHub Release:  
-   **[PRVN-Music-v0.04-arm64.apk](https://github.com/pritam-79/PRVN-Music/releases/download/v0.04/PRVN-Music-v0.04-arm64.apk)**
+   **[PRVN-Music-v0.05-arm64.apk](https://github.com/pritam-79/PRVN-Music/releases/download/v0.05/PRVN-Music-v0.05-arm64.apk)**
 2. Once the download completes, tap the download notification or locate the `.apk` file in your **Files** or **Downloads** app.
 3. If prompted by Android about installing from unknown sources:
    - Tap **Settings** on the prompt.
@@ -45,7 +45,7 @@ If your device is connected to your development PC via USB with USB Debugging en
 adb devices
 
 # Install or upgrade PRVN Music
-adb install -r Builds/PRVN-Music-v0.04-arm64.apk
+adb install -r Builds/PRVN-Music-v0.05-arm64.apk
 ```
 
 ---
@@ -54,9 +54,9 @@ adb install -r Builds/PRVN-Music-v0.04-arm64.apk
 
 Before installing, you can verify the cryptographic integrity of the APK binary:
 
-- **File Name**: `PRVN-Music-v0.04-arm64.apk`
-- **File Size**: `9,817,744` bytes (~9.34 MB)
-- **SHA-256**: `8FFF71A4206DC92542299971F9B04601716F743F1E5F6E3CD32874E5E2F6A390`
+- **File Name**: `PRVN-Music-v0.05-arm64.apk`
+- **File Size**: `9,823,148` bytes (~9.37 MB)
+- **SHA-256**: `ED2C79D41E22F4E37331A483BDAFF42DEAAA79BB2533A20D83756C146DCCA7CB`
 - **Application ID**: `com.prvn.music`
 - **Version Code**: `3`
 - **Signature**: Android APK Signature Scheme v2 (Verified)
@@ -65,12 +65,12 @@ Before installing, you can verify the cryptographic integrity of the APK binary:
 
 **PowerShell (Windows)**:
 ```powershell
-Get-FileHash -Path Builds/PRVN-Music-v0.04-arm64.apk -Algorithm SHA256
+Get-FileHash -Path Builds/PRVN-Music-v0.05-arm64.apk -Algorithm SHA256
 ```
 
 **Linux / macOS**:
 ```bash
-sha256sum Builds/PRVN-Music-v0.04-arm64.apk
+sha256sum Builds/PRVN-Music-v0.05-arm64.apk
 ```
 
 ---

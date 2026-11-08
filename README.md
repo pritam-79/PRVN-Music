@@ -18,7 +18,7 @@
 
 | Platform | Target Architecture | Status | Release Package |
 |---|---|---|---|
-| **Android** | `arm64-v8a` (API 24+) | **Available (Verified)** | [Download APK (v0.04)](https://github.com/pritam-79/PRVN-Music/releases/download/v0.04/PRVN-Music-v0.04-arm64.apk) |
+| **Android** | `arm64-v8a` (API 24+) | **Available (Verified)** | [Download APK (v0.05)](https://github.com/pritam-79/PRVN-Music/releases/download/v0.05/PRVN-Music-v0.05-arm64.apk) |
 | **Windows** | x86_64 (Windows 10/11) | *Pending host C++ toolchain* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
 | **macOS** | Apple Silicon / x86_64 | *Pending macOS build environment* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
 | **Linux** | x86_64 (GLIBC 2.31+) | *Planned* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
@@ -32,12 +32,12 @@
 ## Verified Release Specifications (Android)
 
 - **Application ID**: `com.prvn.music`
-- **Release Version**: `0.0.4` (Version Code `4`)
-- **Package File**: `PRVN-Music-v0.04-arm64.apk`
-- **File Size**: `9,822,016` bytes (~9.36 MB)
+- **Release Version**: `0.0.5` (Version Code `5`)
+- **Package File**: `PRVN-Music-v0.05-arm64.apk`
+- **File Size**: `9,823,148` bytes (~9.37 MB)
 - **SHA-256 Checksum**:
   ```
-  DC49E1A04A61021820DEB0DCDE6B863CB575A214370941092FA71C81AD47F3F3
+  ED2C79D41E22F4E37331A483BDAFF42DEAAA79BB2533A20D83756C146DCCA7CB
   ```
 - **Signing Scheme**: Android APK Signature Scheme v2 (Verified)
 - **Minimum OS Version**: Android 7.0 (API 24)
@@ -83,13 +83,13 @@ Customize your home screen with 5 adaptive launcher themes via **Settings → Ap
 ## Quick Installation
 
 ### Standard Android Install
-1. Download [`PRVN-Music-v0.04-arm64.apk`](https://github.com/pritam-79/PRVN-Music/releases/download/v0.04/PRVN-Music-v0.04-arm64.apk).
+1. Download [`PRVN-Music-v0.05-arm64.apk`](https://github.com/pritam-79/PRVN-Music/releases/download/v0.05/PRVN-Music-v0.05-arm64.apk).
 2. Open the file in your device's Downloads folder and confirm installation.
 3. If prompted, toggle **Allow from this source** in Android Settings.
 
 ### Developer Install (ADB)
 ```bash
-adb install -r Builds/PRVN-Music-v0.04-arm64.apk
+adb install -r Builds/PRVN-Music-v0.05-arm64.apk
 ```
 
 ---

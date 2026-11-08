@@ -588,12 +588,10 @@ class YMusicApplication : Application() {
                 logger = rootLogger.fork("player-cache"),
             )
         }
-        val mediaProxyClient = KmpHttpClient.create {
-            defaultExecuteTimeout = APP_HTTP_TIMEOUT
-            logger = rootLogger.fork("kmphttp")
+        val mediaProxyClient = shared.http.engine.newBuilder().apply {
             cookieJar = shared.cookies
             defaultRedirectOptions = RedirectOptions(followRedirects = true, followSslRedirects = true)
-        }
+        }.build()
         val mediaProxy = LocalMediaProxy(
             playerCache,
             mediaProxyClient,

@@ -15,6 +15,12 @@ import kotlin.time.Duration.Companion.seconds
 const val DefaultHttpCacheBytes: Long = 32L * 1024 * 1024
 
 /**
+ * YouTube desktop attestation UA: must match the User-Agent that BotGuard and InnerTube mint against.
+ */
+const val DESKTOP_CHROME_UA: String =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+
+/**
  * The app's HTTP stack: ONE disk cache under [cacheDir], and ONE client on it — the [engine]
  * client, which carries **no** cookie jar (the scraping JS owns cookie policy). A second
  * `KmpHttpClient.create {}` would silently drop the cache, and a second [Cache] over the same
@@ -40,6 +46,14 @@ class AppHttpClients(
         defaultExecuteTimeout = APP_HTTP_TIMEOUT
         cache = diskCache
         this.logger = httpLogger // `logger` alone resolves to the constructor parameter
+        networkInterceptors += AsyncInterceptor { chain ->
+            val req = chain.request
+            if (req.header("User-Agent") == null) {
+                chain.proceed(req.newBuilder().header("User-Agent", DESKTOP_CHROME_UA).build())
+            } else {
+                chain.proceed(req)
+            }
+        }
     }
 
     val engine: KmpHttpClient = base.newBuilder().apply {
