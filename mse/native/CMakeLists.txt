@@ -47,7 +47,7 @@ set(MSE_SOURCES mse_ffmpeg.c mse_host.c mse_caps.c mse_vt.c mse_host_jni.c audio
 add_library(mseffmpegjni SHARED ${MSE_SOURCES})
 # MinGW on Windows adds a `lib` prefix to shared libs; the JVM loader expects mseffmpegjni.dll
 # (System.mapLibraryName on Windows has no prefix). Drop it so MinGW matches MSVC and the loader.
-if(WIN32)
+if(WIN32 AND NOT ANDROID)
   set_target_properties(mseffmpegjni PROPERTIES PREFIX "")
   # Statically link the MinGW runtime so mseffmpegjni.dll has no outside deps on the user's
   # machine. Without this it loads libgcc_s_seh-1.dll / libwinpthread-1.dll (which only exist
@@ -111,7 +111,7 @@ elseif(UNIX)
   target_link_libraries(mseffmpegjni PRIVATE dl m pthread)
 endif()
 
-if(WIN32)
+if(WIN32 AND NOT ANDROID)
   target_sources(mseffmpegjni PRIVATE
     mse_d3d11.c mse_d3d11_dec.c vpresent_d3d11.c vpipe_hw_d3d11.c
     aq_winmm.c)

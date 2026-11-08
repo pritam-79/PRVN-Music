@@ -1,0 +1,45 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group>
+        <clip-path android:pathData="M0,512 a512,512 0 1,0 1024,0 a512,512 0 1,0 -1024,0 Z" />
+        <path
+            android:pathData="M0,0h1024v1024h-1024z"
+            android:fillColor="#180D2E" />
+        <!-- DJ Acoustic rings -->
+        <path
+            android:pathData="M512,512m-420,0a420,420 0 1,1 840,0a420,420 0 1,1 -840,0"
+            android:strokeWidth="14"
+            android:strokeColor="#4C1D95" />
+        <path
+            android:pathData="M512,512m-360,0a360,360 0 1,1 720,0a360,360 0 1,1 -720,0"
+            android:strokeWidth="10"
+            android:strokeColor="#7C3AED" />
+        <!-- DJ Headphones Headband -->
+        <path
+            android:pathData="M300,520 C300,320 400,220 512,220 C624,220 724,320 724,520"
+            android:strokeWidth="36"
+            android:strokeColor="#C084FC"
+            android:strokeLineCap="round" />
+        <!-- Ear cup Left -->
+        <path
+            android:pathData="M260,490h60v140h-60z"
+            android:fillColor="#A855F7" />
+        <path
+            android:pathData="M275,475h30v170h-30z"
+            android:fillColor="#E879F9" />
+        <!-- Ear cup Right -->
+        <path
+            android:pathData="M704,490h60v140h-60z"
+            android:fillColor="#A855F7" />
+        <path
+            android:pathData="M719,475h30v170h-30z"
+            android:fillColor="#E879F9" />
+        <!-- Play Glyph Center -->
+        <path
+            android:pathData="M430,420 L620,512 L430,604 Z"
+            android:fillColor="#FFFFFF" />
+    </group>
+</vector>

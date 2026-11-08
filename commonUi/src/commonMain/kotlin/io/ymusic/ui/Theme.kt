@@ -70,7 +70,7 @@ data class DesignPalette(
 }
 
 /** The accent when the user has not picked one. */
-val DefaultAccent = Color(0xFFE8732A)
+val DefaultAccent = Color(0xFFA855F7)
 
 val LightDesignColors = DesignPalette(
     isDark = false,
@@ -105,36 +105,31 @@ val LightDesignColors = DesignPalette(
 val DarkDesignColors = DesignPalette(
     isDark = true,
     Accent = DefaultAccent,
-    InkStrong = Color(0xFFEDEDED),
-    Ink = Color(0xFFE2E2E2),
-    InkMuted = Color(0xFFC6C6C6),
-    InkSoft = Color(0xFFB2B2B2),
-    InkSecondary = Color(0xFF9A9A9A),
-    InkFaint = Color(0xFF7E7E7E),
-    IconDots = Color(0xFF8E8E8E),
-    OnInk = Color(0xFF141414),
+    InkStrong = Color(0xFFF8FAFC),
+    Ink = Color(0xFFE2E8F0),
+    InkMuted = Color(0xFF94A3B8),
+    InkSoft = Color(0xFF64748B),
+    InkSecondary = Color(0xFF475569),
+    InkFaint = Color(0xFF334155),
+    IconDots = Color(0xFF94A3B8),
+    OnInk = Color(0xFF0B0E14),
     OnAccent = Color.White,
-    // The legacy YMusic grounds (#303030 / #343434 / #383838, from the v3 app) and their
-    // companions, each keeping roughly the lift it had over the old near-black trio
-    // (0xFF121212 / 0xFF171717 / 0xFF1F1F1F): placeholders/stacks/pills sit clearly above the
-    // surface, outlines lift further, and dividers stay the legacy way — slightly DARKER lines
-    // cut into the grey rather than light hairlines on black.
-    Placeholder = Color(0xFF454545),
-    PlaceholderDim = Color(0xFF414141),
-    PlaceholderIcon = Color(0xFF767676),
-    StackNear = Color(0xFF454545),
-    StackFar = Color(0xFF3D3D3D),
-    StackTab = Color(0xFF424242),
-    Outline = Color(0xFF5C5C5C),
-    OutlineSoft = Color(0xFF525252),
-    Divider = Color(0xFF2A2A2A),
-    DividerMini = Color(0xFF2D2D2D),
-    Surface = Color(0xFF272727),
-    SurfaceDim = Color(0xFF313131),
-    SurfaceElevated = Color(0xFF292929),
-    SettingsCard = Color(0xFF333333),
-    FieldPill = Color(0xFF3F3F3F),
-    BrandGreen = Color(0xFF1DB954),
+    Placeholder = Color(0xFF1E2433),
+    PlaceholderDim = Color(0xFF161B26),
+    PlaceholderIcon = Color(0xFF64748B),
+    StackNear = Color(0xFF1E2433),
+    StackFar = Color(0xFF161B26),
+    StackTab = Color(0xFF1A202E),
+    Outline = Color(0xFF2D3547),
+    OutlineSoft = Color(0xFF232A3B),
+    Divider = Color(0xFF161B26),
+    DividerMini = Color(0xFF1E2433),
+    Surface = Color(0xFF0B0E14),
+    SurfaceDim = Color(0xFF10141D),
+    SurfaceElevated = Color(0xFF161B26),
+    SettingsCard = Color(0xFF161B26),
+    FieldPill = Color(0xFF1E2433),
+    BrandGreen = Color(0xFF06B6D4),
 )
 
 /** Dark with every ground pure black, for OLED screens. */

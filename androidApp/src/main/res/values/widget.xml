@@ -2,7 +2,7 @@
 <resources>
     <dimen name="widget_radius">20dp</dimen>
     <!-- Shown when there is no artwork to derive the background from (the YMusic accent). -->
-    <color name="widget_fallback">#FFE8732A</color>
-    <color name="widget_card_fallback">#FF5A2E2A</color>
-    <string name="widget_brand" translatable="false">YMUSIC</string>
+    <color name="widget_fallback">#FFA855F7</color>
+    <color name="widget_card_fallback">#FF0B0E14</color>
+    <string name="widget_brand" translatable="false">PRVN</string>
 </resources>

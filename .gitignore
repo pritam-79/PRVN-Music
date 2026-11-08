@@ -70,3 +70,4 @@ gradle/gradle-daemon-jvm.properties
 *.cer
 *.mobileprovision
 spikes/ios-mse-lab
+Builds/

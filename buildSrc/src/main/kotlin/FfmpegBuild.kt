@@ -27,7 +27,7 @@ import java.io.File
  */
 object FfmpegBuild {
     /** The ABIs the apk and the device tests ship; every Android native (quickjs, mse, ffmpeg) is built for each. */
-    val ANDROID_ABIS = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+    val ANDROID_ABIS = listOf("arm64-v8a")
 
     fun root(project: Project): File = project.rootProject.projectDir.parentFile.resolve("ffmpeg-build")
 
@@ -116,12 +116,14 @@ abstract class SyncFfmpeg : DefaultTask() {
     private fun copyPack(src: File, dest: File) {
         dest.mkdirs()
         dest.listFiles()?.forEach { it.deleteRecursively() }
-        // Preserve Mach-O symlinks (libavcodec.63.dylib -> libavcodec.63.2.100.dylib).
-        // Java copyRecursively dereferences them and would triple the packed size.
-        val process = ProcessBuilder("cp", "-a", "${src.absolutePath}/.", dest.absolutePath)
-            .redirectErrorStream(true).start()
-        val text = process.inputStream.bufferedReader().readText()
-        check(process.waitFor() == 0) { "cp -a $src -> $dest failed: $text" }
+        if (System.getProperty("os.name").lowercase().contains("win")) {
+            src.copyRecursively(dest, overwrite = true)
+        } else {
+            val process = ProcessBuilder("cp", "-a", "${src.absolutePath}/.", dest.absolutePath)
+                .redirectErrorStream(true).start()
+            val text = process.inputStream.bufferedReader().readText()
+            check(process.waitFor() == 0) { "cp -a $src -> $dest failed: $text" }
+        }
         listOf("ffmpeg", "ffmpeg.exe", "libffmpeg.so").forEach { name ->
             File(dest, name).takeIf { it.isFile }?.setExecutable(true)
         }

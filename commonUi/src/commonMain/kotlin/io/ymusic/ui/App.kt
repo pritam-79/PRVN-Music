@@ -136,6 +136,8 @@ import io.ymusic.ui.resources.section_discover
 import io.ymusic.ui.resources.section_donate
 import io.ymusic.ui.resources.section_downloads
 import io.ymusic.ui.resources.section_feedback
+import io.ymusic.ui.playtogether.PlayTogetherScreen
+import io.ymusic.ui.resources.section_play_together
 import io.ymusic.ui.resources.section_library
 import io.ymusic.ui.resources.section_play_again
 import io.ymusic.ui.resources.section_settings
@@ -167,6 +169,7 @@ enum class AppSection(val id: Int, val label: StringResource, val icon: ImageVec
     Discover(1, Res.string.section_discover, Icons.Outlined.OndemandVideo, 0),
     YtMusic(2, Res.string.section_yt_music, Icons.Default.PlayCircleOutline, 0),
     Library(3, Res.string.section_library, Icons.Outlined.LibraryMusic, 0),
+    PlayTogether(11, Res.string.section_play_together, PlayTogetherIcon, 0),
     PlayAgain(4, Res.string.section_play_again, Icons.Outlined.History, 1),
     Downloads(5, Res.string.section_downloads, Icons.Outlined.FileDownload, 1),
     Settings(6, Res.string.section_settings, Icons.Outlined.Settings, 1),
@@ -205,7 +208,7 @@ private val QueueActions = setOf(LinkAction.QUEUE_NEXT, LinkAction.QUEUE_LAST)
 private val DownloadActions = setOf(LinkAction.DOWNLOAD, LinkAction.DOWNLOAD_M4A, LinkAction.DOWNLOAD_MP3)
 
 /** The sections a restart resumes; anything else (Settings, Downloads, …) resumes the last of these. */
-private val ResumableSections = setOf(AppSection.Discover, AppSection.Library, AppSection.YtMusic)
+private val ResumableSections = setOf(AppSection.Discover, AppSection.Library, AppSection.YtMusic, AppSection.PlayTogether)
 
 /** The section state a shell hands to [App]: starts on the last resumable section the user had open. */
 @Composable
@@ -1147,6 +1150,7 @@ private fun AppRoot(
                                                     onDeeplink = openDeeplink,
                                                 )
                                                 AppSection.Library -> LibraryScreen(graph, coordinator)
+                                                AppSection.PlayTogether -> PlayTogetherScreen(graph, coordinator)
                                                 AppSection.PlayAgain -> PlayAgainScreen(graph, coordinator)
                                                 AppSection.Downloads -> DownloadsScreen(graph, coordinator)
                                                 AppSection.Settings -> SettingsScreen(

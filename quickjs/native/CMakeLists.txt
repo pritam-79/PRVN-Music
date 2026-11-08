@@ -26,7 +26,7 @@ add_library(quickjsjni SHARED
 # MinGW on Windows prefixes shared libs with `lib` by default (Unix convention), producing
 # libquickjsjni.dll — but the JVM loader uses System.mapLibraryName("quickjsjni") which on Windows
 # resolves to quickjsjni.dll (no prefix). Drop the prefix so one name serves MinGW and MSVC alike.
-if(WIN32)
+if(WIN32 AND NOT ANDROID)
   set_target_properties(quickjsjni PROPERTIES PREFIX "")
   # Statically link the MinGW runtime so quickjsjni.dll has no outside deps on the user's
   # machine. Without this it loads libgcc_s_seh-1.dll / libwinpthread-1.dll (which only exist

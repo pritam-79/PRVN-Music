@@ -5,5 +5,7 @@
     <!-- commonUi DesignColors.Surface (Light / Dark) — keep in sync: the splash and window background must
          equal the first Compose frame's ground or the launch flashes a colour change. -->
     <color name="app_surface">#FFFFFFFF</color>
-    <color name="app_surface_dark">#FF272727</color>
+    <color name="app_surface_dark">#FF0B0E14</color>
+    <color name="prvn_purple">#FFA855F7</color>
+    <color name="prvn_cyan">#FF06B6D4</color>
 </resources>

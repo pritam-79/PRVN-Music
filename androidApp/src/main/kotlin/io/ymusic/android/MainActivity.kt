@@ -372,7 +372,12 @@ class MainActivity : FragmentActivity() {
                 error != null -> Booting { Text(startupFailedMessage("$error"), color = MaterialTheme.colorScheme.error) }
                 graph == null -> Booting { CircularProgressIndicator() }
                 else -> {
-                    LaunchedEffect(graph) { attachPip(graph!!) }
+                    LaunchedEffect(graph) {
+                        attachPip(graph!!)
+                        graph!!.settings.flow(AppSettings.appIcon).collect { iconKey ->
+                            AppIconManager.setLauncherIcon(this@MainActivity, iconKey)
+                        }
+                    }
                     val section = rememberStartSection(graph!!)
                     LaunchedEffect(pendingSection.value) {
                         pendingSection.value?.let {

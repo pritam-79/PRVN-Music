@@ -86,6 +86,7 @@ fun AppDrawer(
                 .filter { it != AppSection.Catalogue || showCatalogue }
                 .filter { it != AppSection.PlayAgain || !guest }
                 .filter { it != AppSection.Donate || showDonate }
+                .filter { it != AppSection.Telegram || AppLinks(null).telegram.isNotEmpty() }
             // Keyed on open: Material3's drawer keeps its content composed while closed.
             val activeItemFocus = remember { FocusRequester() }
             LaunchedEffect(open) {
@@ -160,7 +161,7 @@ private fun DrawerHeader(appVersion: String?, premium: Boolean, onCheckUpdate: (
                     }
                 }
             }
-            HeaderLink("ymusic.io") { uriHandler.openUri(websiteUrl) }
+            HeaderLink("PRVN Music") { uriHandler.openUri(websiteUrl) }
         }
     }
 }

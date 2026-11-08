@@ -199,6 +199,30 @@ object AppSettings {
      */
     val sponsorBlockEnabled = BoolSetting("playback.sponsorBlock", true)
 
+    /** Launcher app icon variant: "original", "purple", "neon", "minimal", "dj". */
+    val appIcon = StringSetting("appearance.appIcon", "original")
+
+    /** Playback audio quality preference: "high", "medium", "low". */
+    val audioQuality = StringSetting("playback.audioQuality", "high")
+
+    /** Play Together default room visibility: "PRIVATE", "INVITE", "ANYONE". */
+    val playTogetherDefaultVisibility = StringSetting("playtogether.defaultVisibility", "ANYONE")
+
+    /** Whether the user allows room invitations. */
+    val playTogetherAllowInvites = BoolSetting("playtogether.allowInvites", true)
+
+    /** Play Together playback sync drift compensation threshold in milliseconds. */
+    val playTogetherSyncDriftMs = IntSetting("playtogether.syncDriftMs", 500)
+
+    /** Supabase Realtime WebSocket URL (e.g. wss://xyz.supabase.co/realtime/v1/websocket). Empty = local relay. */
+    val playTogetherRealtimeUrl = StringSetting("playtogether.realtimeUrl", "")
+
+    /** Supabase anon public API key for Realtime WebSocket authentication. */
+    val playTogetherAnonKey = StringSetting("playtogether.anonKey", "")
+
+    /** Room activity and invite notifications. */
+    val roomNotifications = BoolSetting("notifications.roomNotifications", true)
+
     /**
      * Overlay pictures-per-second on the Now Playing / fullscreen video hole.
      * Off by default. Sampling runs only while that hole is composed, the window is focused,

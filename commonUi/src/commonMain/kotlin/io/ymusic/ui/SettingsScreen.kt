@@ -1,4 +1,58 @@
 package io.ymusic.ui
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import org.jetbrains.compose.resources.painterResource
+import io.ymusic.ui.resources.ic_app_icon_dj
+import io.ymusic.ui.resources.ic_app_icon_minimal
+import io.ymusic.ui.resources.ic_app_icon_neon
+import io.ymusic.ui.resources.ic_app_icon_original
+import io.ymusic.ui.resources.ic_app_icon_purple
+import io.ymusic.ui.resources.settings_app_icon
+import io.ymusic.ui.resources.settings_app_icon_dj
+import io.ymusic.ui.resources.settings_app_icon_hint
+import io.ymusic.ui.resources.settings_app_icon_minimal
+import io.ymusic.ui.resources.settings_app_icon_neon
+import io.ymusic.ui.resources.settings_app_icon_original
+import io.ymusic.ui.resources.settings_app_icon_purple
+import io.ymusic.ui.resources.settings_audio_quality
+import io.ymusic.ui.resources.settings_audio_quality_high
+import io.ymusic.ui.resources.settings_audio_quality_hint
+import io.ymusic.ui.resources.settings_audio_quality_low
+import io.ymusic.ui.resources.settings_audio_quality_medium
+import io.ymusic.ui.resources.settings_notifications_playback
+import io.ymusic.ui.resources.settings_notifications_playback_hint
+import io.ymusic.ui.resources.settings_notifications_room
+import io.ymusic.ui.resources.settings_notifications_room_hint
+import io.ymusic.ui.resources.settings_play_together_drift
+import io.ymusic.ui.resources.settings_play_together_drift_hint
+import io.ymusic.ui.resources.settings_play_together_invites
+import io.ymusic.ui.resources.settings_play_together_invites_hint
+import io.ymusic.ui.resources.settings_play_together_vis_anyone
+import io.ymusic.ui.resources.settings_play_together_vis_invite
+import io.ymusic.ui.resources.settings_play_together_vis_private
+import io.ymusic.ui.resources.settings_play_together_visibility
+import io.ymusic.ui.resources.settings_play_together_visibility_hint
+import io.ymusic.ui.resources.settings_section_notifications
+import io.ymusic.ui.resources.settings_section_play_together
+import io.ymusic.ui.resources.settings_section_updates
+import io.ymusic.ui.resources.settings_updates_check
+import io.ymusic.ui.resources.settings_updates_check_hint
+import io.ymusic.ui.resources.settings_updates_github_releases
+import io.ymusic.ui.resources.settings_play_together_backend
+import io.ymusic.ui.resources.settings_play_together_backend_hint
+import io.ymusic.ui.resources.settings_play_together_backend_local
+import io.ymusic.ui.resources.settings_play_together_backend_supabase
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -140,11 +194,13 @@ fun SettingsScreen(graph: AppGraph, signedIn: Boolean = false, onLogin: () -> Un
     val scrollState = rememberScrollState()
     TrackScroll { scrollState.canScrollBackward }
     Column(Modifier.fillMaxSize().verticalScroll(scrollState).padding(bottom = DesignSpacing.SettingsSectionGap + LocalMiniPlayerInset.current)) {
+        // 1. APPEARANCE
         SettingsSection(Res.string.settings_section_appearance) {
             ThemeRow(
                 current = theme,
                 onSelect = { value -> scope.launch { graph.settings.put(AppSettings.theme, value) } },
             )
+            AppIconPickerRow(graph)
             AccentRow(
                 current = accentColorOf(accent),
                 onPick = { color ->
@@ -156,10 +212,7 @@ fun SettingsScreen(graph: AppGraph, signedIn: Boolean = false, onLogin: () -> Un
                 current = uiLanguage.ifBlank { defaultUiLanguageTag() },
                 onSelect = { tag ->
                     scope.launch {
-                        // The put rebuilds the app under key(tag), cancelling this screen's scope —
-                        // the engine notify must outlive it.
                         withContext(NonCancellable) {
-                            // Persist FIRST: apply is only the notify — the engine re-pulls this setting.
                             graph.settings.put(AppSettings.uiLanguage, tag)
                             applyLocale(gl = null)
                         }
@@ -167,17 +220,10 @@ fun SettingsScreen(graph: AppGraph, signedIn: Boolean = false, onLogin: () -> Un
                 },
             )
         }
-        SettingsSection(Res.string.settings_section_content) {
-            ContentLocaleRow(
-                title = stringResource(Res.string.settings_content_region),
-                subtitle = stringResource(Res.string.settings_content_locale_hint),
-                current = options.gl,
-                options = options.regions,
-                loading = loadingOptions,
-                onSelect = { code -> pickLocale(gl = code) },
-            )
-        }
+
+        // 2. PLAYBACK
         SettingsSection(Res.string.settings_section_playback) {
+            AudioQualityRow(graph)
             SoundRow(graph, speed = true)
             SoundRow(graph, speed = false)
             CaptionStyleRow(graph)
@@ -189,11 +235,74 @@ fun SettingsScreen(graph: AppGraph, signedIn: Boolean = false, onLogin: () -> Un
                 Res.string.settings_sponsor_block,
                 Res.string.settings_sponsor_block_hint,
             )
+            ContentLocaleRow(
+                title = stringResource(Res.string.settings_content_region),
+                subtitle = stringResource(Res.string.settings_content_locale_hint),
+                current = options.gl,
+                options = options.regions,
+                loading = loadingOptions,
+                onSelect = { code -> pickLocale(gl = code) },
+            )
             PlayerCacheRow(graph)
         }
+
+        // 3. PLAY TOGETHER
+        SettingsSection(Res.string.settings_section_play_together) {
+            PlayTogetherVisibilityRow(graph)
+            ToggleRow(
+                graph,
+                AppSettings.playTogetherAllowInvites,
+                Res.string.settings_play_together_invites,
+                Res.string.settings_play_together_invites_hint,
+            )
+            PlayTogetherDriftRow(graph)
+            PlayTogetherBackendRow(graph)
+        }
+
+        // 4. DOWNLOADS
         if (graph.downloads != null) {
             SettingsSection(Res.string.settings_section_downloads) { DownloadSettingsRows(graph) }
         }
+
+        // 5. NOTIFICATIONS
+        SettingsSection(Res.string.settings_section_notifications) {
+            PlaybackNotificationStatusRow()
+            ToggleRow(
+                graph,
+                AppSettings.roomNotifications,
+                Res.string.settings_notifications_room,
+                Res.string.settings_notifications_room_hint,
+            )
+        }
+
+        // 6. PRIVACY
+        SettingsSection(Res.string.settings_section_privacy) {
+            ToggleRow(graph, AppSettings.crashReports, Res.string.settings_crash_reports, Res.string.settings_crash_reports_hint)
+            ToggleRow(graph, AppSettings.stats, Res.string.settings_stats, Res.string.settings_stats_hint)
+        }
+
+        // 7. ABOUT PRVN
+        SettingsSection(Res.string.settings_section_about) {
+            AboutPrvnRow(graph)
+            VersionsRow(graph)
+            val config by remember(graph) { graph.remoteConfig ?: emptyFlow() }.collectAsState(initial = null)
+            val links = AppLinks(config)
+            LinkRow(Res.string.settings_source_code, links.sourceCode)
+            LinkRow(Res.string.settings_terms, links.terms)
+            LicensesRow()
+        }
+
+        // 8. UPDATES
+        SettingsSection(Res.string.settings_section_updates) {
+            UpdatesCheckRow()
+            if (graph.updates != null) {
+                ToggleRow(graph, AppSettings.autoDownloadUpdates, Res.string.settings_auto_update, Res.string.settings_auto_update_hint)
+            }
+            val config by remember(graph) { graph.remoteConfig ?: emptyFlow() }.collectAsState(initial = null)
+            config?.features?.changelogUrl?.let { LinkRow(Res.string.settings_changelog, it) }
+        }
+
+        // DEVICES (if available)
         if (graph.exportSessionCookies != null && graph.scanQrCode != null &&
             graph.confirmDeviceOwner != null && graph.api != null
         ) {
@@ -201,28 +310,447 @@ fun SettingsScreen(graph: AppGraph, signedIn: Boolean = false, onLogin: () -> Un
                 LinkDevicesRow(graph, signedIn = signedIn, onLogin = onLogin)
             }
         }
-        // Both telemetry consents are LIVE: the shells mirror them into the send-gates, so nothing
-        // leaves the app while a switch is off, and no restart is needed either way.
-        SettingsSection(Res.string.settings_section_privacy) {
-            ToggleRow(graph, AppSettings.crashReports, Res.string.settings_crash_reports, Res.string.settings_crash_reports_hint)
-            ToggleRow(graph, AppSettings.stats, Res.string.settings_stats, Res.string.settings_stats_hint)
-        }
-        SettingsSection(Res.string.settings_section_about) {
-            VersionsRow(graph)
-            // Download updates in the background (on by default); installing still waits for a tap.
-            if (graph.updates != null) {
-                ToggleRow(graph, AppSettings.autoDownloadUpdates, Res.string.settings_auto_update, Res.string.settings_auto_update_hint)
-            }
-            val config by remember(graph) { graph.remoteConfig ?: emptyFlow() }.collectAsState(initial = null)
-            config?.features?.changelogUrl?.let { LinkRow(Res.string.settings_changelog, it) }
-            val links = AppLinks(config)
-            LinkRow(Res.string.settings_source_code, links.sourceCode)
-            LinkRow(Res.string.settings_terms, links.terms)
-            LicensesRow()
-        }
+
+        // DEBUG
         SettingsSection(Res.string.settings_debug) {
             ToggleRow(graph, AppSettings.showFps, Res.string.settings_show_fps, Res.string.settings_show_fps_hint)
         }
+    }
+}
+
+@Composable
+private fun AppIconPickerRow(graph: AppGraph) {
+    val scope = rememberCoroutineScope()
+    val currentIcon by remember(graph) { graph.settings.flow(AppSettings.appIcon) }.collectAsState()
+    val icons = remember {
+        listOf(
+            Triple("original", Res.string.settings_app_icon_original, Res.drawable.ic_app_icon_original),
+            Triple("purple", Res.string.settings_app_icon_purple, Res.drawable.ic_app_icon_purple),
+            Triple("neon", Res.string.settings_app_icon_neon, Res.drawable.ic_app_icon_neon),
+            Triple("minimal", Res.string.settings_app_icon_minimal, Res.drawable.ic_app_icon_minimal),
+            Triple("dj", Res.string.settings_app_icon_dj, Res.drawable.ic_app_icon_dj),
+        )
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+    ) {
+        Text(
+            stringResource(Res.string.settings_app_icon),
+            style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+        )
+        Text(
+            stringResource(Res.string.settings_app_icon_hint),
+            style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+            modifier = Modifier.padding(top = DesignSpacing.Space2, bottom = DesignSpacing.Space8),
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icons.forEach { (key, labelRes, iconRes) ->
+                val selected = currentIcon == key
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { scope.launch { graph.settings.put(AppSettings.appIcon, key) } }
+                        .padding(2.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(
+                                width = if (selected) 2.5.dp else 1.dp,
+                                color = if (selected) DesignColors.Accent else DesignColors.Outline,
+                                shape = RoundedCornerShape(14.dp),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            painter = painterResource(iconRes),
+                            contentDescription = stringResource(labelRes),
+                            modifier = Modifier.size(46.dp).clip(RoundedCornerShape(11.dp)),
+                        )
+                    }
+                    Text(
+                        stringResource(labelRes),
+                        style = TextStyle(
+                            fontSize = 10.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selected) DesignColors.Accent else DesignColors.InkSecondary,
+                        ),
+                        modifier = Modifier.padding(top = 4.dp),
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val AudioQualityOptions = listOf(
+    "high" to Res.string.settings_audio_quality_high,
+    "medium" to Res.string.settings_audio_quality_medium,
+    "low" to Res.string.settings_audio_quality_low,
+)
+
+@Composable
+private fun AudioQualityRow(graph: AppGraph) {
+    val scope = rememberCoroutineScope()
+    val current by remember(graph) { graph.settings.flow(AppSettings.audioQuality) }.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { open = true }
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.settings_audio_quality),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+            )
+            Text(
+                stringResource(Res.string.settings_audio_quality_hint),
+                style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+                modifier = Modifier.padding(top = DesignSpacing.Space2),
+            )
+        }
+        Box {
+            Text(
+                stringResource((AudioQualityOptions.firstOrNull { it.first == current } ?: AudioQualityOptions.first()).second),
+                style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary),
+            )
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                AudioQualityOptions.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(label)) },
+                        onClick = {
+                            open = false
+                            scope.launch { graph.settings.put(AppSettings.audioQuality, value) }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val PlayTogetherVisibilityOptions = listOf(
+    "ANYONE" to Res.string.settings_play_together_vis_anyone,
+    "INVITE" to Res.string.settings_play_together_vis_invite,
+    "PRIVATE" to Res.string.settings_play_together_vis_private,
+)
+
+@Composable
+private fun PlayTogetherVisibilityRow(graph: AppGraph) {
+    val scope = rememberCoroutineScope()
+    val current by remember(graph) { graph.settings.flow(AppSettings.playTogetherDefaultVisibility) }.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { open = true }
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.settings_play_together_visibility),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+            )
+            Text(
+                stringResource(Res.string.settings_play_together_visibility_hint),
+                style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+                modifier = Modifier.padding(top = DesignSpacing.Space2),
+            )
+        }
+        Box {
+            Text(
+                stringResource((PlayTogetherVisibilityOptions.firstOrNull { it.first == current } ?: PlayTogetherVisibilityOptions.first()).second),
+                style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary),
+            )
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                PlayTogetherVisibilityOptions.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(label)) },
+                        onClick = {
+                            open = false
+                            scope.launch { graph.settings.put(AppSettings.playTogetherDefaultVisibility, value) }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val PlayTogetherDriftOptions = listOf(
+    250 to "250 ms (Low latency)",
+    500 to "500 ms (Recommended)",
+    750 to "750 ms (Relaxed)",
+    1000 to "1000 ms (High latency)",
+)
+
+@Composable
+private fun PlayTogetherDriftRow(graph: AppGraph) {
+    val scope = rememberCoroutineScope()
+    val current by remember(graph) { graph.settings.flow(AppSettings.playTogetherSyncDriftMs) }.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { open = true }
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.settings_play_together_drift),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+            )
+            Text(
+                stringResource(Res.string.settings_play_together_drift_hint),
+                style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+                modifier = Modifier.padding(top = DesignSpacing.Space2),
+            )
+        }
+        Box {
+            Text(
+                (PlayTogetherDriftOptions.firstOrNull { it.first == current } ?: PlayTogetherDriftOptions[1]).second,
+                style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary),
+            )
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                PlayTogetherDriftOptions.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            open = false
+                            scope.launch { graph.settings.put(AppSettings.playTogetherSyncDriftMs, value) }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayTogetherBackendRow(graph: AppGraph) {
+    val scope = rememberCoroutineScope()
+    val realtimeUrl by remember(graph) { graph.settings.flow(AppSettings.playTogetherRealtimeUrl) }.collectAsState()
+    val realtimeKey by remember(graph) { graph.settings.flow(AppSettings.playTogetherAnonKey) }.collectAsState()
+    var openDialog by remember { mutableStateOf(false) }
+
+    val isConfigured = realtimeUrl.isNotBlank() && realtimeKey.isNotBlank()
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { openDialog = true }
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.settings_play_together_backend),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+            )
+            Text(
+                stringResource(Res.string.settings_play_together_backend_hint),
+                style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+                modifier = Modifier.padding(top = DesignSpacing.Space2),
+            )
+        }
+        Text(
+            if (isConfigured) stringResource(Res.string.settings_play_together_backend_supabase)
+            else stringResource(Res.string.settings_play_together_backend_local),
+            style = TextStyle(
+                fontSize = 13.sp,
+                color = if (isConfigured) DesignColors.Accent else DesignColors.InkSecondary,
+                fontWeight = if (isConfigured) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+        )
+    }
+
+    if (openDialog) {
+        var draftUrl by remember { mutableStateOf(realtimeUrl) }
+        var draftKey by remember { mutableStateOf(realtimeKey) }
+
+        AlertDialog(
+            onDismissRequest = { openDialog = false },
+            title = {
+                Text(
+                    stringResource(Res.string.settings_play_together_backend),
+                    fontWeight = FontWeight.Bold,
+                    color = DesignColors.Ink,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Enter your Supabase Realtime endpoint and anon public API key to enable live cross-device group playback sync. Leave blank to use local on-device relay.",
+                        style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+                    )
+                    OutlinedTextField(
+                        value = draftUrl,
+                        onValueChange = { draftUrl = it },
+                        label = { Text("Supabase URL") },
+                        placeholder = { Text("https://your-project.supabase.co") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = DesignColors.Accent,
+                            focusedLabelColor = DesignColors.Accent,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = draftKey,
+                        onValueChange = { draftKey = it },
+                        label = { Text("Supabase Anon Key") },
+                        placeholder = { Text("eyJhbGciOiJIUzI1NiIsIn...") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = DesignColors.Accent,
+                            focusedLabelColor = DesignColors.Accent,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        openDialog = false
+                        scope.launch {
+                            graph.settings.put(AppSettings.playTogetherRealtimeUrl, draftUrl.trim())
+                            graph.settings.put(AppSettings.playTogetherAnonKey, draftKey.trim())
+                            io.ymusic.ui.playtogether.backend.PlayTogetherBackendProvider.configure(
+                                draftUrl.trim(),
+                                draftKey.trim(),
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
+                ) {
+                    Text("Save", color = Color.White)
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (draftUrl.isNotBlank() || draftKey.isNotBlank()) {
+                        TextButton(
+                            onClick = {
+                                draftUrl = ""
+                                draftKey = ""
+                                openDialog = false
+                                scope.launch {
+                                    graph.settings.put(AppSettings.playTogetherRealtimeUrl, "")
+                                    graph.settings.put(AppSettings.playTogetherAnonKey, "")
+                                    io.ymusic.ui.playtogether.backend.PlayTogetherBackendProvider.configure("", "")
+                                }
+                            },
+                        ) {
+                            Text("Reset to Local", color = Color(0xFFF43F5E))
+                        }
+                    }
+                    TextButton(onClick = { openDialog = false }) {
+                        Text(stringResource(Res.string.dialog_cancel), color = DesignColors.InkSecondary)
+                    }
+                }
+            },
+            containerColor = DesignColors.SettingsCard,
+        )
+    }
+}
+
+@Composable
+private fun PlaybackNotificationStatusRow() {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.settings_notifications_playback),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+            )
+            Text(
+                stringResource(Res.string.settings_notifications_playback_hint),
+                style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+                modifier = Modifier.padding(top = DesignSpacing.Space2),
+            )
+        }
+        Text(
+            "Active",
+            style = TextStyle(fontSize = 13.sp, color = DesignColors.Accent, fontWeight = FontWeight.SemiBold),
+        )
+    }
+}
+
+@Composable
+private fun UpdatesCheckRow() {
+    val uriHandler = LocalUriHandler.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { uriHandler.openUri("https://github.com/pritam-79/PRVN-Music/releases") }
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(Res.string.settings_updates_check),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+            )
+            Text(
+                stringResource(Res.string.settings_updates_check_hint),
+                style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
+                modifier = Modifier.padding(top = DesignSpacing.Space2),
+            )
+        }
+        Text(
+            stringResource(Res.string.settings_updates_github_releases),
+            style = TextStyle(fontSize = 13.sp, color = DesignColors.Accent),
+        )
+    }
+}
+
+@Composable
+private fun AboutPrvnRow(graph: AppGraph) {
+    var open by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable { open = true }
+            .padding(horizontal = DesignSpacing.SettingsRowHorizontal, vertical = DesignSpacing.SettingsRowVertical),
+    ) {
+        Text(
+            "About PRVN Music",
+            style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+        )
+        Text(
+            "App information, developer, licences & privacy",
+            style = TextStyle(fontSize = 12.sp, color = DesignColors.Accent),
+            modifier = Modifier.padding(top = DesignSpacing.Space2),
+        )
+    }
+    if (open) {
+        AboutPrvnDialog(graph, onDismiss = { open = false })
     }
 }
 
