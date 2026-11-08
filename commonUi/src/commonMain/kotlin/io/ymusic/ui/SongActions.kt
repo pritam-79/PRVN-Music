@@ -50,7 +50,7 @@ internal fun youtubeShareLink(kind: String, id: String): String? {
         YtFeedItem.KIND_PLAYLIST -> "playlist?list=${id.removePrefix("VL")}"
         YtFeedItem.KIND_CHANNEL -> id.takeIf { it.startsWith("UC") }?.let { "channel/$it" }
         else -> null
-    }?.let { "https://www.ymusicapp.com/$it" }
+    }?.let { "https://www.youtube.com/$it" }
 }
 
 /**

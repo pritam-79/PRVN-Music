@@ -111,7 +111,7 @@ internal fun FeedbackScreen(graph: AppGraph, onDismiss: () -> Unit) {
     val info = FeedbackInfo(
         deviceId = deviceId,
         app = listOfNotNull(
-            "YMusic" + (graph.appVersionName?.let { name -> " $name" + (graph.appVersionCode?.let { " ($it)" } ?: "") } ?: ""),
+            "PRVN Music" + (graph.appVersionName?.let { name -> " $name" + (graph.appVersionCode?.let { " ($it)" } ?: "") } ?: ""),
             graph.platformInfo,
         ).joinToString(" · "),
         engine = bundles?.let { "engine ${it.reportedEngine ?: "-"} · player ${it.reportedPlayer ?: "-"}" },
