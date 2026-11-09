@@ -56,7 +56,7 @@ android {
         applicationId = "com.prvn.music"
         minSdk = Versions.minSdk
         targetSdk = Versions.targetSdk
-        versionCode = 12
+        versionCode = 13
         versionName = appVersionName
         buildConfigField("String", "SENTRY_DSN", "\"${sentryDsn()}\"")
         buildConfigField("String", "GIT_COMMIT", "\"${gitCommit()}\"")

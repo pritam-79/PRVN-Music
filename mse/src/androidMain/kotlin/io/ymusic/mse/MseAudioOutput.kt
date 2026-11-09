@@ -74,24 +74,30 @@ class MseAudioOutput(private val host: Long) {
     init {
         instances[host] = this
         handler.post {
-            @Suppress("DEPRECATION")
-            sink = DefaultAudioSink.Builder()
-                .setAudioTrackBufferSizeProvider(
-                    DefaultAudioTrackBufferSizeProvider.Builder()
-                        .setMinPcmBufferDurationUs(MIN_TRACK_BUFFER_US)
-                        .setMaxPcmBufferDurationUs(MAX_TRACK_BUFFER_US)
+            try {
+                @Suppress("DEPRECATION")
+                sink = DefaultAudioSink.Builder()
+                    .setAudioTrackBufferSizeProvider(
+                        DefaultAudioTrackBufferSizeProvider.Builder()
+                            .setMinPcmBufferDurationUs(MIN_TRACK_BUFFER_US)
+                            .setMaxPcmBufferDurationUs(MAX_TRACK_BUFFER_US)
+                            .build(),
+                    )
+                    .build()
+                sink.setListener(SinkListener())
+                sink.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                         .build(),
                 )
-                .build()
-            sink.setListener(SinkListener())
-            sink.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-            )
-            MseHostNative.dacAttach(host, true)
-            step()
+                try {
+                    MseHostNative.dacAttach(host, true)
+                } catch (_: Throwable) {}
+                step()
+            } catch (t: Throwable) {
+                MseLogBridge.fire(LOG_WARN, "mse audio sink init failed: $t")
+            }
         }
     }
 
@@ -99,14 +105,17 @@ class MseAudioOutput(private val host: Long) {
     fun release() {
         released = true
         instances.remove(host)
-        // Wakes a paused dacPoll wait now instead of after PAUSED_WAIT_MS.
-        MseHostNative.dacAttach(host, false)
+        try {
+            MseHostNative.dacAttach(host, false)
+        } catch (_: Throwable) {}
         val done = CountDownLatch(1)
         handler.post {
             handler.removeCallbacks(step)
             if (::sink.isInitialized) {
-                sink.reset()
-                sink.release()
+                try {
+                    sink.reset()
+                    sink.release()
+                } catch (_: Throwable) {}
             }
             done.countDown()
         }
@@ -118,105 +127,149 @@ class MseAudioOutput(private val host: Long) {
 
     private fun step() {
         if (released) return
-        val free = heldFrames == 0
-        val n = MseHostNative.dacPoll(host, buffer, if (free) buffer.capacity() else 0, PAUSED_WAIT_MS, state)
-        if (n == POLL_RELEASED) return
-        if (n < 0) {
-            if (!failing) MseLogBridge.fire(LOG_WARN, "mse audio sink: poll failed ($n), retrying")
-            failing = true
-            handler.postDelayed(step, RETRY_MS)
-            return
-        }
-        if (!configured && rate > 0 && SystemClock.uptimeMillis() - configuredAtMs >= CONFIGURE_RETRY_MS) {
-            configured = configure()
-        }
-        if (state[GEN] != gen || state[RATE] != rate || state[CHANNELS] != channels) {
-            val sameFormat = configured && state[RATE] == rate && state[CHANNELS] == channels
-            if (sameFormat && (endAt >= 0 || sinkFrames == baseFrames || !sink.hasPendingData())) {
-                baseFrames = sinkFrames
-            } else {
-                sink.flush()
-                sinkFrames = 0
-                baseFrames = 0
+        try {
+            val free = heldFrames == 0
+            val n = try {
+                MseHostNative.dacPoll(host, buffer, if (free) buffer.capacity() else 0, PAUSED_WAIT_MS, state)
+            } catch (_: Throwable) {
+                POLL_RELEASED
             }
-            gen = state[GEN]
-            heldFrames = 0
-            heldSilence = false
-            padAt = baseFrames
-            padFrames = 0
-            starvedSinceMs = 0
-            reportedFrames = -1
-            endAt = -1
-            if (state[RATE] != rate || state[CHANNELS] != channels || !configured) {
-                rate = state[RATE]
-                channels = state[CHANNELS]
+            if (n == POLL_RELEASED) return
+            if (n < 0) {
+                if (!failing) MseLogBridge.fire(LOG_WARN, "mse audio sink: poll failed ($n), retrying")
+                failing = true
+                handler.postDelayed(step, RETRY_MS)
+                return
+            }
+            if (!configured && rate > 0 && SystemClock.uptimeMillis() - configuredAtMs >= CONFIGURE_RETRY_MS) {
                 configured = configure()
             }
-        }
-        if (n > 0 && configured) {
-            endAt = -1
-            buffer.clear()
-            buffer.limit(n)
-            heldFrames = n / (channels * BYTES_PER_SAMPLE)
-            starvedSinceMs = 0
-        }
-        val run = state[RUN] != 0
-        if (run != running) {
-            running = run
-            if (run) sink.play() else sink.pause()
-        }
-        if (n == 0 && heldFrames == 0 && running && padFrames == 0L && reportedFrames <= 0 && sinkFrames > 0 &&
-            baseFrames == 0L
-        ) {
-            val now = SystemClock.uptimeMillis()
-            if (starvedSinceMs == 0L) starvedSinceMs = now else if (now - starvedSinceMs >= START_STARVED_MS) padToStart()
-        }
-        var full = false
-        try {
-            if (heldFrames > 0) {
-                if (sink.handleBuffer(buffer, sinkFrames * MICROS_PER_SECOND / rate, 1)) {
-                    sinkFrames += heldFrames
-                    heldSilence = false
-                    heldFrames = 0
+            if (state[GEN] != gen || state[RATE] != rate || state[CHANNELS] != channels) {
+                val sameFormat = configured && state[RATE] == rate && state[CHANNELS] == channels
+                val hasPending = try { ::sink.isInitialized && sink.hasPendingData() } catch (_: Throwable) { false }
+                if (sameFormat && (endAt >= 0 || sinkFrames == baseFrames || !hasPending)) {
+                    baseFrames = sinkFrames
                 } else {
-                    full = true
+                    try {
+                        if (::sink.isInitialized) sink.flush()
+                    } catch (_: Throwable) {}
+                    sinkFrames = 0
+                    baseFrames = 0
+                }
+                gen = state[GEN]
+                heldFrames = 0
+                heldSilence = false
+                padAt = baseFrames
+                padFrames = 0
+                starvedSinceMs = 0
+                reportedFrames = -1
+                endAt = -1
+                if (state[RATE] != rate || state[CHANNELS] != channels || !configured) {
+                    rate = state[RATE]
+                    channels = state[CHANNELS]
+                    configured = configure()
                 }
             }
-            if (state[DRAIN] != 0 && heldFrames == 0 && sinkFrames > 0 && endAt < 0) padToEnd()
-            failing = false
-        } catch (error: AudioSink.InitializationException) {
-            recover(error)
-            return
-        } catch (error: AudioSink.WriteException) {
-            recover(error)
-            return
+            if (n > 0 && configured && channels > 0) {
+                endAt = -1
+                buffer.clear()
+                buffer.limit(n)
+                heldFrames = n / (channels * BYTES_PER_SAMPLE)
+                starvedSinceMs = 0
+            }
+            val run = state[RUN] != 0
+            if (run != running) {
+                running = run
+                try {
+                    if (::sink.isInitialized) {
+                        if (run) sink.play() else sink.pause()
+                    }
+                } catch (_: Throwable) {}
+            }
+            if (n == 0 && heldFrames == 0 && running && padFrames == 0L && reportedFrames <= 0 && sinkFrames > 0 &&
+                baseFrames == 0L
+            ) {
+                val now = SystemClock.uptimeMillis()
+                if (starvedSinceMs == 0L) starvedSinceMs = now else if (now - starvedSinceMs >= START_STARVED_MS) padToStart()
+            }
+            var full = false
+            try {
+                if (heldFrames > 0 && configured && rate > 0 && ::sink.isInitialized) {
+                    val ptsUs = sinkFrames * MICROS_PER_SECOND / rate
+                    if (sink.handleBuffer(buffer, ptsUs, 1)) {
+                        sinkFrames += heldFrames
+                        heldSilence = false
+                        heldFrames = 0
+                    } else {
+                        full = true
+                    }
+                }
+                if (state[DRAIN] != 0 && heldFrames == 0 && sinkFrames > 0 && endAt < 0) padToEnd()
+                failing = false
+            } catch (error: AudioSink.InitializationException) {
+                recover(error)
+                return
+            } catch (error: AudioSink.WriteException) {
+                recover(error)
+                return
+            } catch (t: Throwable) {
+                recover(Exception(t))
+                return
+            }
+            report()
+            if (n > 0 && !full) handler.post(step) else handler.postDelayed(step, IDLE_MS)
+        } catch (t: Throwable) {
+            if (!failing) MseLogBridge.fire(LOG_WARN, "mse audio sink step encountered error: $t")
+            failing = true
+            if (!released) {
+                handler.postDelayed(step, RETRY_MS)
+            }
         }
-        report()
-        if (n > 0 && !full) handler.post(step) else handler.postDelayed(step, IDLE_MS)
     }
 
     private fun report() {
-        val raw = playedFrames()
-        if (raw >= 0) {
-            val played = if (endAt >= 0) minOf(raw, endAt) else raw
-            val media = (if (played <= padAt || padFrames == 0L) played else maxOf(padAt, played - padFrames)) - baseFrames
-            if (media >= 0) reportedFrames = maxOf(reportedFrames, media)
-        }
-        val bufferUs = sink.audioTrackBufferSizeUs.takeIf { it != C.TIME_UNSET } ?: 0L
-        val padWritten = if (endAt < 0 && heldSilence) 0L else padFrames
-        val written = (if (endAt >= 0) endAt else sinkFrames) - baseFrames - padWritten
-        val pending = if (endAt >= 0) raw < endAt else sink.hasPendingData() || heldFrames > 0
-        MseHostNative.dacReport(host, gen, reportedFrames, written, pending, bufferUs)
+        try {
+            val raw = playedFrames()
+            if (raw >= 0) {
+                val played = if (endAt >= 0) minOf(raw, endAt) else raw
+                val media = (if (played <= padAt || padFrames == 0L) played else maxOf(padAt, played - padFrames)) - baseFrames
+                if (media >= 0) reportedFrames = maxOf(reportedFrames, media)
+            }
+            val bufferUs = if (configured && ::sink.isInitialized) {
+                try {
+                    sink.audioTrackBufferSizeUs.takeIf { it != C.TIME_UNSET } ?: 0L
+                } catch (_: Throwable) {
+                    0L
+                }
+            } else {
+                0L
+            }
+            val padWritten = if (endAt < 0 && heldSilence) 0L else padFrames
+            val written = (if (endAt >= 0) endAt else sinkFrames) - baseFrames - padWritten
+            val pending = if (endAt >= 0) {
+                raw < endAt
+            } else {
+                (configured && ::sink.isInitialized && (try { sink.hasPendingData() } catch (_: Throwable) { false })) || heldFrames > 0
+            }
+            MseHostNative.dacReport(host, gen, reportedFrames, written, pending, bufferUs)
+        } catch (_: Throwable) {}
     }
 
     private fun playedFrames(): Long {
-        val positionUs = sink.getCurrentPositionUs(false)
-        if (positionUs == AudioSink.CURRENT_POSITION_NOT_SET || rate <= 0) return -1
+        if (!configured || rate <= 0 || !::sink.isInitialized) return -1
+        val positionUs = try {
+            sink.getCurrentPositionUs(false)
+        } catch (_: Throwable) {
+            AudioSink.CURRENT_POSITION_NOT_SET
+        }
+        if (positionUs == AudioSink.CURRENT_POSITION_NOT_SET) return -1
         return positionUs * rate / MICROS_PER_SECOND
     }
 
     private fun padToEnd() {
+        if (rate <= 0 || channels <= 0) return
         val frameBytes = channels * BYTES_PER_SAMPLE
+        if (frameBytes <= 0) return
         val frames = (rate * END_PAD_MS / 1000).coerceAtMost((buffer.capacity() / frameBytes).toLong()).toInt()
         endAt = sinkFrames
         if (frames <= 0) return
@@ -228,9 +281,11 @@ class MseAudioOutput(private val host: Long) {
     }
 
     private fun padToStart() {
-        val bufferUs = sink.audioTrackBufferSizeUs
+        if (rate <= 0 || channels <= 0 || !::sink.isInitialized) return
+        val bufferUs = try { sink.audioTrackBufferSizeUs } catch (_: Throwable) { C.TIME_UNSET }
         if (bufferUs == C.TIME_UNSET) return
         val frameBytes = channels * BYTES_PER_SAMPLE
+        if (frameBytes <= 0) return
         val missing = bufferUs * rate / MICROS_PER_SECOND - sinkFrames
         val frames = (missing.coerceAtLeast(0) + rate / START_PAD_MARGIN_DIVISOR)
             .coerceAtMost((buffer.capacity() / frameBytes).toLong()).toInt()
@@ -246,7 +301,7 @@ class MseAudioOutput(private val host: Long) {
 
     private fun configure(): Boolean {
         configuredAtMs = SystemClock.uptimeMillis()
-        if (rate <= 0 || channels <= 0) return false
+        if (rate <= 0 || channels <= 0 || !::sink.isInitialized) return false
         val format = Format.Builder()
             .setSampleMimeType(MimeTypes.AUDIO_RAW)
             .setPcmEncoding(C.ENCODING_PCM_16BIT)
@@ -261,13 +316,18 @@ class MseAudioOutput(private val host: Long) {
             if (configureWarned != what) MseLogBridge.fire(LOG_WARN, "mse audio sink: cannot play $what, retrying: $error")
             configureWarned = what
             false
+        } catch (t: Throwable) {
+            MseLogBridge.fire(LOG_WARN, "mse audio sink configure failed: $t")
+            false
         }
     }
 
     private fun recover(error: Exception) {
         if (!failing) MseLogBridge.fire(LOG_WARN, "mse audio sink failed, reopening: $error")
         failing = true
-        sink.flush()
+        try {
+            if (::sink.isInitialized) sink.flush()
+        } catch (_: Throwable) {}
         handler.postDelayed(step, RETRY_MS)
     }
 
@@ -286,7 +346,9 @@ class MseAudioOutput(private val host: Long) {
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
             currentAudioSessionId = audioSessionId
             MseLogBridge.fire(LOG_INFO, "mse audio session $audioSessionId")
-            MseHostNative.dacSession(host, audioSessionId)
+            try {
+                MseHostNative.dacSession(host, audioSessionId)
+            } catch (_: Throwable) {}
         }
     }
 

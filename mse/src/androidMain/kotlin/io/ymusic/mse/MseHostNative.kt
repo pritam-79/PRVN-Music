@@ -31,10 +31,10 @@ actual object MseHostNative {
     actual external fun destroy(handle: Long)
 
     @JvmStatic
-    fun createHost(): Long = create()
+    fun createHost(): Long = try { create() } catch (_: Throwable) { 0L }
 
     @JvmStatic
-    fun destroyHost(handle: Long) = destroy(handle)
+    fun destroyHost(handle: Long) { try { destroy(handle) } catch (_: Throwable) {} }
 
     @JvmStatic
     external fun setSink(handle: Long, sink: MseHostSink?)
@@ -55,42 +55,28 @@ actual object MseHostNative {
     actual external fun frames(handle: Long): Int
 
     @JvmStatic
-    actual fun droppedFrames(handle: Long): Int {
-        return try {
-            nativeDroppedFrames(handle)
-        } catch (_: Throwable) {
-            0
-        }
-    }
+    actual external fun droppedFrames(handle: Long): Int
 
     @JvmStatic
-    private external fun nativeDroppedFrames(handle: Long): Int
-
-    @JvmStatic
-    actual fun videoDecoder(handle: Long): String {
-        return try {
-            nativeVideoDecoder(handle)
-        } catch (_: Throwable) {
-            ""
-        }
-    }
-
-    @JvmStatic
-    private external fun nativeVideoDecoder(handle: Long): String
+    actual external fun videoDecoder(handle: Long): String
 
     @JvmStatic
     actual external fun samplesPlayed(handle: Long): Long
 
     actual fun copyFrame(handle: Long, afterGen: Int): NativeMseFrame? {
         if (handle == 0L) return null
-        var n = copyFrameBytes(handle, afterGen, frameMeta, frameScratch)
-        if (n <= 0) return null
-        if (n > frameScratch.size) {
-            frameScratch = ByteArray(n)
-            n = copyFrameBytes(handle, afterGen, frameMeta, frameScratch)
-            if (n <= 0 || n > frameScratch.size) return null
+        return try {
+            var n = copyFrameBytes(handle, afterGen, frameMeta, frameScratch)
+            if (n <= 0) return null
+            if (n > frameScratch.size) {
+                frameScratch = ByteArray(n)
+                n = copyFrameBytes(handle, afterGen, frameMeta, frameScratch)
+                if (n <= 0 || n > frameScratch.size) return null
+            }
+            NativeMseFrame(frameMeta[0], frameMeta[1], frameMeta[2], frameScratch)
+        } catch (_: Throwable) {
+            null
         }
-        return NativeMseFrame(frameMeta[0], frameMeta[1], frameMeta[2], frameScratch)
     }
 
     @JvmStatic
@@ -120,6 +106,7 @@ actual object MseHostNative {
     @JvmStatic
     actual external fun setVirtualizer(handle: Long, width: Float)
 
+    @JvmStatic
     actual external fun setPreamp(handle: Long, db: Float)
 
     @JvmStatic
@@ -129,15 +116,8 @@ actual object MseHostNative {
     fun audioSessionId(handle: Long): Int = MseAudioOutput.getAudioSessionId(handle)
 
     @JvmStatic
-    fun videoFailure(handle: Long): String? = null
+    external fun videoFailure(handle: Long): String?
 
     @JvmStatic
-    fun setDecoderCaps(rows: IntArray) {
-        try {
-            nativeSetDecoderCaps(rows)
-        } catch (_: Throwable) {}
-    }
-
-    @JvmStatic
-    private external fun nativeSetDecoderCaps(rows: IntArray)
+    external fun setDecoderCaps(rows: IntArray)
 }

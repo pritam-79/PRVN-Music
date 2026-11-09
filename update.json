@@ -1,8 +1,8 @@
 {
-  "versionName": "0.0.9",
-  "versionCode": 12,
+  "versionName": "0.0.10",
+  "versionCode": 13,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.0.9/PRVN-Music-0.0.9-arm64-v8a-release.apk",
-  "releaseNotes": "PRVN Music v0.0.9 (Build 12): Ultimate Playback & Synchronization Overhaul. Restored high-performance Media3 DefaultAudioSink for zero-stutter continuous streaming; eliminated native DAC ring-buffer stalls and A/V clock drift; fixed Play Together room JSON parsing for peer tracks and shared queues; added automatic join retries and safe drift thresholds so both normal playback and Listen Together play smooth, synchronized audio without stuttering.",
-  "forceUpdate": false
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.0.10/PRVN-Music-0.0.10-arm64-v8a-release.apk",
+  "releaseNotes": "PRVN Music v0.0.10 (Build 13): Critical Crash Fix & Stability Release. Resolved app force close when opening or playing songs caused by missing JNI @JvmStatic on setPreamp; wrapped native audio DSP and video surface interfaces in fail-safe try-catch handlers; eliminated potential divide-by-zero edge cases during early audio buffer feeds; guaranteed smooth crash-free playback across all tracks and Listen Together sessions.",
+  "forceUpdate": true
 }
