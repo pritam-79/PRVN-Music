@@ -51,6 +51,7 @@ sealed interface AppUpdateStatus {
         val installInApp: Boolean,
         val downloadPage: String?,
         val download: UpdateDownload,
+        val forceUpdate: Boolean = false,
     ) : AppUpdateStatus
 }
 

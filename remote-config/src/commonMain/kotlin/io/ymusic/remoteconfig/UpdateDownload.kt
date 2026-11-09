@@ -9,19 +9,19 @@ import okio.HashingSink
 import okio.Path
 import okio.blackholeSink
 import okio.buffer
-import okio.use
 
-/** The downloaded file is not the published one: wrong size or hash. Its partial file is gone. */
+/**
+ * Thrown when a downloaded installer does not match what the service published: it took more
+ * bytes than [AppUpdate.size], or its final SHA-256 hash does not match [AppUpdate.sha256].
+ */
 class DownloadMismatchException(message: String) : Exception(message)
 
 /**
- * Downloads [url] into [part], continuing whatever an interrupted attempt (network failure, app
- * killed) left there: an existing partial file is resumed with `Range: bytes=<its size>-` and
- * appended to only on a `206`; any other answer abandons it and the download starts over from
- * byte 0. A partial file already [size] long (killed before the caller moved it into place) is
- * just verified.
+ * Downloads the installer at [url] into [part], resuming from what is already there if the server
+ * answers 206 Partial Content. If the server does not accept Range, [part] is deleted and the
+ * download starts from the beginning.
  *
- * The finished file must be exactly [size] bytes hashing to [sha256] (hex), else
+ * An installer that is larger than [size] or whose finished hash does not match [sha256] throws
  * [DownloadMismatchException] and [part] is deleted, so the next attempt starts clean. Any other
  * failure leaves [part] for the next attempt to resume. Name [part] after the release's version
  * AND hash: bytes of one release must never be continued with another's.
@@ -35,12 +35,13 @@ suspend fun downloadResumable(
     sha256: String,
     onProgress: (done: Long) -> Unit,
 ) {
+    var expectedSize = size
     var offset = fileSystem.metadataOrNull(part)?.size ?: 0L
-    if (offset > size) {
+    if (expectedSize > 0L && offset > expectedSize) {
         fileSystem.delete(part)
         offset = 0L
     }
-    if (offset == size) {
+    if (expectedSize > 0L && offset == expectedSize) {
         if (sha256.isEmpty() || sha256Of(fileSystem, part) == sha256) return
         fileSystem.delete(part)
         offset = 0L
@@ -62,6 +63,10 @@ suspend fun downloadResumable(
     }
     try {
         check(response.isSuccessful) { "HTTP ${response.code} fetching $url" }
+        if (expectedSize <= 0L) {
+            val cl = response.header("Content-Length")?.toLongOrNull() ?: 0L
+            if (cl > 0L) expectedSize = offset + cl
+        }
         val body = response.body.asyncSource()
         (if (offset > 0) fileSystem.appendingSink(part) else fileSystem.sink(part)).buffer().use { out ->
             val chunk = Buffer()
@@ -72,7 +77,7 @@ suspend fun downloadResumable(
                 if (read == -1L) break
                 out.write(chunk, read)
                 done += read
-                if (done > size) throw DownloadMismatchException("more than the published $size bytes")
+                if (expectedSize > 0L && done > expectedSize) throw DownloadMismatchException("more than the published $expectedSize bytes")
                 onProgress(done)
             }
         }

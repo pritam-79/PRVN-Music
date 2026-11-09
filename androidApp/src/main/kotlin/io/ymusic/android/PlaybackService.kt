@@ -872,12 +872,12 @@ class PlaybackService : MediaLibraryService() {
     private fun holdLocksWhilePlaying(player: Player) {
         val power = getSystemService(POWER_SERVICE) as PowerManager
         val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-        val wake = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "YMusic:playback")
+        val wake = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PRVNMusic:playback")
             .apply { setReferenceCounted(false) }
             .also { wakeLock = it }
 
         @Suppress("DEPRECATION")
-        val net = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "YMusic:playback")
+        val net = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "PRVNMusic:playback")
             .apply { setReferenceCounted(false) }
             .also { wifiLock = it }
         serviceScope.launch {

@@ -123,6 +123,7 @@ class AndroidAppUpdates(
         installInApp = update.installInApp,
         downloadPage = update.downloadPage ?: downloadSite() ?: update.url,
         download = download,
+        forceUpdate = update.forceUpdate || (update.minimumVersionCode > currentVersionCode),
     )
 
     init {

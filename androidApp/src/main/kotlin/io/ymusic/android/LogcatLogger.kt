@@ -22,6 +22,6 @@ class LogcatLogger private constructor(crumbs: List<Crumb>) : CrumbLogger(crumbs
     }
 
     private companion object {
-        const val TAG = "YMusic"
+        const val TAG = "PRVNMusic"
     }
 }

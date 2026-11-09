@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -53,31 +54,21 @@ import io.ymusic.ui.resources.update_official_site
 import io.ymusic.ui.resources.update_ready
 import io.ymusic.ui.resources.update_up_to_date
 import io.ymusic.ui.resources.update_version
+import io.ymusic.ui.resources.ymusic_logo
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import projectcommon.error.DISK_FULL_CODE
 import projectcommon.error.NETWORK_CODE
 
 /**
- * The update prompt, one shape for every state of the release: the version, its brief notes, the
- * full changelog, and below them what the user's own download is doing.
- *
- * Progress and failure show only once the user has tapped "Download" this run: a background
- * download is invisible until then (it prompts only once ready), and "Download" joins it, retries
- * it, or starts it. A ready
- * installer turns the button into "Install now" however it was downloaded. A failure links the
- * official download site. Without the OS's install permission the user is asked to grant it; the
- * browser download is offered only once an installer has waited on that for a while.
- *
- * "Ask later" hides it for the rest of this run (the update itself stays offered: the drawer still
- * flags it), except that a download the user started brings it back once ready; the next cold
- * start or a "Check for update" asks again.
+ * Custom PRVN Music in-app update dialog displaying the brand mark, version details,
+ * what's new changelog, download progress, and mandatory update enforcement.
  */
 @Composable
 fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
     val updates = graph.updates ?: return
     val status by updates.status.collectAsState()
     val uriHandler = LocalUriHandler.current
-    // Keyed on [recheck]: a manual "Check for update" brings back a release asked about later.
     var dismissedVersion by remember(recheck) { mutableStateOf<Int?>(null) }
     var requestedVersion by remember { mutableStateOf<Int?>(null) }
     val offer = status as? AppUpdateStatus.Offered ?: return
@@ -86,71 +77,103 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
     LaunchedEffect(requested && download is UpdateDownload.Ready) {
         if (requested && download is UpdateDownload.Ready) dismissedVersion = null
     }
-    if (offer.versionCode == dismissedVersion) return
-    // A background download in flight never prompts on its own; it does once ready, or on "Check for update".
+    if (!offer.forceUpdate && offer.versionCode == dismissedVersion) return
     if (!requested && download is UpdateDownload.Running && recheck == 0) return
 
     val blocked = updates.blockedReason
     val inPlace = blocked == null && offer.installInApp
-    val askLater: () -> Unit = { dismissedVersion = offer.versionCode }
+    val askLater: () -> Unit = {
+        if (!offer.forceUpdate) {
+            dismissedVersion = offer.versionCode
+        }
+    }
     val openDownloadPage: (() -> Unit)? = offer.downloadPage?.let { url -> { uriHandler.openUri(url) } }
 
     ElevatedBarDialog(
-        title = stringResource(Res.string.update_available_title),
-        // Back acts as the first button; a tap outside does nothing — only the buttons close it.
+        title = "PRVN Music Update",
         onDismiss = askLater,
         dismissOnClickOutside = false,
         canScrollBackward = false,
         canScrollForward = false,
         buttons = {
-            DialogSecondaryButton(stringResource(Res.string.update_ask_later), onClick = askLater)
+            if (!offer.forceUpdate) {
+                DialogSecondaryButton("Later", onClick = askLater)
+            }
             when {
                 !inPlace -> TextButton(onClick = { openDownloadPage?.invoke() }, enabled = openDownloadPage != null) {
-                    Text(stringResource(Res.string.update_download))
+                    Text("Update Now")
                 }
                 download is UpdateDownload.NeedsInstallPermission -> TextButton(onClick = { updates.allowInstall() }) {
                     Text(stringResource(Res.string.update_allow_install))
                 }
                 download is UpdateDownload.Ready || download is UpdateDownload.InstallFailed -> TextButton(onClick = { updates.installAndRestart() }) {
-                    Text(stringResource(Res.string.update_install_now))
+                    Text("Install Now")
                 }
                 download is UpdateDownload.Installing || (requested && download is UpdateDownload.Running) -> TextButton(onClick = {}, enabled = false) {
-                    Text(stringResource(Res.string.update_install_now))
+                    Text("Installing...")
                 }
                 else -> TextButton(
                     onClick = {
                         requestedVersion = offer.versionCode
                         updates.download()
                     },
-                ) { Text(stringResource(Res.string.update_download)) }
+                ) { Text("Update Now") }
             }
         },
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(DesignSpacing.Space8),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // PRVN Music Logo & Version Heading
             Row(
-                horizontalArrangement = Arrangement.spacedBy(DesignSpacing.Space8),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    stringResource(Res.string.update_version, offer.versionName),
-                    style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+                Icon(
+                    painter = painterResource(Res.drawable.ymusic_logo),
+                    contentDescription = "PRVN Music",
+                    modifier = Modifier.size(40.dp),
+                    tint = Color.Unspecified,
                 )
-                if (inPlace && download is UpdateDownload.Ready) {
+                Column {
                     Text(
-                        stringResource(Res.string.update_ready),
-                        style = TextStyle(fontSize = 13.sp, color = DesignColors.Accent),
+                        "PRVN Music v${offer.versionName}",
+                        style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+                    )
+                    Text(
+                        "Build ${offer.versionCode}" + if (offer.forceUpdate) " · Mandatory Update" else " · New Version Available",
+                        style = TextStyle(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (offer.forceUpdate) Color(0xFFEF4444) else DesignColors.Accent,
+                        ),
                     )
                 }
             }
-            ChangeNotes(offer.notes)
-            offer.changelogUrl?.let { url -> LinkText(stringResource(Res.string.update_full_changelog)) { uriHandler.openUri(url) } }
+
+            // What's New Section
+            if (offer.notes.isNotBlank()) {
+                Text(
+                    "What's New:",
+                    style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DesignColors.Ink),
+                )
+                ChangeNotes(offer.notes)
+            }
+
+            offer.changelogUrl?.let { url ->
+                LinkText(stringResource(Res.string.update_full_changelog)) { uriHandler.openUri(url) }
+            }
+
+            // Download progress indicator
             if (requested && download is UpdateDownload.Running) {
                 Text(
-                    stringResource(Res.string.update_downloading, formatBytes(download.done), formatBytes(download.total)),
+                    if (download.total > 0) {
+                        stringResource(Res.string.update_downloading, formatBytes(download.done), formatBytes(download.total))
+                    } else {
+                        "Downloading update: ${formatBytes(download.done)}"
+                    },
                     style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary),
                 )
                 LinearProgressIndicator(
@@ -158,6 +181,7 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
             if (download is UpdateDownload.Installing) {
                 Text(
                     stringResource(Res.string.update_installing),
@@ -165,6 +189,7 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
                 )
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
+
             if (download is UpdateDownload.NeedsInstallPermission) {
                 val browserLink = openDownloadPage?.takeIf { download.offerBrowser }
                 Text(
@@ -175,14 +200,17 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
                 )
                 browserLink?.let { LinkText(stringResource(Res.string.update_download_in_browser), it) }
             }
+
             if (requested && download is UpdateDownload.Failed) {
                 Text(updateFailureMessage(download.code), style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary))
                 openDownloadPage?.let { LinkText(stringResource(Res.string.update_official_site), it) }
             }
+
             if (download is UpdateDownload.InstallFailed) {
                 Text(updateFailureMessage(download.code), style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary))
                 openDownloadPage?.let { LinkText(stringResource(Res.string.update_official_site), it) }
             }
+
             if (blocked != null) {
                 Text(
                     stringResource(Res.string.update_manual_hint, stringResource(blocked)),
@@ -220,7 +248,7 @@ fun CheckUpdateDialog(graph: AppGraph, onDone: (found: Boolean) -> Unit) {
         if (check == UpdateCheck.Found) onDone(true) else result = check
     }
     ElevatedBarDialog(
-        title = stringResource(Res.string.update_check),
+        title = "Check for Updates",
         onDismiss = { onDone(false) },
         canScrollBackward = false,
         canScrollForward = false,

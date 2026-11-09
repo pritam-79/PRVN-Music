@@ -11,5 +11,5 @@
     <string name="widget_square_name">المشغّل · مربّع</string>
     <string name="widget_description">ما يُشغَّل الآن مع أزرار التحكم</string>
     <string name="widget_nothing_playing">لا شيء قيد التشغيل</string>
-    <string name="widget_open_to_start">افتح YMusic لبدء الاستماع</string>
+    <string name="widget_open_to_start">افتح PRVN Music لبدء الاستماع</string>
 </resources>

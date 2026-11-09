@@ -398,12 +398,12 @@ class DownloadForegroundService : Service() {
     private fun holdLocks() {
         if (wakeLock == null) {
             val power = getSystemService(POWER_SERVICE) as PowerManager
-            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "YMusic:downloads")
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PRVNMusic:downloads")
                 .apply { setReferenceCounted(false) }
 
             @Suppress("DEPRECATION")
             wifiLock = (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager)
-                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "YMusic:downloads")
+                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "PRVNMusic:downloads")
                 .apply { setReferenceCounted(false) }
         }
         if (wakeLock?.isHeld != true) {

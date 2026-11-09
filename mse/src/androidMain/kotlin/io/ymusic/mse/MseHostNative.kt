@@ -10,6 +10,11 @@ actual object MseHostNative {
     private val audioOutputs = ConcurrentHashMap<Long, MseAudioOutput>()
 
     init {
+        try { System.loadLibrary("avutil") } catch (_: Throwable) {}
+        try { System.loadLibrary("swresample") } catch (_: Throwable) {}
+        try { System.loadLibrary("swscale") } catch (_: Throwable) {}
+        try { System.loadLibrary("avcodec") } catch (_: Throwable) {}
+        try { System.loadLibrary("avformat") } catch (_: Throwable) {}
         System.loadLibrary("mseffmpegjni")
     }
 
@@ -28,10 +33,10 @@ actual object MseHostNative {
     }
 
     @JvmStatic
-    private external fun createHost(): Long
+    external fun createHost(): Long
 
     @JvmStatic
-    private external fun destroyHost(handle: Long)
+    external fun destroyHost(handle: Long)
 
     @JvmStatic
     actual external fun frames(handle: Long): Int
@@ -58,7 +63,7 @@ actual object MseHostNative {
     }
 
     @JvmStatic
-    private external fun copyFrameBytes(handle: Long, afterGen: Int, meta: IntArray, dest: ByteArray): Int
+    external fun copyFrameBytes(handle: Long, afterGen: Int, meta: IntArray, dest: ByteArray): Int
 
     @JvmStatic
     external fun setVideoSurface(handle: Long, surface: Surface?)

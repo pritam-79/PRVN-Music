@@ -77,6 +77,8 @@ data class AppUpdate(
      * over it (e.g. signed with another key): the dialog then sends the user to [downloadPage].
      */
     val installInApp: Boolean = true,
+    val forceUpdate: Boolean = false,
+    val minimumVersionCode: Int = 1,
 ) {
     companion object {
         private const val KEY_VERSION_CODE = "versionCode"
@@ -89,6 +91,8 @@ data class AppUpdate(
         private const val KEY_CHANGELOG_URL = "changelogUrl"
         private const val KEY_DOWNLOAD_PAGE = "downloadPage"
         private const val KEY_INSTALL_IN_APP = "installInApp"
+        private const val KEY_FORCE_UPDATE = "forceUpdate"
+        private const val KEY_MIN_VERSION_CODE = "minimumVersionCode"
 
         fun from(json: JsonObject): AppUpdate = AppUpdate(
             versionCode = json.int(KEY_VERSION_CODE),
@@ -101,6 +105,8 @@ data class AppUpdate(
             changelogUrl = json.stringOrNull(KEY_CHANGELOG_URL),
             downloadPage = json.stringOrNull(KEY_DOWNLOAD_PAGE),
             installInApp = json.boolOrNull(KEY_INSTALL_IN_APP) ?: true,
+            forceUpdate = json.boolOrNull(KEY_FORCE_UPDATE) ?: false,
+            minimumVersionCode = json.intOrNull(KEY_MIN_VERSION_CODE) ?: 1,
         )
 
         fun JsonWriter.value(data: AppUpdate): JsonWriter {
@@ -115,6 +121,8 @@ data class AppUpdate(
             data.changelogUrl?.let { name(KEY_CHANGELOG_URL).value(it) }
             data.downloadPage?.let { name(KEY_DOWNLOAD_PAGE).value(it) }
             name(KEY_INSTALL_IN_APP).value(data.installInApp)
+            name(KEY_FORCE_UPDATE).value(data.forceUpdate)
+            name(KEY_MIN_VERSION_CODE).value(data.minimumVersionCode)
             endObject()
             return this
         }

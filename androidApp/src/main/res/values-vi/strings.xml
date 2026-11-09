@@ -11,5 +11,5 @@
     <string name="widget_square_name">Trình phát · Vuông</string>
     <string name="widget_description">Bài đang phát và nút điều khiển</string>
     <string name="widget_nothing_playing">Không có gì đang phát</string>
-    <string name="widget_open_to_start">Mở YMusic để bắt đầu nghe</string>
+    <string name="widget_open_to_start">Mở PRVN Music để bắt đầu nghe</string>
 </resources>
