@@ -14,9 +14,6 @@ internal actual fun bindNativeMse(runtime: QuickJsRuntime, surface: MseVideoSurf
     if (host == 0L) error("mse_host_create failed")
     surface.host = host
     val audioOutput = MseAudioOutput(host)
-    try {
-        MseHostNative.setSink(host, audioOutput)
-    } catch (_: Throwable) {}
     MseHostNative.setVideoSurface(host, surface.surface)
     runtime.attachMseHost(host, MseHostNative.vtable())
     return object : NativeMseHost {
@@ -38,9 +35,6 @@ internal actual fun bindNativeMse(runtime: QuickJsRuntime, surface: MseVideoSurf
             // A successor session may already own the shared surface.
             if (surface.host == host) surface.host = 0L
             audioOutput.release()
-            try {
-                MseHostNative.setSink(host, null)
-            } catch (_: Throwable) {}
             MseHostNative.setVideoSurface(host, null)
             MseHostNative.destroy(host)
         }

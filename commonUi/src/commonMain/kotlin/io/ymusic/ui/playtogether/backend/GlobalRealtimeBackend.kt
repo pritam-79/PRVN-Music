@@ -119,8 +119,7 @@ class GlobalRealtimeBackend(
 
                                 // Keep rooms updated within last 20 minutes (prevents stale zombie rooms)
                                 if ((now - time) < 20 * 60 * 1000L) {
-                                    val trackJson = roomJson.stringOrNull("currentTrack")?.let { parseJson(it) }
-                                    val track = trackJson?.let { parseTrack(it) }
+                                    val track = extractTrack(roomJson, "currentTrack")
                                     val membersCount = roomJson.intOrNull("memberCount") ?: 1
                                     val modeStr = roomJson.stringOrNull("controlMode") ?: "HOST_ONLY"
                                     val mode = if (modeStr == "COLLABORATIVE") ControlMode.COLLABORATIVE else ControlMode.HOST_ONLY
@@ -279,6 +278,47 @@ class GlobalRealtimeBackend(
             }
         } catch (_: Exception) {}
 
+        // If relay message not immediately received, retry once after a short delay
+        if (!hasAnyMessage && !isClosed) {
+            try {
+                delay(600L)
+                val retryReq = RequestBuilder()
+                    .url("$relayUrl/${topicForRoom(cleanCode)}/json?poll=1&since=all")
+                    .header("User-Agent", "PRVN-Music-App/0.09")
+                    .header("Cache-Control", "no-cache")
+                    .get()
+                    .build()
+                val retryResp = client.execute(retryReq)
+                if (retryResp.isSuccessful) {
+                    val body = retryResp.body.utf8String()
+                    body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
+                        try {
+                            val root = parseJson(line)
+                            val msg = root.stringOrNull("message").orEmpty()
+                            if (msg.isNotBlank()) {
+                                val inner = parseJson(msg)
+                                val evType = inner.stringOrNull("event") ?: root.stringOrNull("title")
+                                when (evType) {
+                                    "ROOM_CLOSED" -> isClosed = true
+                                    "ROOM_STATE" -> {
+                                        latestRoomState = inner
+                                        hasAnyMessage = true
+                                    }
+                                    "PLAYBACK_UPDATED" -> {
+                                        latestPlayback = inner
+                                        hasAnyMessage = true
+                                    }
+                                    "PRESENCE", "MEMBER_JOINED", "SONG_REQUEST_ADD" -> {
+                                        hasAnyMessage = true
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         if (isClosed) {
             return@withContext Result.failure(Exception("This room session has ended."))
         }
@@ -303,8 +343,9 @@ class GlobalRealtimeBackend(
         }
 
         // Prefer live track from latestPlayback; fallback to roomState, then cached
-        val track = (latestPlayback?.stringOrNull("track") ?: latestRoomState?.stringOrNull("currentTrack"))
-            ?.let { parseTrack(parseJson(it)) } ?: cached?.currentTrack
+        val track = (latestPlayback?.let { extractTrack(it, "track") }
+            ?: latestRoomState?.let { extractTrack(it, "currentTrack") })
+            ?: cached?.currentTrack
 
         val isPlaying = latestPlayback?.boolOrNull("isPlaying") ?: latestRoomState?.boolOrNull("isPlaying") ?: cached?.isPlaying ?: false
         val basePos = latestPlayback?.longOrNull("positionMs") ?: latestRoomState?.longOrNull("positionMs") ?: cached?.positionMs ?: 0L
@@ -313,8 +354,9 @@ class GlobalRealtimeBackend(
         val elapsed = if (isPlaying) (Clock.System.now().toEpochMilliseconds() - lastUpdated).coerceAtLeast(0L) else 0L
         val currentPosition = basePos + elapsed
 
-        val queue = (latestPlayback?.stringOrNull("queue") ?: latestRoomState?.stringOrNull("queue"))
-            ?.let { parseQueue(it) } ?: cached?.queue?.toList() ?: emptyList()
+        val queue = (latestPlayback?.let { extractQueue(it, "queue") }
+            ?: latestRoomState?.let { extractQueue(it, "queue") })
+            ?: cached?.queue?.toList() ?: emptyList()
 
         val newMemberId = "member_${Random.nextLong(1000, 9999)}"
         val selfMember = RoomMember(
@@ -520,8 +562,8 @@ class GlobalRealtimeBackend(
                                                 val pos = inner.longOrNull("positionMs") ?: 0L
                                                 val senderId = inner.stringOrNull("senderId").orEmpty()
                                                 val ts = inner.longOrNull("timestampUtc") ?: Clock.System.now().toEpochMilliseconds()
-                                                val track = inner.stringOrNull("track")?.let { parseTrack(parseJson(it)) }
-                                                val queue = inner.stringOrNull("queue")?.let { parseQueue(it) }
+                                                val track = extractTrack(inner, "track") ?: extractTrack(inner, "currentTrack")
+                                                val queue = extractQueue(inner, "queue")
 
                                                 eventFlow.emit(
                                                     RoomEvent.PlaybackUpdated(
@@ -558,7 +600,7 @@ class GlobalRealtimeBackend(
                                             }
                                             "SONG_REQUEST_ADD" -> {
                                                 val rId = inner.stringOrNull("id") ?: "req_${Random.nextLong(1000, 9999)}"
-                                                val reqTrack = inner.stringOrNull("track")?.let { parseTrack(parseJson(it)) }
+                                                val reqTrack = extractTrack(inner, "track")
                                                 val reqUser = inner.stringOrNull("requesterName") ?: "Listener"
                                                 val reqUserId = inner.stringOrNull("requesterId") ?: "user"
                                                 val reqTime = inner.longOrNull("requestTimeMs") ?: Clock.System.now().toEpochMilliseconds()
@@ -611,12 +653,52 @@ class GlobalRealtimeBackend(
             val req = RequestBuilder()
                 .url("$relayUrl/$topic")
                 .header("Title", title)
-                .header("User-Agent", "PRVN-Music-App/0.06")
-                .header("Content-Type", "application/json")
+                .header("User-Agent", "PRVN-Music-App/0.09")
+                .header("Content-Type", "text/plain; charset=utf-8")
                 .post(message.toRequestBody(null))
                 .build()
             client.execute(req)
         } catch (_: Exception) {}
+    }
+
+    private fun extractTrack(json: JsonObject, key: String): PlayTogetherTrack? {
+        val element = json[key] ?: return null
+        return when (element) {
+            is JsonObject -> parseTrack(element)
+            is kotlinx.serialization.json.JsonPrimitive -> {
+                val content = if (element.isString) element.content else null
+                if (content.isNullOrBlank() || content == "null") return null
+                try {
+                    parseTrack(parseJson(content))
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            else -> null
+        }
+    }
+
+    private fun extractQueue(json: JsonObject, key: String): List<PlayTogetherTrack>? {
+        val element = json[key] ?: return null
+        return when (element) {
+            is JsonObject -> {
+                val items = element.objects("items")
+                if (items.isNotEmpty()) items.map { parseTrack(it) } else null
+            }
+            is kotlinx.serialization.json.JsonArray -> {
+                element.mapNotNull { if (it is JsonObject) parseTrack(it) else null }
+            }
+            is kotlinx.serialization.json.JsonPrimitive -> {
+                val content = if (element.isString) element.content else null
+                if (content.isNullOrBlank() || content == "null") return null
+                try {
+                    parseQueue(content)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            else -> null
+        }
     }
 
     private fun codeFromRoomId(roomId: String): String {

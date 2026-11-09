@@ -1,8 +1,8 @@
 {
-  "versionName": "0.0.8",
-  "versionCode": 11,
+  "versionName": "0.0.9",
+  "versionCode": 12,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.0.8/PRVN-Music-0.0.8-arm64-v8a-release.apk",
-  "releaseNotes": "PRVN Music v0.0.8 (Build 11): Completely fixed Listen Together audio playback and room discovery. Room code joining now reliably finds rooms and synchronizes state, host immediately relays playback upon member join, prevented infinite seek loops during stream buffering, eliminated slider drag network spam, and added 10s auto-refresh for public rooms.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.0.9/PRVN-Music-0.0.9-arm64-v8a-release.apk",
+  "releaseNotes": "PRVN Music v0.0.9 (Build 12): Ultimate Playback & Synchronization Overhaul. Restored high-performance Media3 DefaultAudioSink for zero-stutter continuous streaming; eliminated native DAC ring-buffer stalls and A/V clock drift; fixed Play Together room JSON parsing for peer tracks and shared queues; added automatic join retries and safe drift thresholds so both normal playback and Listen Together play smooth, synchronized audio without stuttering.",
   "forceUpdate": false
 }

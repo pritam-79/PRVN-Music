@@ -40,6 +40,18 @@ actual object MseHostNative {
     external fun setSink(handle: Long, sink: MseHostSink?)
 
     @JvmStatic
+    external fun dacAttach(handle: Long, attached: Boolean)
+
+    @JvmStatic
+    external fun dacPoll(handle: Long, dst: java.nio.ByteBuffer?, cap: Int, waitMs: Int, state: IntArray): Int
+
+    @JvmStatic
+    external fun dacReport(handle: Long, gen: Int, position: Long, written: Long, pending: Boolean, bufferUs: Long)
+
+    @JvmStatic
+    external fun dacSession(handle: Long, session: Int)
+
+    @JvmStatic
     actual external fun frames(handle: Long): Int
 
     @JvmStatic

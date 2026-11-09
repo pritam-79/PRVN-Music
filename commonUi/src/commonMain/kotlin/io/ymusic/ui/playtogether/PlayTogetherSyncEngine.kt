@@ -164,14 +164,15 @@ class PlayTogetherSyncEngine(
                                 player.pause()
                             }
 
-                            if (isPrepared && !isBuffering) {
+                            if (isPrepared && !isBuffering && !roomState.isHost) {
                                 val elapsed = (Clock.System.now().toEpochMilliseconds() - event.timestampUtc).coerceAtLeast(0L)
                                 val expectedPos = event.positionMs + if (event.isPlaying) elapsed else 0L
                                 val localPos = player.progress.value.positionMs
                                 val drift = abs(localPos - expectedPos)
                                 val now = Clock.System.now().toEpochMilliseconds()
 
-                                if (drift > syncDriftToleranceMs && (now - lastSeekTimestampMs > 4000L)) {
+                                val effectiveTolerance = maxOf(syncDriftToleranceMs, 2000L)
+                                if (drift > effectiveTolerance && (now - lastSeekTimestampMs > 5000L)) {
                                     lastSeekTimestampMs = now
                                     player.seekTo(expectedPos)
                                 }
@@ -198,6 +199,11 @@ class PlayTogetherSyncEngine(
     }
 
     private fun checkAndCompensateDrift(current: PlayTogetherState.InRoom) {
+        // Authoritative Host is the time source; never seek host for drift
+        if (current.isHost) {
+            controller.updateLocalDrift(0L)
+            return
+        }
         val state = player.status.value.state
         // Critical: Never seek while player is preparing or actively buffering stream chunks
         if (state !is PlaybackState.Prepared || state.buffering) return
@@ -212,8 +218,9 @@ class PlayTogetherSyncEngine(
         controller.updateLocalDrift(drift)
 
         val now = Clock.System.now().toEpochMilliseconds()
-        // Apply controlled seek only when drift exceeds tolerance and seek cooldown (4s) has elapsed
-        if (drift > syncDriftToleranceMs && (now - lastSeekTimestampMs > 4000L)) {
+        val effectiveTolerance = maxOf(syncDriftToleranceMs, 2000L)
+        // Apply controlled seek only when drift exceeds tolerance and seek cooldown (5s) has elapsed
+        if (drift > effectiveTolerance && (now - lastSeekTimestampMs > 5000L)) {
             lastSeekTimestampMs = now
             player.seekTo(expectedPos)
         }
