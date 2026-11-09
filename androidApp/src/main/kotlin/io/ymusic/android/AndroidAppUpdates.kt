@@ -245,7 +245,9 @@ class AndroidAppUpdates(
         downloadResumable(client, update.url, part.toOkioPath(), FileSystem.SYSTEM, update.size, update.sha256) { done ->
             set(update.release, UpdateDownload.Running(done, update.size))
         }
-        check(part.renameTo(apkFile(update))) { "could not move the APK into place" }
+        val dest = apkFile(update)
+        if (dest.exists()) dest.delete()
+        check(part.renameTo(dest)) { "could not move the APK into place" }
     }
 
     /** Opens the system install prompt; Android restarts nothing — the user reopens the app. */
