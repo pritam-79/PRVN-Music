@@ -48,6 +48,7 @@ class PlayTogetherSyncEngine(
     private var stateObserverJob: Job? = null
     private var currentActiveRoomId: String? = null
     private var lastPlaybackEventTimestamp: Long = 0L
+    private var lastSeekTimestampMs: Long = 0L
 
     /**
      * Configured drift tolerance in milliseconds from AppSettings (250ms, 500ms, 750ms, 1000ms).
@@ -153,21 +154,27 @@ class PlayTogetherSyncEngine(
                         if (currentYtId != targetTrack.id) {
                             syncToTrack(targetTrack, event.positionMs, event.isPlaying)
                         } else {
-                            // Same track, sync play/pause & seek
-                            val isLocallyPlaying = isPlayerPlaying()
-                            if (event.isPlaying && !isLocallyPlaying) {
+                            val state = player.status.value.state
+                            val isPrepared = state is PlaybackState.Prepared
+                            val isBuffering = isPrepared && state.buffering
+
+                            if (event.isPlaying && (state !is PlaybackState.Prepared || !state.playWhenReady)) {
                                 player.play()
-                            } else if (!event.isPlaying && isLocallyPlaying) {
+                            } else if (!event.isPlaying && isPrepared && state.playWhenReady) {
                                 player.pause()
                             }
 
-                            val elapsed = (Clock.System.now().toEpochMilliseconds() - event.timestampUtc).coerceAtLeast(0L)
-                            val expectedPos = event.positionMs + if (event.isPlaying) elapsed else 0L
-                            val localPos = player.progress.value.positionMs
-                            val drift = abs(localPos - expectedPos)
+                            if (isPrepared && !isBuffering) {
+                                val elapsed = (Clock.System.now().toEpochMilliseconds() - event.timestampUtc).coerceAtLeast(0L)
+                                val expectedPos = event.positionMs + if (event.isPlaying) elapsed else 0L
+                                val localPos = player.progress.value.positionMs
+                                val drift = abs(localPos - expectedPos)
+                                val now = Clock.System.now().toEpochMilliseconds()
 
-                            if (drift > syncDriftToleranceMs) {
-                                player.seekTo(expectedPos)
+                                if (drift > syncDriftToleranceMs && (now - lastSeekTimestampMs > 4000L)) {
+                                    lastSeekTimestampMs = now
+                                    player.seekTo(expectedPos)
+                                }
                             }
                         }
                     }
@@ -191,6 +198,12 @@ class PlayTogetherSyncEngine(
     }
 
     private fun checkAndCompensateDrift(current: PlayTogetherState.InRoom) {
+        val state = player.status.value.state
+        // Critical: Never seek while player is preparing or actively buffering stream chunks
+        if (state !is PlaybackState.Prepared || state.buffering) return
+        val trackId = current.currentTrack?.id ?: return
+        if (!isCurrentTrack(trackId)) return
+
         val localPos = player.progress.value.positionMs
         val expectedPos = current.positionMs
         val drift = abs(localPos - expectedPos)
@@ -198,8 +211,10 @@ class PlayTogetherSyncEngine(
         // Update measured drift in controller for UI badge and presence reporting
         controller.updateLocalDrift(drift)
 
-        if (drift > syncDriftToleranceMs) {
-            // Apply catch-up seek without stopping playback
+        val now = Clock.System.now().toEpochMilliseconds()
+        // Apply controlled seek only when drift exceeds tolerance and seek cooldown (4s) has elapsed
+        if (drift > syncDriftToleranceMs && (now - lastSeekTimestampMs > 4000L)) {
+            lastSeekTimestampMs = now
             player.seekTo(expectedPos)
         }
     }
@@ -212,13 +227,21 @@ class PlayTogetherSyncEngine(
 
         val currentItem = player.queue.value.currentItem as? PlayableItem.YtMedia
         if (currentItem?.videoId == track.id) {
-            val drift = abs(player.progress.value.positionMs - startPositionMs)
-            if (drift > syncDriftToleranceMs) {
-                player.seekTo(startPositionMs)
+            val state = player.status.value.state
+            val isPrepared = state is PlaybackState.Prepared
+            val isBuffering = isPrepared && state.buffering
+
+            if (isPrepared && !isBuffering) {
+                val drift = abs(player.progress.value.positionMs - startPositionMs)
+                val now = Clock.System.now().toEpochMilliseconds()
+                if (drift > syncDriftToleranceMs && (now - lastSeekTimestampMs > 4000L)) {
+                    lastSeekTimestampMs = now
+                    player.seekTo(startPositionMs)
+                }
             }
-            if (playWhenReady && !isPlayerPlaying()) {
+            if (playWhenReady && (state !is PlaybackState.Prepared || !state.playWhenReady)) {
                 player.play()
-            } else if (!playWhenReady && isPlayerPlaying()) {
+            } else if (!playWhenReady && state is PlaybackState.Prepared && state.playWhenReady) {
                 player.pause()
             }
             return

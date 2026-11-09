@@ -233,8 +233,13 @@ class PlayTogetherController(
                 _state.update { current ->
                                         if (current is PlayTogetherState.InRoom && current.isPlaying && current.currentTrack != null) {
                         val isTrackActive = engine?.isCurrentTrack(current.currentTrack.id) ?: true
+                        val isBuffering = engine?.isPlayerBuffering() == true
                         val realPos = if (isTrackActive) {
-                            engine?.getPlayerPositionMs()?.takeIf { it > 0L } ?: (current.positionMs + 1000L)
+                            if (isBuffering) {
+                                current.positionMs // Keep position anchored while buffering to prevent artificial drift spikes
+                            } else {
+                                engine?.getPlayerPositionMs()?.takeIf { it > 0L } ?: (current.positionMs + 1000L)
+                            }
                         } else {
                             current.positionMs + 1000L
                         }
@@ -296,8 +301,10 @@ class PlayTogetherController(
     private fun startPresenceHeartbeat(roomId: String, memberId: String) {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
+            var pingCount = 0
             while (isActive) {
                 delay(8000L)
+                pingCount++
                 val currentState = _state.value
                 val drift = if (currentState is PlayTogetherState.InRoom) currentState.syncOffsetMs else 0L
                 backend.updatePresence(
@@ -306,6 +313,21 @@ class PlayTogetherController(
                     syncState = MemberSyncState.SYNCED,
                     driftMs = drift,
                 )
+                // Periodically re-broadcast authoritative room state if host so new joiners always find fresh state
+                if (currentState is PlayTogetherState.InRoom && currentState.isHost && pingCount % 3 == 0) {
+                    val track = currentState.currentTrack
+                    if (track != null) {
+                        val pos = syncEngine?.getPlayerPositionMs() ?: currentState.positionMs
+                        val playing = syncEngine?.isPlayerPlaying() ?: currentState.isPlaying
+                        sendPlaybackEventInternal(
+                            eventType = PlaybackEventType.SYNC_PING,
+                            track = track,
+                            positionMs = pos,
+                            isPlaying = playing,
+                            queue = currentState.queue,
+                        )
+                    }
+                }
             }
         }
     }
@@ -363,6 +385,22 @@ class PlayTogetherController(
                                     current.copy(members = updated, room = current.room.copy(memberCount = updated.size))
                                 } else current
                             } else current
+                        }
+                        // Host immediately pushes authoritative playback state to the newly joined peer
+                        val cur = _state.value
+                        if (cur is PlayTogetherState.InRoom && cur.isHost && cur.room.id == roomId) {
+                            val activeTrack = cur.currentTrack
+                            if (activeTrack != null) {
+                                val currentPos = syncEngine?.getPlayerPositionMs() ?: cur.positionMs
+                                val isCurrentlyPlaying = syncEngine?.isPlayerPlaying() ?: cur.isPlaying
+                                sendPlaybackEventInternal(
+                                    eventType = PlaybackEventType.SYNC_PING,
+                                    track = activeTrack,
+                                    positionMs = currentPos,
+                                    isPlaying = isCurrentlyPlaying,
+                                    queue = cur.queue,
+                                )
+                            }
                         }
                     }
                     is RoomEvent.MemberLeft -> {

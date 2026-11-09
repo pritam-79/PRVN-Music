@@ -1,5 +1,8 @@
 package io.ymusic.ui.playtogether
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -134,6 +137,15 @@ fun PlayTogetherScreen(
 
     LaunchedEffect(syncEngine) {
         controller.bindSyncEngine(syncEngine)
+    }
+
+    LaunchedEffect(state is PlayTogetherState.Lobby) {
+        if (state is PlayTogetherState.Lobby) {
+            while (isActive) {
+                controller.refreshPublicRooms()
+                delay(10_000L)
+            }
+        }
     }
 
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -986,13 +998,21 @@ private fun NowPlayingTabView(
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             val totalMs = track?.durationMs ?: 210000L
             val currentMs = state.positionMs.coerceIn(0L, totalMs)
-            val sliderValue = if (totalMs > 0) currentMs.toFloat() / totalMs.toFloat() else 0f
+            var draggingFraction by remember { mutableStateOf<Float?>(null) }
+            val currentFraction = if (totalMs > 0) currentMs.toFloat() / totalMs.toFloat() else 0f
+            val displayFraction = draggingFraction ?: currentFraction
 
             Slider(
-                value = sliderValue,
+                value = displayFraction.coerceIn(0f, 1f),
                 onValueChange = { fraction ->
-                    val newPos = (fraction * totalMs).toLong()
-                    onSeek(newPos)
+                    draggingFraction = fraction
+                },
+                onValueChangeFinished = {
+                    draggingFraction?.let { frac ->
+                        val newPos = (frac * totalMs).toLong()
+                        onSeek(newPos)
+                    }
+                    draggingFraction = null
                 },
                 modifier = Modifier.fillMaxWidth(),
                 colors = SliderDefaults.colors(
@@ -2005,8 +2025,9 @@ private fun CreateRoomDialog(
 
                 OutlinedTextField(
                     value = roomCode,
-                    onValueChange = { if (it.length <= 4) roomCode = it },
+                    onValueChange = { input -> roomCode = input.filter { it.isDigit() }.take(4) },
                     label = { Text("4-Digit Room Code") },
+                    placeholder = { Text("e.g. 5512") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -2084,8 +2105,9 @@ private fun JoinRoomDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = roomCode,
-                    onValueChange = { if (it.length <= 4) roomCode = it },
+                    onValueChange = { input -> roomCode = input.filter { it.isDigit() }.take(4) },
                     label = { Text("4-Digit Room Code") },
+                    placeholder = { Text("e.g. 5512") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )

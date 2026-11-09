@@ -1,8 +1,8 @@
 {
-  "versionName": "0.0.7",
-  "versionCode": 10,
+  "versionName": "0.0.8",
+  "versionCode": 11,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.0.7/PRVN-Music-0.0.7-arm64-v8a-release.apk",
-  "releaseNotes": "PRVN Music v0.0.7 (Build 10): Fixed Library scanner accounting and default Songs view for instant 720+ track browsing, resolved purple artwork fallback in Play Together, dynamic sync status badge with drift tracking, LRCLIB synchronized lyrics with tap-to-seek, and PRVN Wrapped on-device listening analytics.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.0.8/PRVN-Music-0.0.8-arm64-v8a-release.apk",
+  "releaseNotes": "PRVN Music v0.0.8 (Build 11): Completely fixed Listen Together audio playback and room discovery. Room code joining now reliably finds rooms and synchronizes state, host immediately relays playback upon member join, prevented infinite seek loops during stream buffering, eliminated slider drag network spam, and added 10s auto-refresh for public rooms.",
   "forceUpdate": false
 }

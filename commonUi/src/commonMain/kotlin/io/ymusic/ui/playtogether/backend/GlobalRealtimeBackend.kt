@@ -88,10 +88,11 @@ class GlobalRealtimeBackend(
 
     override suspend fun listPublicRooms(): Result<List<RoomInfo>> = withContext(Dispatchers.IO) {
         val remoteList = mutableListOf<RoomInfo>()
+        val closedCodes = mutableSetOf<String>()
         try {
             val req = RequestBuilder()
-                .url("$relayUrl/$publicDirectoryTopic/json?poll=1")
-                .header("User-Agent", "PRVN-Music-App/0.06")
+                .url("$relayUrl/$publicDirectoryTopic/json?poll=1&since=all")
+                .header("User-Agent", "PRVN-Music-App/0.07")
                 .header("Cache-Control", "no-cache")
                 .get()
                 .build()
@@ -106,32 +107,38 @@ class GlobalRealtimeBackend(
                         if (msgText.isNotBlank()) {
                             val roomJson = parseJson(msgText)
                             val rCode = roomJson.stringOrNull("code").orEmpty()
-                            val rName = roomJson.stringOrNull("name").orEmpty().ifBlank { "PRVN Music Lounge" }
-                            val rHost = roomJson.stringOrNull("hostName").orEmpty().ifBlank { "PRVN Host" }
-                            val rId = roomJson.stringOrNull("id") ?: "room_$rCode"
-                            val time = roomJson.longOrNull("updatedUtc") ?: (root.longOrNull("time") ?: 0L) * 1000L
-
-                            // Keep rooms updated within last 6 hours
-                            if (rCode.length == 4 && (now - time) < 6 * 3600 * 1000L) {
-                                val trackJson = roomJson.stringOrNull("currentTrack")?.let { parseJson(it) }
-                                val track = trackJson?.let { parseTrack(it) }
-                                val membersCount = roomJson.intOrNull("memberCount") ?: 1
-                                val modeStr = roomJson.stringOrNull("controlMode") ?: "HOST_ONLY"
-                                val mode = if (modeStr == "COLLABORATIVE") ControlMode.COLLABORATIVE else ControlMode.HOST_ONLY
-
+                            val isClosed = roomJson.boolOrNull("closed") ?: false
+                            if (isClosed && rCode.length == 4) {
+                                closedCodes.add(rCode)
                                 remoteList.removeAll { it.code == rCode }
-                                remoteList.add(
-                                    RoomInfo(
-                                        id = rId,
-                                        code = rCode,
-                                        name = rName,
-                                        hostName = rHost,
-                                        visibility = RoomVisibility.PUBLIC,
-                                        controlMode = mode,
-                                        memberCount = membersCount,
-                                        currentTrack = track,
+                            } else if (rCode.length == 4 && !closedCodes.contains(rCode)) {
+                                val rName = roomJson.stringOrNull("name").orEmpty().ifBlank { "PRVN Music Lounge" }
+                                val rHost = roomJson.stringOrNull("hostName").orEmpty().ifBlank { "PRVN Host" }
+                                val rId = roomJson.stringOrNull("id") ?: "room_$rCode"
+                                val time = roomJson.longOrNull("updatedUtc") ?: (root.longOrNull("time") ?: 0L) * 1000L
+
+                                // Keep rooms updated within last 20 minutes (prevents stale zombie rooms)
+                                if ((now - time) < 20 * 60 * 1000L) {
+                                    val trackJson = roomJson.stringOrNull("currentTrack")?.let { parseJson(it) }
+                                    val track = trackJson?.let { parseTrack(it) }
+                                    val membersCount = roomJson.intOrNull("memberCount") ?: 1
+                                    val modeStr = roomJson.stringOrNull("controlMode") ?: "HOST_ONLY"
+                                    val mode = if (modeStr == "COLLABORATIVE") ControlMode.COLLABORATIVE else ControlMode.HOST_ONLY
+
+                                    remoteList.removeAll { it.code == rCode }
+                                    remoteList.add(
+                                        RoomInfo(
+                                            id = rId,
+                                            code = rCode,
+                                            name = rName,
+                                            hostName = rHost,
+                                            visibility = RoomVisibility.PUBLIC,
+                                            controlMode = mode,
+                                            memberCount = membersCount,
+                                            currentTrack = track,
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     } catch (_: Exception) {}
@@ -143,7 +150,7 @@ class GlobalRealtimeBackend(
             val localPublic = localRooms.values
                 .filter { it.info.visibility == RoomVisibility.PUBLIC }
                 .map { r -> r.info.copy(memberCount = r.members.size, currentTrack = r.currentTrack) }
-            val merged = (remoteList + localPublic).distinctBy { it.code }
+            val merged = (remoteList + localPublic).distinctBy { it.code }.filter { !closedCodes.contains(it.code) }
             Result.success(merged)
         }
     }
@@ -229,19 +236,22 @@ class GlobalRealtimeBackend(
         val cleanCode = code.trim()
         val cleanName = RoomSecurityPolicy.sanitizeUserName(userName)
 
-        // 1. Fetch Room State from Global Relay
-        var remoteRoomJson: JsonObject? = null
+        // 1. Fetch Room State and Playback Events from Global Relay (since=all retrieves cached events)
+        var latestRoomState: JsonObject? = null
+        var latestPlayback: JsonObject? = null
+        var hasAnyMessage = false
+        var isClosed = false
+
         try {
             val req = RequestBuilder()
-                .url("$relayUrl/${topicForRoom(cleanCode)}/json?poll=1")
-                .header("User-Agent", "PRVN-Music-App/0.06")
+                .url("$relayUrl/${topicForRoom(cleanCode)}/json?poll=1&since=all")
+                .header("User-Agent", "PRVN-Music-App/0.07")
                 .header("Cache-Control", "no-cache")
                 .get()
                 .build()
             val resp = client.execute(req)
             if (resp.isSuccessful) {
                 val body = resp.body.utf8String()
-                // Scan for the latest ROOM_STATE or PLAYBACK_UPDATED
                 body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
                     try {
                         val root = parseJson(line)
@@ -249,8 +259,19 @@ class GlobalRealtimeBackend(
                         if (msg.isNotBlank()) {
                             val inner = parseJson(msg)
                             val evType = inner.stringOrNull("event") ?: root.stringOrNull("title")
-                            if (evType == "ROOM_STATE") {
-                                remoteRoomJson = inner
+                            when (evType) {
+                                "ROOM_CLOSED" -> isClosed = true
+                                "ROOM_STATE" -> {
+                                    latestRoomState = inner
+                                    hasAnyMessage = true
+                                }
+                                "PLAYBACK_UPDATED" -> {
+                                    latestPlayback = inner
+                                    hasAnyMessage = true
+                                }
+                                "PRESENCE", "MEMBER_JOINED", "SONG_REQUEST_ADD" -> {
+                                    hasAnyMessage = true
+                                }
                             }
                         }
                     } catch (_: Exception) {}
@@ -258,18 +279,22 @@ class GlobalRealtimeBackend(
             }
         } catch (_: Exception) {}
 
-        // Fallback to local room cache if network is unavailable
+        if (isClosed) {
+            return@withContext Result.failure(Exception("This room session has ended."))
+        }
+
+        // Fallback to local room cache if network is unavailable or same device
         val cached = synchronized(localLock) { localRooms[cleanCode] }
-        if (remoteRoomJson == null && cached == null) {
+        if (!hasAnyMessage && cached == null) {
             return@withContext Result.failure(Exception("Room code $cleanCode not found. Please verify the 4-digit code with the host."))
         }
 
-        val roomId = remoteRoomJson?.stringOrNull("id") ?: cached?.info?.id ?: "room_$cleanCode"
-        val rName = remoteRoomJson?.stringOrNull("name") ?: cached?.info?.name ?: "PRVN Lounge"
-        val rHost = remoteRoomJson?.stringOrNull("hostName") ?: cached?.info?.hostName ?: "Host"
-        val passHash = remoteRoomJson?.stringOrNull("password") ?: cached?.info?.password
-        val visStr = remoteRoomJson?.stringOrNull("visibility") ?: cached?.info?.visibility?.name ?: "PUBLIC"
-        val modeStr = remoteRoomJson?.stringOrNull("controlMode") ?: cached?.info?.controlMode?.name ?: "HOST_ONLY"
+        val roomId = latestRoomState?.stringOrNull("id") ?: cached?.info?.id ?: "room_$cleanCode"
+        val rName = latestRoomState?.stringOrNull("name") ?: cached?.info?.name ?: "PRVN Lounge"
+        val rHost = latestRoomState?.stringOrNull("hostName") ?: cached?.info?.hostName ?: "Host"
+        val passHash = latestRoomState?.stringOrNull("password") ?: cached?.info?.password
+        val visStr = latestRoomState?.stringOrNull("visibility") ?: cached?.info?.visibility?.name ?: "PUBLIC"
+        val modeStr = latestRoomState?.stringOrNull("controlMode") ?: cached?.info?.controlMode?.name ?: "HOST_ONLY"
         val visibility = RoomVisibility.entries.firstOrNull { it.name == visStr } ?: RoomVisibility.PUBLIC
         val controlMode = ControlMode.entries.firstOrNull { it.name == modeStr } ?: ControlMode.HOST_ONLY
 
@@ -277,15 +302,19 @@ class GlobalRealtimeBackend(
             return@withContext Result.failure(Exception("Incorrect room password."))
         }
 
-        val track = remoteRoomJson?.stringOrNull("currentTrack")?.let { parseTrack(parseJson(it)) } ?: cached?.currentTrack
-        val isPlaying = remoteRoomJson?.boolOrNull("isPlaying") ?: cached?.isPlaying ?: false
-        val basePos = remoteRoomJson?.longOrNull("positionMs") ?: cached?.positionMs ?: 0L
-        val lastUpdated = remoteRoomJson?.longOrNull("timestampUtc") ?: cached?.lastUpdatedUtc ?: Clock.System.now().toEpochMilliseconds()
+        // Prefer live track from latestPlayback; fallback to roomState, then cached
+        val track = (latestPlayback?.stringOrNull("track") ?: latestRoomState?.stringOrNull("currentTrack"))
+            ?.let { parseTrack(parseJson(it)) } ?: cached?.currentTrack
+
+        val isPlaying = latestPlayback?.boolOrNull("isPlaying") ?: latestRoomState?.boolOrNull("isPlaying") ?: cached?.isPlaying ?: false
+        val basePos = latestPlayback?.longOrNull("positionMs") ?: latestRoomState?.longOrNull("positionMs") ?: cached?.positionMs ?: 0L
+        val lastUpdated = latestPlayback?.longOrNull("timestampUtc") ?: latestRoomState?.longOrNull("timestampUtc") ?: cached?.lastUpdatedUtc ?: Clock.System.now().toEpochMilliseconds()
 
         val elapsed = if (isPlaying) (Clock.System.now().toEpochMilliseconds() - lastUpdated).coerceAtLeast(0L) else 0L
         val currentPosition = basePos + elapsed
 
-        val queue = remoteRoomJson?.stringOrNull("queue")?.let { parseQueue(it) } ?: cached?.queue?.toList() ?: emptyList()
+        val queue = (latestPlayback?.stringOrNull("queue") ?: latestRoomState?.stringOrNull("queue"))
+            ?.let { parseQueue(it) } ?: cached?.queue?.toList() ?: emptyList()
 
         val newMemberId = "member_${Random.nextLong(1000, 9999)}"
         val selfMember = RoomMember(
@@ -308,7 +337,7 @@ class GlobalRealtimeBackend(
             password = passHash,
         )
 
-        // Broadcast join to relay
+        // Broadcast join to relay so host immediately synchronizes playback with this new member
         val joinPayload = """{"event":"MEMBER_JOINED","memberId":"$newMemberId","name":"$cleanName","isHost":false}"""
         publishRelayMessage(topicForRoom(cleanCode), "MEMBER_JOINED", joinPayload)
 
@@ -348,6 +377,11 @@ class GlobalRealtimeBackend(
         val code = codeFromRoomId(roomId)
         val payload = """{"event":"ROOM_CLOSED","reason":"${escape(reason)}"}"""
         publishRelayMessage(topicForRoom(code), "ROOM_CLOSED", payload)
+        
+        // Publish tombstone to public directory
+        val tombstone = """{"code":"$code","closed":true}"""
+        publishRelayMessage(publicDirectoryTopic, "ROOM_CLOSED_$code", tombstone)
+
         getOrCreateEventFlow(roomId).emit(RoomEvent.RoomClosed(reason))
         pollJobs[roomId]?.cancel()
         pollJobs.remove(roomId)
@@ -565,7 +599,7 @@ class GlobalRealtimeBackend(
                     } catch (_: Exception) {
                         isNetworkAvailable = false
                     }
-                    delay(1200L) // Lightweight polling cycle
+                    delay(2000L) // Safe polling cycle preventing HTTP 429
                 }
             }
             pollJobs[roomId] = job
