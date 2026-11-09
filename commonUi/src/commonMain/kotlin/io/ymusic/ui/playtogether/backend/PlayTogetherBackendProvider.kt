@@ -20,7 +20,11 @@ object PlayTogetherBackendProvider {
             customBackend?.let { return it }
             var b = activeBackend
             if (b == null) {
-                b = SupabaseRealtimeBackend(supabaseUrl = activeUrl, supabaseAnonKey = activeKey)
+                b = if (activeUrl.isNotBlank() && activeKey.isNotBlank()) {
+                    SupabaseRealtimeBackend(supabaseUrl = activeUrl, supabaseAnonKey = activeKey)
+                } else {
+                    GlobalRealtimeBackend()
+                }
                 activeBackend = b
             }
             return b

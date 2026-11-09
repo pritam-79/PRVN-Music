@@ -32,6 +32,12 @@ class PlayTogetherController(
     )
     val state: StateFlow<PlayTogetherState> = _state.asStateFlow()
 
+    var syncEngine: PlayTogetherSyncEngine? = null
+
+    fun bindSyncEngine(engine: PlayTogetherSyncEngine) {
+        this.syncEngine = engine
+    }
+
     private var playbackTickerJob: Job? = null
     private var roomEventsJob: Job? = null
     private var presenceJob: Job? = null
@@ -223,15 +229,18 @@ class PlayTogetherController(
         playbackTickerJob = scope.launch {
             while (isActive) {
                 delay(1000L)
+                val engine = syncEngine
                 _state.update { current ->
                     if (current is PlayTogetherState.InRoom && current.isPlaying && current.currentTrack != null) {
-                        val newPos = current.positionMs + 1000L
-                        if (newPos >= current.currentTrack.durationMs) {
-                            // Current track finished; advance queue if host/collaborative
+                        val realPos = engine?.getPlayerPositionMs()?.takeIf { it > 0L }
+                            ?: (current.positionMs + 1000L)
+                        val totalDur = current.currentTrack.durationMs
+                        if (totalDur > 0L && realPos >= totalDur) {
                             if (current.isHost || current.controlMode == ControlMode.COLLABORATIVE) {
                                 if (current.queue.isNotEmpty()) {
                                     val next = current.queue.first()
                                     val remainingQueue = current.queue.drop(1)
+                                    engine?.syncToTrack(next, 0L, playWhenReady = true)
                                     sendPlaybackEventInternal(
                                         PlaybackEventType.TRACK_CHANGE,
                                         track = next,
@@ -247,8 +256,8 @@ class PlayTogetherController(
                                         isPlaying = true,
                                     )
                                 } else {
-                                    // Queue empty: continuous playback with random radio song!
                                     val randomRadio = pickRandomRadioTrack(excludeId = current.currentTrack.id)
+                                    engine?.syncToTrack(randomRadio, 0L, playWhenReady = true)
                                     sendPlaybackEventInternal(
                                         PlaybackEventType.TRACK_CHANGE,
                                         track = randomRadio,
@@ -265,10 +274,10 @@ class PlayTogetherController(
                                     )
                                 }
                             } else {
-                                current.copy(positionMs = current.currentTrack.durationMs, isPlaying = false)
+                                current.copy(positionMs = totalDur, isPlaying = false)
                             }
                         } else {
-                            current.copy(positionMs = newPos)
+                            current.copy(positionMs = realPos)
                         }
                     } else {
                         current
@@ -406,6 +415,10 @@ class PlayTogetherController(
         visibility: RoomVisibility = RoomVisibility.PUBLIC,
         controlMode: ControlMode = ControlMode.HOST_ONLY,
         password: String? = null,
+        initialTrack: PlayTogetherTrack? = null,
+        initialPositionMs: Long = 0L,
+        initialIsPlaying: Boolean = false,
+        initialQueue: List<PlayTogetherTrack> = emptyList(),
     ) {
         val cleanCode = code.trim().ifBlank { Random.nextInt(1000, 9999).toString() }
         val cleanName = RoomSecurityPolicy.sanitizeRoomName(name)
@@ -432,6 +445,10 @@ class PlayTogetherController(
                 visibility = visibility,
                 controlMode = controlMode,
                 password = password,
+                initialTrack = initialTrack,
+                initialPositionMs = initialPositionMs,
+                initialIsPlaying = initialIsPlaying,
+                initialQueue = initialQueue,
             ).fold(
                 onSuccess = { room ->
                     val hostMemberId = "host_${Random.nextLong(1000, 9999)}"
@@ -448,15 +465,19 @@ class PlayTogetherController(
                         isHost = true,
                         currentMemberId = hostMemberId,
                         members = listOf(selfMember),
-                        currentTrack = null,
-                        isPlaying = false,
-                        positionMs = 0L,
-                        queue = emptyList(),
+                        currentTrack = initialTrack,
+                        isPlaying = initialIsPlaying,
+                        positionMs = initialPositionMs,
+                        queue = initialQueue,
                         songRequests = emptyList(),
                         activeTab = RoomTab.NOW_PLAYING,
                         controlMode = controlMode,
                         syncOffsetMs = 0L,
                     )
+
+                    if (initialTrack != null && initialIsPlaying) {
+                        syncEngine?.syncToTrack(initialTrack, initialPositionMs, playWhenReady = true)
+                    }
 
                     subscribeToRoomUpdates(room.id)
                     startPlaybackTicker()
@@ -508,6 +529,10 @@ class PlayTogetherController(
                         syncOffsetMs = 0L,
                     )
 
+                    result.currentTrack?.let { tr ->
+                        syncEngine?.syncToTrack(tr, result.positionMs, playWhenReady = result.isPlaying)
+                    }
+
                     subscribeToRoomUpdates(result.room.id)
                     startPlaybackTicker()
                     startPresenceHeartbeat(result.room.id, result.currentMemberId)
@@ -552,6 +577,7 @@ class PlayTogetherController(
                 } else if (current.currentTrack == null) {
                     val track = if (current.queue.isNotEmpty()) current.queue.first() else pickRandomRadioTrack()
                     val remQueue = if (current.queue.isNotEmpty()) current.queue.drop(1) else emptyList()
+                    syncEngine?.syncToTrack(track, 0L, playWhenReady = true)
                     sendPlaybackEventInternal(
                         PlaybackEventType.TRACK_CHANGE,
                         track = track,
@@ -568,6 +594,11 @@ class PlayTogetherController(
                     )
                 } else {
                     val nextPlayState = !current.isPlaying
+                    if (nextPlayState) {
+                        syncEngine?.play()
+                    } else {
+                        syncEngine?.pause()
+                    }
                     sendPlaybackEventInternal(
                         if (nextPlayState) PlaybackEventType.PLAY else PlaybackEventType.PAUSE,
                         positionMs = current.positionMs,
@@ -587,6 +618,7 @@ class PlayTogetherController(
                 } else if (current.queue.isNotEmpty()) {
                     val next = current.queue.first()
                     val remainingQueue = current.queue.drop(1)
+                    syncEngine?.syncToTrack(next, 0L, playWhenReady = true)
                     sendPlaybackEventInternal(
                         PlaybackEventType.TRACK_CHANGE,
                         track = next,
@@ -604,6 +636,7 @@ class PlayTogetherController(
                 } else {
                     // Queue empty: advance to random radio track!
                     val randomRadio = pickRandomRadioTrack(excludeId = current.currentTrack?.id)
+                    syncEngine?.syncToTrack(randomRadio, 0L, playWhenReady = true)
                     sendPlaybackEventInternal(
                         PlaybackEventType.TRACK_CHANGE,
                         track = randomRadio,
@@ -633,6 +666,7 @@ class PlayTogetherController(
                 if (!current.isHost && current.controlMode == ControlMode.HOST_ONLY) {
                     current
                 } else {
+                    syncEngine?.seekTo(0L)
                     sendPlaybackEventInternal(
                         PlaybackEventType.SEEK,
                         positionMs = 0L,
@@ -651,6 +685,7 @@ class PlayTogetherController(
                     current
                 } else {
                     val clamped = positionMs.coerceIn(0L, current.currentTrack?.durationMs ?: 0L)
+                    syncEngine?.seekTo(clamped)
                     sendPlaybackEventInternal(
                         PlaybackEventType.SEEK,
                         positionMs = clamped,
@@ -682,6 +717,7 @@ class PlayTogetherController(
 
         _state.update { current ->
             if (current is PlayTogetherState.InRoom) {
+                syncEngine?.syncToTrack(track, 0L, playWhenReady = true)
                 sendPlaybackEventInternal(
                     PlaybackEventType.TRACK_CHANGE,
                     track = track,

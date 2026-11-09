@@ -99,8 +99,15 @@ class SupabaseRealtimeBackend(
         visibility: RoomVisibility,
         controlMode: ControlMode,
         password: String?,
+        initialTrack: PlayTogetherTrack?,
+        initialPositionMs: Long,
+        initialIsPlaying: Boolean,
+        initialQueue: List<PlayTogetherTrack>,
     ): Result<RoomInfo> {
-        val result = fallbackBackend.createRoom(name, code, hostName, visibility, controlMode, password)
+        val result = fallbackBackend.createRoom(
+            name, code, hostName, visibility, controlMode, password,
+            initialTrack, initialPositionMs, initialIsPlaying, initialQueue
+        )
         if (result.isSuccess && isConfigured && isSocketConnected) {
             val room = result.getOrThrow()
             subscribeToPhoenixTopic("realtime:room_${room.code}")

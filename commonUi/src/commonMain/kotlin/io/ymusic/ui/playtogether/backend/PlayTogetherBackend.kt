@@ -31,6 +31,10 @@ interface PlayTogetherBackend {
         visibility: RoomVisibility = RoomVisibility.PUBLIC,
         controlMode: ControlMode = ControlMode.HOST_ONLY,
         password: String? = null,
+        initialTrack: io.ymusic.ui.playtogether.PlayTogetherTrack? = null,
+        initialPositionMs: Long = 0L,
+        initialIsPlaying: Boolean = false,
+        initialQueue: List<io.ymusic.ui.playtogether.PlayTogetherTrack> = emptyList(),
     ): Result<RoomInfo>
 
     /**

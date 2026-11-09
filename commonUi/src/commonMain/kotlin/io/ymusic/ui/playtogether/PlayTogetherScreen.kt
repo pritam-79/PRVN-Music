@@ -97,6 +97,8 @@ import io.ymusic.ui.DesignColors
 import io.ymusic.ui.DesignSpacing
 import io.ymusic.ui.LocalImageLoader
 import io.ymusic.ui.LocalMiniPlayerInset
+import io.ymusic.player.PlayableItem
+import io.ymusic.player.PlaybackState
 import io.ymusic.ui.PlaybackCoordinator
 import io.ymusic.ui.playtogether.backend.InviteLinkHelper
 import io.ymusic.ui.playtogether.backend.PlayTogetherBackendProvider
@@ -128,6 +130,10 @@ fun PlayTogetherScreen(
 
     val syncEngine = remember(coordinator, controller) {
         PlayTogetherSyncEngine(coordinator, controller, graph.settings)
+    }
+
+    LaunchedEffect(syncEngine) {
+        controller.bindSyncEngine(syncEngine)
     }
 
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -171,11 +177,77 @@ fun PlayTogetherScreen(
 
         // Dialogs
         if (showCreateDialog) {
+            val playerQueue = coordinator.player.queue.collectAsState().value
+            val playerProgress = coordinator.player.progress.collectAsState().value
+            val playerStatus = coordinator.player.status.collectAsState().value
+
+            val currentItem = playerQueue.currentItem
+            val initialTrack = when (currentItem) {
+                is PlayableItem.YtMedia -> PlayTogetherTrack(
+                    id = currentItem.videoId,
+                    title = currentItem.displayTitle,
+                    artist = currentItem.displaySubtitle ?: "Unknown Artist",
+                    artworkUrl = currentItem.displayThumbnailUrl,
+                    durationMs = currentItem.durationMs ?: (playerProgress.durationMs.takeIf { it > 0 } ?: 210000L),
+                    isYouTube = true,
+                    addedBy = "Host",
+                )
+                else -> null
+            }
+
+            val isPlayingNow = playerStatus.state is PlaybackState.Prepared &&
+                (playerStatus.state as PlaybackState.Prepared).playWhenReady &&
+                !(playerStatus.state as PlaybackState.Prepared).buffering
+
+            val initialPos = playerProgress.positionMs
+
+            val initialQueue = if (playerQueue.items.isNotEmpty() && playerQueue.currentIndex >= 0) {
+                playerQueue.items.drop(playerQueue.currentIndex + 1).mapNotNull { item ->
+                    when (item) {
+                        is PlayableItem.YtMedia -> PlayTogetherTrack(
+                            id = item.videoId,
+                            title = item.displayTitle,
+                            artist = item.displaySubtitle ?: "Unknown Artist",
+                            artworkUrl = item.displayThumbnailUrl,
+                            durationMs = item.durationMs ?: 210000L,
+                            isYouTube = true,
+                            addedBy = "Host",
+                        )
+                        else -> null
+                    }
+                }
+            } else emptyList()
+
             CreateRoomDialog(
+                initialTransferTrack = initialTrack,
+                initialTransferPositionMs = initialPos,
+                initialQueueCount = initialQueue.size,
                 onDismiss = { showCreateDialog = false },
-                onCreate = { name, host, code, vis, mode, pass ->
+                onCreate = { name, host, code, vis, mode, pass, transferMusic ->
                     showCreateDialog = false
-                    controller.createRoom(name, host, code, vis, mode, pass)
+                    if (transferMusic && initialTrack != null) {
+                        controller.createRoom(
+                            name = name,
+                            hostName = host,
+                            code = code,
+                            visibility = vis,
+                            controlMode = mode,
+                            password = pass,
+                            initialTrack = initialTrack.copy(addedBy = host),
+                            initialPositionMs = initialPos,
+                            initialIsPlaying = isPlayingNow,
+                            initialQueue = initialQueue.map { it.copy(addedBy = host) },
+                        )
+                    } else {
+                        controller.createRoom(
+                            name = name,
+                            hostName = host,
+                            code = code,
+                            visibility = vis,
+                            controlMode = mode,
+                            password = pass,
+                        )
+                    }
                 },
             )
         }
@@ -815,16 +887,48 @@ private fun NowPlayingTabView(
 
             if (track != null) {
                 Spacer(Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (state.isAutoRadio || track.isAutoRadio) BrandCyan.copy(alpha = 0.15f) else DesignColors.SettingsCard)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = if (state.isAutoRadio || track.isAutoRadio) "📻 PRVN Auto-Radio • Continuous Play" else "Added by ${track.addedBy}",
-                        style = TextStyle(fontSize = 11.5.sp, color = if (state.isAutoRadio || track.isAutoRadio) BrandCyan else DesignColors.Accent, fontWeight = FontWeight.Medium),
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (state.isAutoRadio || track.isAutoRadio) BrandCyan.copy(alpha = 0.15f) else DesignColors.SettingsCard)
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = if (state.isAutoRadio || track.isAutoRadio) "📻 PRVN Auto-Radio • Continuous Play" else "Added by ${track.addedBy}",
+                            style = TextStyle(fontSize = 11.5.sp, color = if (state.isAutoRadio || track.isAutoRadio) BrandCyan else DesignColors.Accent, fontWeight = FontWeight.Medium),
+                        )
+                    }
+
+                    val syncText = when {
+                        state.isConnecting -> "Reconnecting..."
+                        state.syncOffsetMs <= 250L -> "Synced • ${state.syncOffsetMs}ms"
+                        state.syncOffsetMs <= 750L -> "Syncing • ${state.syncOffsetMs}ms"
+                        else -> "Re-aligning • ${state.syncOffsetMs}ms"
+                    }
+                    val badgeColor = when {
+                        state.isConnecting -> StatusAmber
+                        state.syncOffsetMs <= 250L -> StatusGreen
+                        state.syncOffsetMs <= 750L -> BrandCyan
+                        else -> StatusAmber
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(badgeColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(badgeColor))
+                            Text(
+                                text = syncText,
+                                style = TextStyle(fontSize = 11.sp, color = badgeColor, fontWeight = FontWeight.SemiBold),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1756,8 +1860,11 @@ private fun HostControlsTabView(
 
 @Composable
 private fun CreateRoomDialog(
+    initialTransferTrack: PlayTogetherTrack? = null,
+    initialTransferPositionMs: Long = 0L,
+    initialQueueCount: Int = 0,
     onDismiss: () -> Unit,
-    onCreate: (name: String, hostName: String, code: String, visibility: RoomVisibility, mode: ControlMode, password: String?) -> Unit,
+    onCreate: (name: String, hostName: String, code: String, visibility: RoomVisibility, mode: ControlMode, password: String?, transferMusic: Boolean) -> Unit,
 ) {
     var roomName by remember { mutableStateOf("PRVN Music Lounge") }
     var hostName by remember { mutableStateOf("PRVN Host") }
@@ -1765,12 +1872,49 @@ private fun CreateRoomDialog(
     var isPrivate by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var isCollaborative by remember { mutableStateOf(false) }
+    var transferMusic by remember { mutableStateOf(initialTransferTrack != null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Create Music Room", color = DesignColors.Ink, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (initialTransferTrack != null) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = BrandPurpleDark.copy(alpha = 0.5f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandPurpleVibrant.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("Transfer Current Music", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandPurpleLight)
+                                Switch(checked = transferMusic, onCheckedChange = { transferMusic = it })
+                            }
+                            if (transferMusic) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "🎵 ${initialTransferTrack.title} • ${initialTransferTrack.artist}",
+                                    fontSize = 11.5.sp,
+                                    color = DesignColors.Ink,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "Starting at ${formatDurationMs(initialTransferPositionMs)}" +
+                                        if (initialQueueCount > 0) " + $initialQueueCount upcoming in queue" else "",
+                                    fontSize = 10.5.sp,
+                                    color = DesignColors.InkSecondary,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = roomName,
                     onValueChange = { roomName = it },
@@ -1834,6 +1978,7 @@ private fun CreateRoomDialog(
                         if (isPrivate) RoomVisibility.PRIVATE else RoomVisibility.PUBLIC,
                         if (isCollaborative) ControlMode.COLLABORATIVE else ControlMode.HOST_ONLY,
                         if (isPrivate) password else null,
+                        transferMusic,
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),

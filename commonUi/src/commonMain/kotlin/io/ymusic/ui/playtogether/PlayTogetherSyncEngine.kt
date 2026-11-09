@@ -206,6 +206,20 @@ class PlayTogetherSyncEngine(
     fun syncToTrack(track: PlayTogetherTrack, startPositionMs: Long, playWhenReady: Boolean) {
         if (!validateTrack(track)) return
 
+        val currentItem = player.queue.value.currentItem as? PlayableItem.YtMedia
+        if (currentItem?.videoId == track.id) {
+            val drift = abs(player.progress.value.positionMs - startPositionMs)
+            if (drift > syncDriftToleranceMs) {
+                player.seekTo(startPositionMs)
+            }
+            if (playWhenReady && !isPlayerPlaying()) {
+                player.play()
+            } else if (!playWhenReady && isPlayerPlaying()) {
+                player.pause()
+            }
+            return
+        }
+
         val ytMedia = PlayableItem.YtMedia(
             videoId = track.id,
             title = track.title,
@@ -223,9 +237,39 @@ class PlayTogetherSyncEngine(
         )
     }
 
-    private fun isPlayerPlaying(): Boolean {
+    fun play() {
+        player.play()
+    }
+
+    fun pause() {
+        player.pause()
+    }
+
+    fun seekTo(positionMs: Long) {
+        player.seekTo(positionMs)
+    }
+
+    fun isPlayerPlaying(): Boolean {
         val state = player.status.value.state
         return state is PlaybackState.Prepared && state.playWhenReady && !state.buffering && !state.ended
+    }
+
+    fun isPlayerBuffering(): Boolean {
+        val state = player.status.value.state
+        return (state is PlaybackState.Prepared && state.buffering)
+    }
+
+    fun getPlayerPositionMs(): Long {
+        return player.progress.value.positionMs
+    }
+
+    fun getPlayerDurationMs(): Long {
+        return player.progress.value.durationMs
+    }
+
+    fun getPlayerError(): String? {
+        val err = player.status.value.error
+        return err?.message
     }
 
     /**

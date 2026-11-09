@@ -69,6 +69,10 @@ class LocalSimulatedRealtimeBackend(
         visibility: RoomVisibility,
         controlMode: ControlMode,
         password: String?,
+        initialTrack: PlayTogetherTrack?,
+        initialPositionMs: Long,
+        initialIsPlaying: Boolean,
+        initialQueue: List<PlayTogetherTrack>,
     ): Result<RoomInfo> {
         if (!rateLimiter.tryAcquire()) {
             return Result.failure(Exception("Too many room creation attempts. Please wait ${rateLimiter.secondsUntilReset()}s."))
@@ -89,7 +93,7 @@ class LocalSimulatedRealtimeBackend(
             visibility = visibility,
             controlMode = controlMode,
             memberCount = 1,
-            currentTrack = null,
+            currentTrack = initialTrack,
             password = password?.trim()?.ifBlank { null },
         )
 
@@ -105,11 +109,11 @@ class LocalSimulatedRealtimeBackend(
             info = roomInfo,
             hostId = hostId,
             members = mutableListOf(hostMember),
-            queue = mutableListOf(),
+            queue = initialQueue.toMutableList(),
             songRequests = mutableListOf(),
-            currentTrack = null,
-            isPlaying = false,
-            positionMs = 0L,
+            currentTrack = initialTrack,
+            isPlaying = initialIsPlaying,
+            positionMs = initialPositionMs,
         )
 
         synchronized(roomsLock) {
