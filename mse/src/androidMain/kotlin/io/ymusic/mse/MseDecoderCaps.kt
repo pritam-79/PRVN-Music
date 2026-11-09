@@ -62,7 +62,11 @@ object MseDecoderCaps {
             }
             return
         }
-        if (installed.compareAndSet(false, true)) MseHostNative.setDecoderCaps(rows)
+        if (installed.compareAndSet(false, true)) {
+            try {
+                MseHostNative.setDecoderCaps(rows)
+            } catch (_: Throwable) {}
+        }
     }
 
     /** `mse_caps_set_rows` ints, or null (logged) when there is nothing to fill the table with. */
