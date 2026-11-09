@@ -276,6 +276,16 @@ class PlayTogetherSyncEngine(
         return err?.message
     }
 
+    fun isPlayerEnded(): Boolean {
+        val state = player.status.value.state
+        return state is PlaybackState.Prepared && state.ended
+    }
+
+    fun isCurrentTrack(trackId: String): Boolean {
+        val item = player.queue.value.currentItem as? PlayableItem.YtMedia
+        return item?.videoId == trackId
+    }
+
     /**
      * Strictly verifies that a track is an accessible online YouTube stream.
      * Rejects local files and offline downloads from being shared in Play Together.

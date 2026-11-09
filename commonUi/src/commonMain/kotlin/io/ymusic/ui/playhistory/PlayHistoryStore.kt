@@ -216,6 +216,36 @@ class PlayHistoryStore(
         ids.mapNotNull { byId[it] }
     }
 
+    suspend fun listeningStats(): ListeningStats = withContext(io) {
+        var totalMs = 0L
+        var localCount = 0
+        var ytCount = 0
+        try {
+            driver.executeQuery(null, "SELECT SUM(watch_time), COUNT(*) FROM local_play_history", { cursor ->
+                if (cursor.next().value) {
+                    totalMs += cursor.getLong(0) ?: 0L
+                    localCount = cursor.getLong(1)?.toInt() ?: 0
+                }
+                QueryResult.Value(Unit)
+            }, 0).value
+        } catch (_: Exception) {}
+
+        try {
+            driver.executeQuery(null, "SELECT SUM(watch_time), COUNT(*) FROM yt_play_history", { cursor ->
+                if (cursor.next().value) {
+                    totalMs += cursor.getLong(0) ?: 0L
+                    ytCount = cursor.getLong(1)?.toInt() ?: 0
+                }
+                QueryResult.Value(Unit)
+            }, 0).value
+        } catch (_: Exception) {}
+
+        ListeningStats(
+            totalWatchTimeMs = totalMs,
+            totalTracks = localCount + ytCount,
+        )
+    }
+
     @OptIn(ExperimentalTime::class)
     private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
@@ -286,3 +316,8 @@ fun mediaItemsByPlayHistoryCodes(
     val map = library.associateBy { it.playlistCode }
     return codes.mapNotNull { map[it] }
 }
+
+data class ListeningStats(
+    val totalWatchTimeMs: Long,
+    val totalTracks: Int,
+)

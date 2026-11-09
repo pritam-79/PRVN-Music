@@ -1479,6 +1479,7 @@ private fun PlayerMoreMenu(coordinator: PlaybackCoordinator) {
     var playbackOpen by remember { mutableStateOf(false) }
     var eqOpen by remember { mutableStateOf(false) }
     var detailsOpen by remember { mutableStateOf(false) }
+    var lyricsOpen by remember { mutableStateOf(false) }
     val current = player.queue.collectAsState().value.currentItem
     val video = current as? PlayableItem.YtMedia
     val shareVideoId by produceState<String?>(null, current) {
@@ -1492,7 +1493,7 @@ private fun PlayerMoreMenu(coordinator: PlaybackCoordinator) {
     val scope = rememberCoroutineScope()
     var tracksOpen by remember { mutableStateOf(false) }
     val config by player.config.collectAsState()
-    HoldVideoOverlay(open || tracksOpen || playbackOpen || eqOpen || detailsOpen)
+    HoldVideoOverlay(open || tracksOpen || playbackOpen || eqOpen || detailsOpen || lyricsOpen)
 
     Box {
         ActionIcon(Icons.Default.MoreVert, stringResource(Res.string.cd_more), onClick = { open = true })
@@ -1526,8 +1527,8 @@ private fun PlayerMoreMenu(coordinator: PlaybackCoordinator) {
                 }
             }
             if (current != null) {
-                MoreMenuItem(Icons.Outlined.Lyrics, stringResource(Res.string.menu_search_lyrics)) {
-                    uriHandler.openUri(lyricsSearchUrl(current))
+                MoreMenuItem(Icons.Outlined.Lyrics, "Synchronized Lyrics") {
+                    lyricsOpen = true
                     open = false
                 }
             }
@@ -1597,6 +1598,9 @@ private fun PlayerMoreMenu(coordinator: PlaybackCoordinator) {
     }
     if (eqOpen) {
         EqualizerFxSheet(coordinator.graph, onDismiss = { eqOpen = false })
+    }
+    if (lyricsOpen) {
+        io.ymusic.ui.lyrics.SyncedLyricsDialog(player, onDismiss = { lyricsOpen = false })
     }
 }
 

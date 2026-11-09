@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -175,11 +176,11 @@ import org.jetbrains.compose.resources.stringResource
 import projectcommon.error.errorCode
 
 private enum class LibraryTab(val label: StringResource) {
-    Folders(Res.string.library_tab_folders),
-    Playlists(Res.string.library_tab_playlists),
     Songs(Res.string.library_tab_songs),
+    Playlists(Res.string.library_tab_playlists),
     Artists(Res.string.library_tab_artists),
     Albums(Res.string.library_tab_albums),
+    Folders(Res.string.library_tab_folders),
     Genres(Res.string.library_tab_genres),
 }
 
@@ -274,7 +275,7 @@ fun LibraryScreen(graph: AppGraph, coordinator: PlaybackCoordinator) {
                     }
                 }
             }
-            var tab by rememberSaveable { mutableStateOf(LibraryTab.Folders) }
+            var tab by rememberSaveable { mutableStateOf(LibraryTab.Songs) }
             DisposableEffect(Unit) {
                 val entries = LibraryTab.entries
                 val remove = GlobalShortcutActions.pushTabHandler { i ->
@@ -353,8 +354,9 @@ fun LibraryScreen(graph: AppGraph, coordinator: PlaybackCoordinator) {
                                 LibraryTab.Songs -> if (loaded.songs.isEmpty()) {
                                     EmptyState(stringResource(Res.string.library_no_songs), onReload = null)
                                 } else {
-                                    val sort = rememberSortState("songs", graph.settings)
+                                                                        val sort = rememberSortState("songs", graph.settings)
                                     val songs = sort.sort(loaded.songs, songSortOptions)
+                                    var wrappedOpen by remember { mutableStateOf(false) }
                                     SongList(
                                         songs,
                                         coordinator,
@@ -363,9 +365,16 @@ fun LibraryScreen(graph: AppGraph, coordinator: PlaybackCoordinator) {
                                                 LibraryChip(stringResource(Res.string.shuffle_all), selected = false, icon = Icons.Default.Shuffle) {
                                                     coordinator.playLocal(songs, songs.indices.random(), shuffle = true)
                                                 }
+                                                Spacer(Modifier.width(8.dp))
+                                                LibraryChip("Wrapped", selected = false, icon = Icons.Default.AutoAwesome) {
+                                                    wrappedOpen = true
+                                                }
                                             }
                                         },
                                     )
+                                    if (wrappedOpen) {
+                                        io.ymusic.ui.analytics.PrvnWrappedDialog(graph, onDismiss = { wrappedOpen = false })
+                                    }
                                 }
                                 LibraryTab.Artists -> if (loaded.songs.isEmpty()) {
                                     EmptyState(stringResource(Res.string.library_no_artists), onReload = null)

@@ -231,11 +231,17 @@ class PlayTogetherController(
                 delay(1000L)
                 val engine = syncEngine
                 _state.update { current ->
-                    if (current is PlayTogetherState.InRoom && current.isPlaying && current.currentTrack != null) {
-                        val realPos = engine?.getPlayerPositionMs()?.takeIf { it > 0L }
-                            ?: (current.positionMs + 1000L)
+                                        if (current is PlayTogetherState.InRoom && current.isPlaying && current.currentTrack != null) {
+                        val isTrackActive = engine?.isCurrentTrack(current.currentTrack.id) ?: true
+                        val realPos = if (isTrackActive) {
+                            engine?.getPlayerPositionMs()?.takeIf { it > 0L } ?: (current.positionMs + 1000L)
+                        } else {
+                            current.positionMs + 1000L
+                        }
+                        val isEnded = isTrackActive && (engine?.isPlayerEnded() == true)
                         val totalDur = current.currentTrack.durationMs
-                        if (totalDur > 0L && realPos >= totalDur) {
+                        val reachedEnd = isTrackActive && totalDur > 10000L && realPos >= totalDur && (realPos - totalDur < 5000L)
+                        if (isEnded || reachedEnd) {
                             if (current.isHost || current.controlMode == ControlMode.COLLABORATIVE) {
                                 if (current.queue.isNotEmpty()) {
                                     val next = current.queue.first()

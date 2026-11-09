@@ -931,6 +931,7 @@ class YMusicApplication : Application() {
 
         var scanned = 0
         var added = 0
+        var updated = 0
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
@@ -976,8 +977,10 @@ class YMusicApplication : Application() {
                     val track = if (trackCol >= 0) cursor.getInt(trackCol).takeIf { it > 0 } else null
 
                     val itemUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    val parsedUri = Uri.parse(itemUri.toString())
+                    val existing = store.findItemByUri(parsedUri)
                     val draft = MediaItemDraft(
-                        uri = Uri.parse(itemUri.toString()),
+                        uri = parsedUri,
                         title = title,
                         mimeType = mime,
                         fileSize = size,
@@ -990,7 +993,7 @@ class YMusicApplication : Application() {
                     )
                     store.upsertItem(rootBucket.id, draft)
                     scanned++
-                    added++
+                    if (existing == null) added++ else updated++
                     if (scanned % 10 == 0) {
                         onProgress(scanned)
                     }
@@ -1000,7 +1003,7 @@ class YMusicApplication : Application() {
             rootLogger.fork("mediastore-scan").log(Logger.Level.WARN, "MediaStore scan failed", e)
         }
         onProgress(scanned)
-        ScanResult.Done(scanned, added, 0, 0, 0)
+        ScanResult.Done(scanned, added, updated, 0, 0)
     }
 
     private suspend fun scanPickedFolder(store: BetterMediaStore, onProgress: (Int) -> Unit): ScanResult? {
@@ -1012,7 +1015,7 @@ class YMusicApplication : Application() {
                 ScanResult.Done(
                     mediaStoreResult.scanned + folderResult.scanned,
                     mediaStoreResult.added + folderResult.added,
-                    folderResult.updated,
+                    mediaStoreResult.updated + folderResult.updated,
                     folderResult.removed,
                     folderResult.failed,
                 )
@@ -1035,17 +1038,31 @@ class YMusicApplication : Application() {
 
     /** Re-scans [folderUri] (and its children) in place, or every already-added root when null. */
     private suspend fun rescanKnownRoots(store: BetterMediaStore, folderUri: String?, onProgress: (Int) -> Unit): ScanResult? {
-        if (folderUri == null || folderUri.startsWith("content://media/external/audio")) {
+        val mediaStoreResult = if (folderUri == null || folderUri.startsWith("content://media/external/audio")) {
             scanDeviceMediaStore(store, onProgress)
+        } else {
+            null
         }
         val uris = if (folderUri != null) {
-            if (folderUri.startsWith("content://media/external/audio")) return ScanResult.Done(0, 0, 0, 0, 0)
+            if (folderUri.startsWith("content://media/external/audio")) return mediaStoreResult ?: ScanResult.Done(0, 0, 0, 0, 0)
             listOf(Uri.parse(folderUri))
         } else {
             val roots = store.childBuckets(null).filter { !it.uri.toString().startsWith("content://media/external/audio") }
             roots.map { it.uri }
         }
-        return if (uris.isNotEmpty()) scanUris(store, uris, onProgress) else ScanResult.Done(0, 0, 0, 0, 0)
+        val folderResult = if (uris.isNotEmpty()) scanUris(store, uris, onProgress) else null
+        return when {
+            mediaStoreResult != null && folderResult is ScanResult.Done -> ScanResult.Done(
+                mediaStoreResult.scanned + folderResult.scanned,
+                mediaStoreResult.added + folderResult.added,
+                mediaStoreResult.updated + folderResult.updated,
+                folderResult.removed,
+                folderResult.failed,
+            )
+            mediaStoreResult != null -> mediaStoreResult
+            folderResult != null -> folderResult
+            else -> ScanResult.Done(0, 0, 0, 0, 0)
+        }
     }
 
     /** Soft-deletes each Library root whose SAF tree grant is gone (revoked, or restored from a backup made on

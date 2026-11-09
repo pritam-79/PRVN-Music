@@ -680,15 +680,27 @@ private fun ActiveRoomView(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 // Sync status indicator
+                val syncBadgeText = when {
+                    state.isConnecting -> "Reconnecting"
+                    state.syncOffsetMs <= 300L -> "Synced • ${state.syncOffsetMs}ms"
+                    state.syncOffsetMs <= 800L -> "Syncing • ${state.syncOffsetMs}ms"
+                    else -> "Re-aligning • ${state.syncOffsetMs}ms"
+                }
+                val syncBadgeColor = when {
+                    state.isConnecting -> StatusAmber
+                    state.syncOffsetMs <= 300L -> StatusGreen
+                    state.syncOffsetMs <= 800L -> BrandCyan
+                    else -> StatusAmber
+                }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(StatusGreen.copy(alpha = 0.15f))
+                        .background(syncBadgeColor.copy(alpha = 0.15f))
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 ) {
                     Text(
-                        text = "Synced · ${state.syncOffsetMs}ms",
-                        style = TextStyle(fontSize = 11.sp, color = StatusGreen, fontWeight = FontWeight.Bold),
+                        text = syncBadgeText,
+                        style = TextStyle(fontSize = 11.sp, color = syncBadgeColor, fontWeight = FontWeight.Bold),
                     )
                 }
 
@@ -856,6 +868,9 @@ private fun NowPlayingTabView(
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f, fill = false)) {
             Spacer(Modifier.height(16.dp))
 
+            val effectiveUrl = track?.artworkUrl?.takeIf { it.isNotBlank() }
+                ?: track?.id?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+
             Box(
                 modifier = Modifier
                     .size(240.dp)
@@ -864,13 +879,29 @@ private fun NowPlayingTabView(
                     .border(1.dp, BrandPurpleVibrant.copy(alpha = 0.3f), RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                if (track?.artworkUrl != null && imageLoader != null) {
+                if (effectiveUrl != null && imageLoader != null) {
                     AsyncImage(
                         loader = imageLoader,
-                        url = track.artworkUrl,
-                        contentDescription = null,
+                        url = effectiveUrl,
+                        contentDescription = track?.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
+                        placeholder = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = BrandPurpleVibrant, modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
+                            }
+                        },
+                        error = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Outlined.MusicNote,
+                                    contentDescription = null,
+                                    tint = BrandPurpleLight,
+                                    modifier = Modifier.size(72.dp),
+                                )
+                            }
+                        },
+                        crossfadeMs = 250,
                     )
                 } else {
                     Icon(
