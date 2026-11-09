@@ -52,7 +52,11 @@ import io.ymusic.mediascanner.MediaScanner
 import io.ymusic.mediascanner.SafDocumentsProvider
 import io.ymusic.mediastore.BetterMediaStore
 import io.ymusic.mediastore.mediaStoreAndroidDriver
+import android.Manifest
+import android.content.ContentUris
+import android.provider.MediaStore
 import io.ymusic.mediastore.model.BucketDraft
+import io.ymusic.mediastore.model.MediaItemDraft
 import io.ymusic.mse.MseDecoderCaps
 import io.ymusic.mse.MseVideoSurface
 import io.ymusic.player.LocalPlayerContext
@@ -431,6 +435,14 @@ class YMusicApplication : Application() {
         engines.start()
 
         val mediaStore = BetterMediaStore.create(mediaStoreAndroidDriver(this))
+        scope.launch(Dispatchers.IO) {
+            try {
+                val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+                if (ContextCompat.checkSelfPermission(this@YMusicApplication, perm) == PackageManager.PERMISSION_GRANTED) {
+                    scanDeviceMediaStore(mediaStore) { }
+                }
+            } catch (_: Exception) {}
+        }
 
         // Thumbnails: everything is a fetcher — http on a cache-less client (originals stream to
         // the fetcher's disk cache, decode from file) + local files + art:// embedded covers via
@@ -898,9 +910,118 @@ class YMusicApplication : Application() {
     }
 
     /** SAF folder pick + full scan into [store]; returns how it ended, or null when canceled. */
+    /** Scans the device's Android MediaStore directly for all audio files into [store]. */
+    private suspend fun scanDeviceMediaStore(store: BetterMediaStore, onProgress: (Int) -> Unit): ScanResult.Done = withContext(Dispatchers.IO) {
+        val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+        val granted = ContextCompat.checkSelfPermission(this@YMusicApplication, permission) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            val req = permissionRequester
+            val requested = req?.invoke(permission) ?: false
+            if (!requested && ContextCompat.checkSelfPermission(this@YMusicApplication, permission) != PackageManager.PERMISSION_GRANTED) {
+                return@withContext ScanResult.Done(0, 0, 0, 0, 0)
+            }
+        }
+
+        val rootBucket = store.upsertBucket(
+            BucketDraft(
+                uri = Uri.parse("content://media/external/audio/media"),
+                name = "Device Audio",
+            ),
+        )
+
+        var scanned = 0
+        var added = 0
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DATE_MODIFIED,
+            MediaStore.Audio.Media.MIME_TYPE,
+            MediaStore.Audio.Media.YEAR,
+            MediaStore.Audio.Media.TRACK,
+        )
+
+        try {
+            contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                null,
+                "${MediaStore.Audio.Media.TITLE} ASC",
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+                val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+                val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
+                val yearCol = cursor.getColumnIndex(MediaStore.Audio.Media.YEAR)
+                val trackCol = cursor.getColumnIndex(MediaStore.Audio.Media.TRACK)
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val title = cursor.getString(titleCol)?.trim()?.takeIf { it.isNotBlank() } ?: "Unknown Track"
+                    val artist = cursor.getString(artistCol)?.trim()?.takeIf { it.isNotBlank() }
+                    val album = cursor.getString(albumCol)?.trim()?.takeIf { it.isNotBlank() }
+                    val duration = cursor.getLong(durCol)
+                    val size = cursor.getLong(sizeCol)
+                    val dateModified = cursor.getLong(dateCol) * 1000L
+                    val mime = cursor.getString(mimeCol) ?: "audio/mpeg"
+                    val year = if (yearCol >= 0) cursor.getInt(yearCol).takeIf { it > 0 } else null
+                    val track = if (trackCol >= 0) cursor.getInt(trackCol).takeIf { it > 0 } else null
+
+                    val itemUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    val draft = MediaItemDraft(
+                        uri = Uri.parse(itemUri.toString()),
+                        title = title,
+                        mimeType = mime,
+                        fileSize = size,
+                        lastModified = dateModified,
+                        artist = artist,
+                        album = album,
+                        durationMs = duration.takeIf { it > 0L },
+                        year = year,
+                        trackNumber = track,
+                    )
+                    store.upsertItem(rootBucket.id, draft)
+                    scanned++
+                    added++
+                    if (scanned % 10 == 0) {
+                        onProgress(scanned)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            rootLogger.fork("mediastore-scan").log(Logger.Level.WARN, "MediaStore scan failed", e)
+        }
+        onProgress(scanned)
+        ScanResult.Done(scanned, added, 0, 0, 0)
+    }
+
     private suspend fun scanPickedFolder(store: BetterMediaStore, onProgress: (Int) -> Unit): ScanResult? {
-        val treeUri = folderPicker?.invoke() ?: return null
-        return scanUris(store, listOf(treeUri), onProgress)
+        val mediaStoreResult = scanDeviceMediaStore(store, onProgress)
+        val treeUri = folderPicker?.invoke()
+        return if (treeUri != null) {
+            val folderResult = scanUris(store, listOf(treeUri), onProgress)
+            if (folderResult is ScanResult.Done) {
+                ScanResult.Done(
+                    mediaStoreResult.scanned + folderResult.scanned,
+                    mediaStoreResult.added + folderResult.added,
+                    folderResult.updated,
+                    folderResult.removed,
+                    folderResult.failed,
+                )
+            } else {
+                mediaStoreResult
+            }
+        } else {
+            mediaStoreResult
+        }
     }
 
     /** Pick a folder and register it as a Library bucket (no media scan — works even when empty),
@@ -914,14 +1035,17 @@ class YMusicApplication : Application() {
 
     /** Re-scans [folderUri] (and its children) in place, or every already-added root when null. */
     private suspend fun rescanKnownRoots(store: BetterMediaStore, folderUri: String?, onProgress: (Int) -> Unit): ScanResult? {
+        if (folderUri == null || folderUri.startsWith("content://media/external/audio")) {
+            scanDeviceMediaStore(store, onProgress)
+        }
         val uris = if (folderUri != null) {
+            if (folderUri.startsWith("content://media/external/audio")) return ScanResult.Done(0, 0, 0, 0, 0)
             listOf(Uri.parse(folderUri))
         } else {
-            val roots = store.childBuckets(null)
-            if (roots.isEmpty()) return ScanResult.NoFolders
+            val roots = store.childBuckets(null).filter { !it.uri.toString().startsWith("content://media/external/audio") }
             roots.map { it.uri }
         }
-        return scanUris(store, uris, onProgress)
+        return if (uris.isNotEmpty()) scanUris(store, uris, onProgress) else ScanResult.Done(0, 0, 0, 0, 0)
     }
 
     /** Soft-deletes each Library root whose SAF tree grant is gone (revoked, or restored from a backup made on

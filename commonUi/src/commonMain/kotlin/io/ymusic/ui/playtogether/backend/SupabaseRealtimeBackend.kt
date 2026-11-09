@@ -132,6 +132,10 @@ class SupabaseRealtimeBackend(
         return fallbackBackend.leaveRoom(roomId, memberId)
     }
 
+    override suspend fun closeRoom(roomId: String, reason: String): Result<Unit> {
+        return fallbackBackend.closeRoom(roomId, reason)
+    }
+
     override suspend fun sendPlaybackEvent(roomId: String, event: PlaybackEvent): Result<Unit> {
         if (isConfigured && isSocketConnected) {
             val ref = nextRef()

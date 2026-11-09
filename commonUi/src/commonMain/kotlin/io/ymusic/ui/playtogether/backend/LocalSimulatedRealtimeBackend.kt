@@ -208,6 +208,17 @@ class LocalSimulatedRealtimeBackend(
         return Result.success(Unit)
     }
 
+    override suspend fun closeRoom(roomId: String, reason: String): Result<Unit> {
+        synchronized(roomsLock) {
+            activeRooms.remove(roomId)
+            presenceFlows.remove(roomId)
+        }
+        scope.launch {
+            roomEventFlow.emit(roomId to RoomEvent.RoomClosed(reason))
+        }
+        return Result.success(Unit)
+    }
+
     override suspend fun sendPlaybackEvent(roomId: String, event: PlaybackEvent): Result<Unit> {
         val room = synchronized(roomsLock) { activeRooms[roomId] } ?: return Result.failure(Exception("Room not found."))
 

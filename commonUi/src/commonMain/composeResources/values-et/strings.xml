@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">Avasta</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">Kogu</string>
     <string name="section_play_again">Esita uuesti</string>
     <string name="section_downloads">Allalaadimiste haldur</string>

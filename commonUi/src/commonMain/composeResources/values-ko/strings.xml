@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">탐색</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">보관함</string>
     <string name="section_play_again">다시 재생</string>
     <string name="section_downloads">다운로드 관리자</string>

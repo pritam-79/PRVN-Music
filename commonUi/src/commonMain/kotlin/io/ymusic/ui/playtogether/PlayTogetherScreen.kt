@@ -264,19 +264,30 @@ fun PlayTogetherScreen(
         }
 
         if (showLeaveConfirm) {
+            val isHost = (state as? PlayTogetherState.InRoom)?.isHost == true
             AlertDialog(
                 onDismissRequest = { showLeaveConfirm = false },
-                title = { Text("Leave Room?", color = DesignColors.Ink, fontWeight = FontWeight.Bold) },
-                text = { Text("Are you sure you want to disconnect from this synchronized session?", color = DesignColors.InkSecondary) },
+                title = { Text(if (isHost) "End Session & Close Room?" else "Leave Room?", color = DesignColors.Ink, fontWeight = FontWeight.Bold) },
+                text = {
+                    Text(
+                        if (isHost) "As the room host, ending the session will disconnect all listeners and delete this room."
+                        else "Are you sure you want to disconnect from this synchronized session?",
+                        color = DesignColors.InkSecondary,
+                    )
+                },
                 confirmButton = {
                     Button(
                         onClick = {
                             showLeaveConfirm = false
-                            controller.leaveRoom()
+                            if (isHost) {
+                                controller.closeRoom()
+                            } else {
+                                controller.leaveRoom()
+                            }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = DesignColors.Accent),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isHost) StatusRed else DesignColors.Accent),
                     ) {
-                        Text("Leave", color = Color.White)
+                        Text(if (isHost) "Close Room" else "Leave", color = Color.White)
                     }
                 },
                 dismissButton = {
@@ -531,9 +542,11 @@ private fun RoomCard(room: RoomInfo, onJoin: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    val displayName = room.name.ifBlank { "PRVN Music Lounge" }
+                    val displayHost = room.hostName.ifBlank { "PRVN Host" }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = room.name,
+                            text = displayName,
                             style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -544,7 +557,7 @@ private fun RoomCard(room: RoomInfo, onJoin: () -> Unit) {
                     }
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "Host: ${room.hostName} · Code: ${room.code}",
+                        text = "Host: $displayHost · Code: ${room.code}",
                         style = TextStyle(fontSize = 12.sp, color = DesignColors.Accent, fontWeight = FontWeight.Medium),
                     )
                 }
@@ -682,10 +695,15 @@ private fun ActiveRoomView(
                 Button(
                     onClick = onLeaveClick,
                     shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DesignColors.SettingsCard),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (state.isHost) StatusRed.copy(alpha = 0.2f) else DesignColors.SettingsCard),
                     modifier = Modifier.height(34.dp),
                 ) {
-                    Text("Leave", fontSize = 12.sp, color = DesignColors.InkSecondary)
+                    Text(
+                        if (state.isHost) "Close" else "Leave",
+                        fontSize = 12.sp,
+                        color = if (state.isHost) StatusRed else DesignColors.InkSecondary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }
@@ -787,7 +805,7 @@ private fun ActiveRoomView(
                     )
                 }
                 RoomTab.PARTICIPANTS -> {
-                    ParticipantsTabView(state = state)
+                    ParticipantsTabView(state = state, controller = controller)
                 }
                 RoomTab.HOST_CONTROLS -> {
                     HostControlsTabView(
@@ -867,8 +885,8 @@ private fun NowPlayingTabView(
             Spacer(Modifier.height(20.dp))
 
             Text(
-                text = track?.title ?: "No Song Playing",
-                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DesignColors.Ink),
+                text = track?.title?.ifBlank { "PRVN Track" } ?: "No Song Playing",
+                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -878,8 +896,8 @@ private fun NowPlayingTabView(
             Spacer(Modifier.height(4.dp))
 
             Text(
-                text = track?.artist ?: "Search songs below to start synchronized playback",
-                style = TextStyle(fontSize = 14.sp, color = DesignColors.InkSecondary),
+                text = track?.artist?.ifBlank { "PRVN Artist" } ?: "Search songs below to start synchronized playback",
+                style = TextStyle(fontSize = 14.sp, color = Color(0xFFCCCCCC)),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -1598,7 +1616,7 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 // -------------------------------------------------------------------------------------------------
 
 @Composable
-private fun ParticipantsTabView(state: PlayTogetherState.InRoom) {
+private fun ParticipantsTabView(state: PlayTogetherState.InRoom, controller: PlayTogetherController) {
     Column(Modifier.fillMaxSize()) {
         Text(
             "Connected Listeners (${state.members.size})",
@@ -1676,6 +1694,20 @@ private fun ParticipantsTabView(state: PlayTogetherState.InRoom) {
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                         ) {
                             Text(syncLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = syncColor)
+                        }
+
+                        if (state.isHost && member.id != state.currentMemberId) {
+                            IconButton(
+                                onClick = { controller.kickMember(member.id) },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove Listener",
+                                    tint = StatusRed,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -1820,6 +1852,15 @@ private fun HostControlsTabView(
                         shape = RoundedCornerShape(10.dp),
                     ) {
                         Text("End Session & Close Room", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { controller.closeRoom() },
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusRed.copy(alpha = 0.15f)),
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Delete Room", fontSize = 12.sp, color = StatusRed, fontWeight = FontWeight.Bold)
                     }
                 }
             }

@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">ディスカバー</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">ライブラリ</string>
     <string name="section_play_again">もう一度再生</string>
     <string name="section_downloads">ダウンロードマネージャー</string>

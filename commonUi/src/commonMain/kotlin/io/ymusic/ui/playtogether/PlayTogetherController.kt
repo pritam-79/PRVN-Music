@@ -559,6 +559,8 @@ class PlayTogetherController(
         heartbeatJob?.cancel()
         heartbeatJob = null
 
+        syncEngine?.pause()
+
         if (current is PlayTogetherState.InRoom) {
             scope.launch {
                 backend.leaveRoom(current.room.id, current.currentMemberId)
@@ -567,6 +569,44 @@ class PlayTogetherController(
 
         _state.value = PlayTogetherState.Lobby()
         refreshPublicRooms()
+    }
+
+    fun closeRoom() {
+        val current = _state.value
+        playbackTickerJob?.cancel()
+        playbackTickerJob = null
+        roomEventsJob?.cancel()
+        roomEventsJob = null
+        presenceJob?.cancel()
+        presenceJob = null
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+
+        syncEngine?.pause()
+
+        if (current is PlayTogetherState.InRoom) {
+            scope.launch {
+                backend.closeRoom(current.room.id, "Host ended the room session.")
+            }
+        }
+
+        _state.value = PlayTogetherState.Lobby()
+        refreshPublicRooms()
+    }
+
+    fun kickMember(memberId: String) {
+        val current = _state.value
+        if (current is PlayTogetherState.InRoom && current.isHost) {
+            scope.launch {
+                backend.leaveRoom(current.room.id, memberId)
+            }
+            _state.update { s ->
+                if (s is PlayTogetherState.InRoom) {
+                    val updated = s.members.filter { it.id != memberId }
+                    s.copy(members = updated, room = s.room.copy(memberCount = updated.size))
+                } else s
+            }
+        }
     }
 
     fun togglePlayPause() {

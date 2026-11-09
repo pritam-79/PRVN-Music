@@ -106,8 +106,8 @@ class GlobalRealtimeBackend(
                         if (msgText.isNotBlank()) {
                             val roomJson = parseJson(msgText)
                             val rCode = roomJson.stringOrNull("code").orEmpty()
-                            val rName = roomJson.stringOrNull("name").orEmpty()
-                            val rHost = roomJson.stringOrNull("hostName").orEmpty()
+                            val rName = roomJson.stringOrNull("name").orEmpty().ifBlank { "PRVN Music Lounge" }
+                            val rHost = roomJson.stringOrNull("hostName").orEmpty().ifBlank { "PRVN Host" }
                             val rId = roomJson.stringOrNull("id") ?: "room_$rCode"
                             val time = roomJson.longOrNull("updatedUtc") ?: (root.longOrNull("time") ?: 0L) * 1000L
 
@@ -339,6 +339,16 @@ class GlobalRealtimeBackend(
         val payload = """{"event":"MEMBER_LEFT","memberId":"$memberId"}"""
         publishRelayMessage(topicForRoom(code), "MEMBER_LEFT", payload)
 
+        pollJobs[roomId]?.cancel()
+        pollJobs.remove(roomId)
+        Result.success(Unit)
+    }
+
+    override suspend fun closeRoom(roomId: String, reason: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val code = codeFromRoomId(roomId)
+        val payload = """{"event":"ROOM_CLOSED","reason":"${escape(reason)}"}"""
+        publishRelayMessage(topicForRoom(code), "ROOM_CLOSED", payload)
+        getOrCreateEventFlow(roomId).emit(RoomEvent.RoomClosed(reason))
         pollJobs[roomId]?.cancel()
         pollJobs.remove(roomId)
         Result.success(Unit)

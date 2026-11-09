@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">Keşfet</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">Kitaplık</string>
     <string name="section_play_again">Tekrar oynat</string>
     <string name="section_downloads">İndirme yöneticisi</string>

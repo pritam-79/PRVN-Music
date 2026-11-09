@@ -1,8 +1,8 @@
 {
   "versionName": "0.06",
-  "versionCode": 8,
+  "versionCode": 9,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.06/PRVN-Music-v0.06-arm64.apk",
-  "releaseNotes": "PRVN Music v0.06: Complete Listen Together audio playback repair, real-time cross-device synchronization, automatic music & queue transfer, and public room discovery.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.06-build9/PRVN-Music-0.06-arm64-v8a-release.apk",
+  "releaseNotes": "PRVN Music v0.06 (Build 9): Resolved double audio playback, removed MiniPlayer in Play Together, eliminated sync freeze & seek storms, full device MediaStore music scanning, rebranded Home header to PRVN Music, added host controls.",
   "forceUpdate": false
 }

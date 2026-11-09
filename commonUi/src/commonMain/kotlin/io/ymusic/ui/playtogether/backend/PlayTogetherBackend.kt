@@ -55,6 +55,14 @@ interface PlayTogetherBackend {
     ): Result<Unit>
 
     /**
+     * Closes the room session and notifies all connected participants (host action).
+     */
+    suspend fun closeRoom(
+        roomId: String,
+        reason: String = "Host ended the room session.",
+    ): Result<Unit>
+
+    /**
      * Dispatches a playback event (play, pause, seek, track change, queue mutate) to peers.
      */
     suspend fun sendPlaybackEvent(

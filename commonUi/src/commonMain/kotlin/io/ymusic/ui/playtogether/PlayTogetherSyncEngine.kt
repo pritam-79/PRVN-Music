@@ -47,6 +47,7 @@ class PlayTogetherSyncEngine(
     private var playerStatusJob: Job? = null
     private var stateObserverJob: Job? = null
     private var currentActiveRoomId: String? = null
+    private var lastPlaybackEventTimestamp: Long = 0L
 
     /**
      * Configured drift tolerance in milliseconds from AppSettings (250ms, 500ms, 750ms, 1000ms).
@@ -92,13 +93,12 @@ class PlayTogetherSyncEngine(
         }
 
         // 1. Observe incoming peer events from backend
+        val roomId = roomState.room.id
         roomEventsJob = scope.launch {
-            controller.state.collect { state ->
-                if (state is PlayTogetherState.InRoom) {
-                    val roomId = state.room.id
-                    controller.backend.observeRoomEvents(roomId).collect { event ->
-                        handleRoomEvent(event, state)
-                    }
+            controller.backend.observeRoomEvents(roomId).collect { event ->
+                val current = controller.state.value
+                if (current is PlayTogetherState.InRoom && current.room.id == roomId) {
+                    handleRoomEvent(event, current)
                 }
             }
         }
@@ -136,11 +136,15 @@ class PlayTogetherSyncEngine(
         driftMonitorJob = null
         playerStatusJob?.cancel()
         playerStatusJob = null
+        lastPlaybackEventTimestamp = 0L
     }
 
     private fun handleRoomEvent(event: RoomEvent, roomState: PlayTogetherState.InRoom) {
         when (event) {
             is RoomEvent.PlaybackUpdated -> {
+                if (event.timestampUtc < lastPlaybackEventTimestamp) return
+                lastPlaybackEventTimestamp = event.timestampUtc
+
                 // If event originated from peer, apply to local player
                 if (event.senderId != roomState.currentMemberId) {
                     val targetTrack = event.track ?: roomState.currentTrack
@@ -157,7 +161,7 @@ class PlayTogetherSyncEngine(
                                 player.pause()
                             }
 
-                            val elapsed = Clock.System.now().toEpochMilliseconds() - event.timestampUtc
+                            val elapsed = (Clock.System.now().toEpochMilliseconds() - event.timestampUtc).coerceAtLeast(0L)
                             val expectedPos = event.positionMs + if (event.isPlaying) elapsed else 0L
                             val localPos = player.progress.value.positionMs
                             val drift = abs(localPos - expectedPos)

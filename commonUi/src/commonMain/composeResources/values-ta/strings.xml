@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">கண்டறி</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">லைப்ரரி</string>
     <string name="section_play_again">மீண்டும் இயக்கு</string>
     <string name="section_downloads">பதிவிறக்க மேலாளர்</string>

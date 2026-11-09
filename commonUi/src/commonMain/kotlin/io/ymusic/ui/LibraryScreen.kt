@@ -423,7 +423,7 @@ private fun EmptyLibrary(scan: ScanAction?, controller: ScanController?) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(stringResource(Res.string.library_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (scan == null || controller == null) return@Column
-            ScanPill(scan, controller, label = stringResource(Res.string.library_scan_folder))
+            ScanPill(scan, controller, label = "Scan Device Music")
             if (controller.running) CircularProgressIndicator(Modifier.size(22.dp))
         }
     }

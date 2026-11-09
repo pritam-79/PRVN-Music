@@ -1183,10 +1183,13 @@ private fun AppRoot(
                                             Modifier.weight(1f).fillMaxWidth().padding(padding)
                                                 .background(DesignColors.Surface),
                                         ) { screens() }
-                                        mini(Modifier.fillMaxWidth())
+                                        if (section != AppSection.PlayTogether) {
+                                            mini(Modifier.fillMaxWidth())
+                                        }
                                     }
                                 } else {
-                                    val miniVisible = coordinator.player.queue.collectAsState().value.currentItem != null
+                                    val inPlayTogether = (section == AppSection.PlayTogether)
+                                    val miniVisible = !inPlayTogether && coordinator.player.queue.collectAsState().value.currentItem != null
                                     val miniInset = (if (miniVisible) with(LocalDensity.current) { miniHeightPx.toDp() } else 0.dp) + 76.dp
                                     Box(Modifier.fillMaxSize()) {
                                         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -1197,7 +1200,11 @@ private fun AppRoot(
                                                 .fillMaxWidth()
                                                 .navigationBarsPadding(),
                                         ) {
+                                            if (miniVisible) {
+                                                if (section != AppSection.PlayTogether) {
                                             mini(Modifier.fillMaxWidth())
+                                        }
+                                            }
                                             GlassBottomNavigation(
                                                 currentSection = section,
                                                 onNavigate = { openSection(it) },

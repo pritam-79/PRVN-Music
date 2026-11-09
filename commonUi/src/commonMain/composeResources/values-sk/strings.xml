@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">Objavovať</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">Knižnica</string>
     <string name="section_play_again">Prehrať znova</string>
     <string name="section_downloads">Správca sťahovania</string>

@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">සොයා ගන්න</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">පුස්තකාලය</string>
     <string name="section_play_again">නැවත වාදනය</string>
     <string name="section_downloads">බාගැනීම් කළමනාකරු</string>

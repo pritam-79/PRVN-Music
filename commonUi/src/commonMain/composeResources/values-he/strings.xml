@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">גילוי</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">ספרייה</string>
     <string name="section_play_again">השמעה חוזרת</string>
     <string name="section_downloads">מנהל ההורדות</string>

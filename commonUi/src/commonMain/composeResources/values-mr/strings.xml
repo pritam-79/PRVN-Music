@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">शोधा</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">लायब्ररी</string>
     <string name="section_play_again">पुन्हा प्ले करा</string>
     <string name="section_downloads">डाउनलोड व्यवस्थापक</string>

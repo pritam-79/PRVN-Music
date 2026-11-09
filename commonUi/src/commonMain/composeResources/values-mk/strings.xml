@@ -1,7 +1,7 @@
 <resources>
     <!-- Drawer sections -->
     <string name="section_discover">Откриј</string>
-    <string name="section_yt_music">YT Music</string>
+    <string name="section_yt_music">PRVN Music</string>
     <string name="section_library">Библиотека</string>
     <string name="section_play_again">Пушти повторно</string>
     <string name="section_downloads">Менаџер за преземања</string>
