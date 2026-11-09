@@ -58,7 +58,7 @@ fun AboutPrvnDialog(graph: AppGraph, onDismiss: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
                 Text(
-                    "PRVN Music is open-source under GNU GPL v3.0, based on YMusic V4. The following third-party components are included:",
+                    "PRVN Music is open-source under GNU GPL v3.0. The following third-party components and open-source foundations are included:",
                     style = TextStyle(fontSize = 12.sp, color = DesignColors.InkSecondary),
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 )
@@ -103,11 +103,10 @@ fun AboutPrvnDialog(graph: AppGraph, onDismiss: () -> Unit) {
                 }
 
                 item {
-                    AboutInfoRow("Version", "${graph.appVersionName ?: "0.0.5"} (Build ${graph.appVersionCode ?: 6})")
+                    AboutInfoRow("Version", "${graph.appVersionName ?: "0.0.5"} (Build ${graph.appVersionCode ?: 7})")
                     AboutInfoRow("Application ID", "com.prvn.music")
                     AboutInfoRow("Developer", "PRVN")
                     AboutInfoRow("Target Architecture", "Android ARM64 (arm64-v8a)")
-                    AboutInfoRow("Base Foundation", "YMusic V4 (GPL-3.0)")
                     AboutInfoRow("License", "GNU General Public License v3.0")
                     HorizontalDivider(color = DesignColors.Divider)
                 }

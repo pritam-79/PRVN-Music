@@ -1,8 +1,8 @@
 {
   "versionName": "0.0.5",
-  "versionCode": 6,
+  "versionCode": 7,
   "minimumVersionCode": 1,
   "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.05/PRVN-Music-v0.05-arm64.apk",
-  "releaseNotes": "Playback engine JNI repair, full PRVN Music branding, and in-app update system",
+  "releaseNotes": "Fix Android MSE native playback error, Liquid Glass navigation bar, and PRVN rebranding",
   "forceUpdate": false
 }

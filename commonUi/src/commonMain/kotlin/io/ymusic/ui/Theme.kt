@@ -145,31 +145,31 @@ val StaticDesignColors = DarkDesignColors.copy(
 /** 2. Liquid Glass appearance: translucent glass surfaces, glowing depth, subtle reflections. */
 val LiquidGlassDesignColors = DesignPalette(
     isDark = true,
-    Accent = Color(0xFFC084FC),
+    Accent = Color(0xFFE11D48),
     BrandGreen = Color(0xFF38BDF8),
-    Surface = Color(0xFF0E0B1A),
-    SurfaceDim = Color(0xFF140E26),
-    SurfaceElevated = Color(0xFF221742),
-    SettingsCard = Color(0xFF1C1338),
-    FieldPill = Color(0xFF281B4E),
-    StackNear = Color(0xFF221742),
-    StackFar = Color(0xFF181030),
-    StackTab = Color(0xFF20153D),
-    Outline = Color(0x66C084FC),
-    OutlineSoft = Color(0x3338BDF8),
-    Divider = Color(0x22C084FC),
-    DividerMini = Color(0x33C084FC),
-    Placeholder = Color(0xFF221742),
-    PlaceholderDim = Color(0xFF181030),
-    PlaceholderIcon = Color(0xFF907AA9),
+    Surface = Color(0xFF000000),
+    SurfaceDim = Color(0xFF0A0A0E),
+    SurfaceElevated = Color(0xFF14141A),
+    SettingsCard = Color(0xFF14141A),
+    FieldPill = Color(0xFF1A1A22),
+    StackNear = Color(0xFF14141A),
+    StackFar = Color(0xFF0A0A0E),
+    StackTab = Color(0xFF121218),
+    Outline = Color(0x33FFFFFF),
+    OutlineSoft = Color(0x1AFFFFFF),
+    Divider = Color(0x1AFFFFFF),
+    DividerMini = Color(0x26FFFFFF),
+    Placeholder = Color(0xFF14141A),
+    PlaceholderDim = Color(0xFF0A0A0E),
+    PlaceholderIcon = Color(0xFF71717A),
     InkStrong = Color(0xFFFFFFFF),
-    Ink = Color(0xFFF3EDFD),
-    InkMuted = Color(0xFFA79BC4),
-    InkSoft = Color(0xFF8679A3),
-    InkSecondary = Color(0xFF7E729C),
-    InkFaint = Color(0xFF564B70),
-    IconDots = Color(0xFFA79BC4),
-    OnInk = Color(0xFF0E0B1A),
+    Ink = Color(0xFFF4F4F5),
+    InkMuted = Color(0xFFA1A1AA),
+    InkSoft = Color(0xFF71717A),
+    InkSecondary = Color(0xFF71717A),
+    InkFaint = Color(0xFF52525B),
+    IconDots = Color(0xFFA1A1AA),
+    OnInk = Color.Black,
     OnAccent = Color.White,
 )
 
@@ -223,11 +223,11 @@ enum class AppearanceMode(
     val secondaryColor: Color,
     val surfaceColor: Color,
 ) {
-    STATIC("static", "Static", "Clean flat surfaces & stable colors", Color(0xFFA855F7), Color(0xFF06B6D4), Color(0xFF0B0E14)),
-    LIQUID_GLASS("liquid_glass", "Liquid Glass", "Translucent glass surfaces & depth", Color(0xFFC084FC), Color(0xFF38BDF8), Color(0xFF0E0B1A)),
-    AMOLED_BLACK("amoled", "AMOLED Black", "Pure black surfaces & max contrast", Color(0xFFA855F7), Color(0xFFFFFFFF), Color(0xFF000000)),
-    NEON("neon", "Neon", "Cyberpunk purple & cyan glow", Color(0xFFA855F7), Color(0xFF06B6D4), Color(0xFF07080F)),
-    MINIMAL("minimal", "Minimal", "Monochrome distraction-free styling", Color(0xFFA1A1AA), Color(0xFFE4E4E7), Color(0xFF121214)),
+    LIQUID_GLASS("liquid_glass", "Liquid Glass", "Translucent glass surfaces & glowing depth", Color(0xFFE11D48), Color(0xFFC026D3), Color(0xFF000000)),
+    STATIC_AMOLED("amoled", "Static AMOLED", "Pure AMOLED black surfaces & max contrast", Color(0xFFE11D48), Color(0xFFFFFFFF), Color(0xFF000000)),
+    CLASSIC_DARK("dark", "Classic Dark", "Timeless graphite dark surfaces & stable colors", Color(0xFFA855F7), Color(0xFF38BDF8), Color(0xFF0B0E14)),
+    DYNAMIC_GRADIENT("gradient", "Dynamic Gradient", "Vibrant gradient tones matching music album", Color(0xFFEC4899), Color(0xFF8B5CF6), Color(0xFF0F0B18)),
+    NEON("neon", "Cyberpunk Neon", "Neon glow & high contrast highlights", Color(0xFF06B6D4), Color(0xFFE11D48), Color(0xFF07080F)),
 }
 
 /** [AppSettings.theme] value → whether the UI is dark; "" follows the system. */
@@ -267,12 +267,12 @@ fun accentHexOf(color: Color): String {
 fun designPaletteFor(theme: String, systemDark: Boolean, accentHex: String = ""): DesignPalette {
     val base = when (theme.lowercase()) {
         "liquid_glass", "glass" -> LiquidGlassDesignColors
-        "amoled", "black" -> AmoledDesignColors
+        "amoled", "black", "static_amoled" -> AmoledDesignColors
+        "gradient", "dynamic_gradient" -> LiquidGlassDesignColors.copy(Surface = Color(0xFF0F0B18), SurfaceElevated = Color(0xFF1E142B), Accent = Color(0xFFEC4899))
         "neon" -> NeonDesignColors
-        "minimal" -> MinimalDesignColors
         "light" -> LightDesignColors
-        "static", "dark" -> StaticDesignColors
-        else -> if (systemDark) StaticDesignColors else LightDesignColors
+        "static", "dark", "classic_dark" -> StaticDesignColors
+        else -> LiquidGlassDesignColors
     }
     val accent = if (accentHex.isNotBlank()) accentColorOf(accentHex) else base.Accent
     return if (accent == base.Accent) base else base.copy(Accent = accent)

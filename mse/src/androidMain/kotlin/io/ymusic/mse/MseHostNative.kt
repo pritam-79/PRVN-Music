@@ -1,13 +1,16 @@
 package io.ymusic.mse
 
 import android.view.Surface
-import java.nio.ByteBuffer
-import java.util.concurrent.ConcurrentHashMap
+
+interface MseHostSink {
+    fun onPcm(rate: Int, channels: Int, s16: ByteArray)
+
+    fun onProgress(positionSec: Double, durationSec: Double, width: Int, height: Int)
+}
 
 actual object MseHostNative {
     private var frameScratch = ByteArray(0)
     private val frameMeta = IntArray(3)
-    private val audioOutputs = ConcurrentHashMap<Long, MseAudioOutput>()
 
     init {
         try { System.loadLibrary("avutil") } catch (_: Throwable) {}
@@ -15,37 +18,53 @@ actual object MseHostNative {
         try { System.loadLibrary("swscale") } catch (_: Throwable) {}
         try { System.loadLibrary("avcodec") } catch (_: Throwable) {}
         try { System.loadLibrary("avformat") } catch (_: Throwable) {}
-        System.loadLibrary("mseffmpegjni")
+        try { System.loadLibrary("mseffmpegjni") } catch (_: Throwable) {}
     }
 
     @JvmStatic
     actual external fun vtable(): Long
 
-    actual fun create(): Long {
-        val host = createHost()
-        if (host != 0L) audioOutputs[host] = MseAudioOutput(host)
-        return host
-    }
-
-    actual fun destroy(handle: Long) {
-        audioOutputs.remove(handle)?.release()
-        destroyHost(handle)
-    }
+    @JvmStatic
+    actual external fun create(): Long
 
     @JvmStatic
-    external fun createHost(): Long
+    actual external fun destroy(handle: Long)
 
     @JvmStatic
-    external fun destroyHost(handle: Long)
+    fun createHost(): Long = create()
+
+    @JvmStatic
+    fun destroyHost(handle: Long) = destroy(handle)
+
+    @JvmStatic
+    external fun setSink(handle: Long, sink: MseHostSink?)
 
     @JvmStatic
     actual external fun frames(handle: Long): Int
 
     @JvmStatic
-    actual external fun droppedFrames(handle: Long): Int
+    actual fun droppedFrames(handle: Long): Int {
+        return try {
+            nativeDroppedFrames(handle)
+        } catch (_: Throwable) {
+            0
+        }
+    }
 
     @JvmStatic
-    actual external fun videoDecoder(handle: Long): String
+    private external fun nativeDroppedFrames(handle: Long): Int
+
+    @JvmStatic
+    actual fun videoDecoder(handle: Long): String {
+        return try {
+            nativeVideoDecoder(handle)
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    @JvmStatic
+    private external fun nativeVideoDecoder(handle: Long): String
 
     @JvmStatic
     actual external fun samplesPlayed(handle: Long): Long
@@ -95,30 +114,18 @@ actual object MseHostNative {
     actual external fun pcmLevels(handle: Long, out: FloatArray): Int
 
     @JvmStatic
-    external fun audioSessionId(handle: Long): Int
+    fun audioSessionId(handle: Long): Int = MseAudioOutput.getAudioSessionId(handle)
 
     @JvmStatic
-    external fun videoFailure(handle: Long): String?
+    fun videoFailure(handle: Long): String? = null
 
     @JvmStatic
-    external fun dacAttach(handle: Long, attached: Boolean)
+    fun setDecoderCaps(rows: IntArray) {
+        try {
+            nativeSetDecoderCaps(rows)
+        } catch (_: Throwable) {}
+    }
 
     @JvmStatic
-    external fun dacPoll(handle: Long, dst: ByteBuffer, cap: Int, waitMs: Int, state: IntArray): Int
-
-    @JvmStatic
-    external fun dacReport(handle: Long, gen: Int, position: Long, written: Long, pending: Boolean, bufferUs: Long)
-
-    @JvmStatic
-    external fun dacSession(handle: Long, session: Int)
-
-    /**
-     * Replaces the process-wide decoder table the player's `navigator.mediaCapabilities` answers from
-     * (`mse_caps.h`); until it is set, the player keeps its pre-table behaviour. [rows] is n x 7 ints:
-     * codec (1 H.264, 2 HEVC, 3 VP8, 4 VP9, 5 AV1), max bit depth, widest chroma (1 4:2:0, 2 4:2:2,
-     * 3 4:4:4), max width, max height (either orientation), max fps at that size (0 = no limit), hw (0/1).
-     * Must run before the player engine boots.
-     */
-    @JvmStatic
-    external fun setDecoderCaps(rows: IntArray)
+    private external fun nativeSetDecoderCaps(rows: IntArray)
 }

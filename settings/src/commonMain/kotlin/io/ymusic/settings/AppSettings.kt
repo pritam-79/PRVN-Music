@@ -149,7 +149,7 @@ object AppSettings {
      * while something else has the foreground, and a white sheet is the wrong default for that.
      * Following the system is still one of the choices, just not the unset one.
      */
-    val theme = StringSetting("app.theme", "dark")
+    val theme = StringSetting("app.theme", "liquid_glass")
 
     /**
      * Whether anonymous crash reports may be sent. Default OFF — reporting must never start before

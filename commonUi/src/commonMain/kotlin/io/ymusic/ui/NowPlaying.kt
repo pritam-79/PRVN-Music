@@ -1,5 +1,7 @@
 package io.ymusic.ui
 
+import androidx.compose.ui.graphics.Brush
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -304,13 +306,27 @@ fun MiniPlayer(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onExpand),
+                .padding(horizontal = 14.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xF018121C), Color(0xE60D0A12)),
+                    ),
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(Color(0x33FFFFFF), Color(0x10FFFFFF)),
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                )
+                .clickable(onClick = onExpand)
+                .padding(end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 Modifier
-                    .height(tileH)
-                    .aspectRatio(16f / 9f)
+                    .size(tileH).padding(4.dp).clip(RoundedCornerShape(10.dp))
                     .then(if (desktopLayoutHole) Modifier else Modifier.background(Color.Black)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -331,7 +347,7 @@ fun MiniPlayer(
             }
             Column(
                 Modifier.weight(1f)
-                    .background(DesignColors.SurfaceDim)
+                    .background(Color.Transparent)
                     .onSizeChanged { colH = it.height },
             ) {
                 LinearProgressIndicator(

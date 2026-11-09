@@ -1,5 +1,7 @@
 package io.ymusic.ui
 
+import io.ymusic.ui.glass.GlassBottomNavigation
+
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -1185,16 +1187,24 @@ private fun AppRoot(
                                     }
                                 } else {
                                     val miniVisible = coordinator.player.queue.collectAsState().value.currentItem != null
-                                    val miniInset = if (miniVisible) with(LocalDensity.current) { miniHeightPx.toDp() } else 0.dp
+                                    val miniInset = (if (miniVisible) with(LocalDensity.current) { miniHeightPx.toDp() } else 0.dp) + 76.dp
                                     Box(Modifier.fillMaxSize()) {
                                         Column(Modifier.fillMaxSize().padding(padding)) {
                                             CompositionLocalProvider(LocalMiniPlayerInset provides miniInset) { screens() }
                                         }
-                                        mini(
+                                        Column(
                                             Modifier.align(Alignment.BottomCenter)
                                                 .fillMaxWidth()
                                                 .navigationBarsPadding(),
-                                        )
+                                        ) {
+                                            mini(Modifier.fillMaxWidth())
+                                            GlassBottomNavigation(
+                                                currentSection = section,
+                                                onNavigate = { openSection(it) },
+                                                onSearchClick = { openMusicSearch() },
+                                                modifier = Modifier.padding(bottom = 8.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }
