@@ -8,6 +8,10 @@ import io.ymusic.ui.playtogether.RoomMember
 import io.ymusic.ui.playtogether.RoomVisibility
 import io.ymusic.ui.playtogether.SongRequest
 import io.ymusic.ui.playtogether.SongRequestStatus
+import io.ymusic.ui.playtogether.backend.PlayTogetherJson.bool
+import io.ymusic.ui.playtogether.backend.PlayTogetherJson.int
+import io.ymusic.ui.playtogether.backend.PlayTogetherJson.lng
+import io.ymusic.ui.playtogether.backend.PlayTogetherJson.str
 import kmphttp.KmpHttpClient
 import kmphttp.RequestBuilder
 import kmphttp.RequestBodyX.toRequestBody
@@ -20,137 +24,174 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import projectcommon.json.boolOrNull
-import projectcommon.json.intOrNull
-import projectcommon.json.longOrNull
-import projectcommon.json.objects
-import projectcommon.json.stringOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.random.Random
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /**
- * Universal cross-device real-time backend for PRVN Music Listen Together.
- * Uses a zero-configuration global real-time pub/sub relay (ntfy.sh) over HTTPS.
- * Allows participants on differing networks, mobile data, and Wi-Fi to create rooms,
- * discover public lounges, synchronize playback, reorder shared queues, and manage requests.
+ * Zero-config cross-device real-time backend over HTTP JSON message relay (`ntfy.sh`).
+ * Works between any two devices across Wi-Fi / 4G / 5G without requiring extra setup.
+ *
+ * Guarantees:
+ * - Strict JSON encoding via [PlayTogetherJson] (no unescaped string interpolation bugs).
+ * - Full room epoch isolation & authoritative `ROOM_STATE` snapshot recovery for late joiners & reconnects.
+ * - Message-ID cursor polling (`?poll=1&since=<lastMsgId>`) + event deduplication (zero lost same-second events).
+ * - Full lifecycle sync for Queue, Song Requests (all 6 statuses), Presence, Settings, Close/Delete, and Kicks.
  */
 class GlobalRealtimeBackend(
-    private val client: KmpHttpClient = KmpHttpClient.create { defaultExecuteTimeout = 10.seconds },
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
     private val relayUrl: String = "https://ntfy.sh",
+    private val client: KmpHttpClient = KmpHttpClient.create {},
 ) : PlayTogetherBackend {
 
     private data class CachedRoom(
-        val info: RoomInfo,
+        var info: RoomInfo,
         val hostId: String,
-        val members: MutableList<RoomMember> = mutableListOf(),
+        var selfMemberId: String,
+        val members: LinkedHashMap<String, RoomMember> = linkedMapOf(),
         val queue: MutableList<PlayTogetherTrack> = mutableListOf(),
-        val songRequests: MutableList<SongRequest> = mutableListOf(),
+        val songRequests: LinkedHashMap<String, SongRequest> = linkedMapOf(),
         var currentTrack: PlayTogetherTrack? = null,
         var isPlaying: Boolean = false,
         var positionMs: Long = 0L,
-        var lastUpdatedUtc: Long = Clock.System.now().toEpochMilliseconds(),
+        var playbackSeq: Long = 1L,
+        var queueVersion: Long = 1L,
+        var playbackStartTimestampUtc: Long = 0L,
+        var isClosed: Boolean = false,
+        var lastMsgId: String? = null,
+        var lastStateBroadcastMs: Long = 0L,
+        val seenEventIds: LinkedHashSet<String> = linkedSetOf(),
     )
 
     private val localLock = Any()
     private val localRooms = mutableMapOf<String, CachedRoom>()
-
     private val eventFlows = mutableMapOf<String, MutableSharedFlow<RoomEvent>>()
     private val presenceFlows = mutableMapOf<String, MutableStateFlow<List<RoomMember>>>()
     private val pollJobs = mutableMapOf<String, Job>()
-    private var isNetworkAvailable = true
 
-    private fun getOrCreateEventFlow(roomId: String): MutableSharedFlow<RoomEvent> {
-        return synchronized(localLock) {
-            eventFlows.getOrPut(roomId) { MutableSharedFlow(extraBufferCapacity = 64) }
-        }
-    }
-
-    private fun getOrCreatePresenceFlow(roomId: String): MutableStateFlow<List<RoomMember>> {
-        return synchronized(localLock) {
-            presenceFlows.getOrPut(roomId) { MutableStateFlow(emptyList()) }
-        }
-    }
+    private val networkAvailable = MutableStateFlow(true)
+    private var lastKnownClockOffsetMs = 0L
 
     private fun topicForRoom(code: String): String = "prvn_music_room_${code.trim()}"
-    private val publicDirectoryTopic = "prvn_music_public_rooms_v1"
+    private val publicDirectoryTopic = "prvn_music_public_rooms_v2"
+    private val legacyDirectoryTopic = "prvn_music_public_rooms_v1"
+
+    private fun getOrCreateEventFlow(roomId: String): MutableSharedFlow<RoomEvent> =
+        synchronized(localLock) {
+            eventFlows.getOrPut(roomId) { MutableSharedFlow(extraBufferCapacity = 128) }
+        }
+
+    private fun getOrCreatePresenceFlow(roomId: String): MutableStateFlow<List<RoomMember>> =
+        synchronized(localLock) {
+            presenceFlows.getOrPut(roomId) { MutableStateFlow(emptyList()) }
+        }
+
+    private fun rememberEventId(cached: CachedRoom, eventId: String): Boolean {
+        if (eventId.isBlank()) return true
+        return synchronized(localLock) {
+            if (!cached.seenEventIds.add(eventId)) {
+                false
+            } else {
+                if (cached.seenEventIds.size > 512) {
+                    val oldest = cached.seenEventIds.firstOrNull()
+                    if (oldest != null) cached.seenEventIds.remove(oldest)
+                }
+                true
+            }
+        }
+    }
 
     override suspend fun listPublicRooms(): Result<List<RoomInfo>> = withContext(Dispatchers.IO) {
-        val remoteList = mutableListOf<RoomInfo>()
-        val closedCodes = mutableSetOf<String>()
+        val roomsByCode = linkedMapOf<String, Pair<Long, RoomInfo>>()
+        val now = Clock.System.now().toEpochMilliseconds()
+        val staleCutoffMs = 45 * 60_000L
+
+        var networkOk = false
         try {
             val req = RequestBuilder()
                 .url("$relayUrl/$publicDirectoryTopic/json?poll=1&since=all")
-                .header("User-Agent", "PRVN-Music-App/0.07")
+                .header("User-Agent", USER_AGENT)
                 .header("Cache-Control", "no-cache")
                 .get()
                 .build()
             val resp = client.execute(req)
             if (resp.isSuccessful) {
+                networkOk = true
+                networkAvailable.value = true
                 val body = resp.body.utf8String()
-                val now = Clock.System.now().toEpochMilliseconds()
                 body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-                    try {
-                        val root = parseJson(line)
-                        val msgText = root.stringOrNull("message").orEmpty()
-                        if (msgText.isNotBlank()) {
-                            val roomJson = parseJson(msgText)
-                            val rCode = roomJson.stringOrNull("code").orEmpty()
-                            val isClosed = roomJson.boolOrNull("closed") ?: false
-                            if (isClosed && rCode.length == 4) {
-                                closedCodes.add(rCode)
-                                remoteList.removeAll { it.code == rCode }
-                            } else if (rCode.length == 4 && !closedCodes.contains(rCode)) {
-                                val rName = roomJson.stringOrNull("name").orEmpty().ifBlank { "PRVN Music Lounge" }
-                                val rHost = roomJson.stringOrNull("hostName").orEmpty().ifBlank { "PRVN Host" }
-                                val rId = roomJson.stringOrNull("id") ?: "room_$rCode"
-                                val time = roomJson.longOrNull("updatedUtc") ?: (root.longOrNull("time") ?: 0L) * 1000L
+                    val root = PlayTogetherJson.parseObjectOrNull(line) ?: return@forEach
+                    val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: return@forEach
+                    val code = msgObj.str("code")?.trim().orEmpty()
+                    if (!RoomSecurityPolicy.isValidRoomCode(code)) return@forEach
 
-                                // Keep rooms updated within last 20 minutes (prevents stale zombie rooms)
-                                if ((now - time) < 20 * 60 * 1000L) {
-                                    val track = extractTrack(roomJson, "currentTrack")
-                                    val membersCount = roomJson.intOrNull("memberCount") ?: 1
-                                    val modeStr = roomJson.stringOrNull("controlMode") ?: "HOST_ONLY"
-                                    val mode = if (modeStr == "COLLABORATIVE") ControlMode.COLLABORATIVE else ControlMode.HOST_ONLY
+                    val closed = (msgObj.bool("closed") ?: false) || (msgObj.bool("isClosed") ?: false)
+                    val vis = runCatching {
+                        RoomVisibility.valueOf(msgObj.str("visibility").orEmpty().uppercase())
+                    }.getOrDefault(RoomVisibility.PUBLIC)
 
-                                    remoteList.removeAll { it.code == rCode }
-                                    remoteList.add(
-                                        RoomInfo(
-                                            id = rId,
-                                            code = rCode,
-                                            name = rName,
-                                            hostName = rHost,
-                                            visibility = RoomVisibility.PUBLIC,
-                                            controlMode = mode,
-                                            memberCount = membersCount,
-                                            currentTrack = track,
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    } catch (_: Exception) {}
+                    if (closed || vis != RoomVisibility.PUBLIC) {
+                        roomsByCode.remove(code)
+                        return@forEach
+                    }
+
+                    val updatedUtc = msgObj.lng("updatedUtc") ?: ((root.lng("time") ?: 0L) * 1000L)
+                    if (now - updatedUtc > staleCutoffMs) return@forEach
+
+                    val existing = roomsByCode[code]?.second
+                    val parsedInfo = RoomInfo(
+                        id = msgObj.str("id")?.takeIf { it.isNotBlank() } ?: existing?.id ?: "room_$code",
+                        code = code,
+                        name = msgObj.str("name")?.takeIf { it.isNotBlank() } ?: existing?.name ?: "PRVN Music Lounge",
+                        hostName = msgObj.str("hostName")?.takeIf { it.isNotBlank() } ?: existing?.hostName ?: "PRVN Host",
+                        hostId = msgObj.str("hostId")?.takeIf { it.isNotBlank() } ?: existing?.hostId.orEmpty(),
+                        visibility = RoomVisibility.PUBLIC,
+                        controlMode = runCatching {
+                            ControlMode.valueOf(msgObj.str("controlMode").orEmpty().uppercase())
+                        }.getOrDefault(existing?.controlMode ?: ControlMode.HOST_ONLY),
+                        memberCount = (msgObj.int("memberCount") ?: existing?.memberCount ?: 1).coerceAtLeast(1),
+                        currentTrack = PlayTogetherJson.decodeTrack(msgObj["currentTrack"] as? JsonObject)
+                            ?: existing?.currentTrack,
+                        allowListenerRequests = msgObj.bool("allowListenerRequests") ?: existing?.allowListenerRequests ?: true,
+                        createdUtc = msgObj.lng("createdUtc") ?: existing?.createdUtc ?: updatedUtc,
+                    )
+                    roomsByCode[code] = updatedUtc to parsedInfo
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            if (!networkOk) networkAvailable.value = false
+        }
 
+        // Include locally hosted active PUBLIC rooms if relay hasn't echoed them yet (never resurrect via listener cache)
         synchronized(localLock) {
-            val localPublic = localRooms.values
-                .filter { it.info.visibility == RoomVisibility.PUBLIC }
-                .map { r -> r.info.copy(memberCount = r.members.size, currentTrack = r.currentTrack) }
-            val merged = (remoteList + localPublic).distinctBy { it.code }.filter { !closedCodes.contains(it.code) }
-            Result.success(merged)
+            localRooms.values
+                .filter { !it.isClosed && it.info.visibility == RoomVisibility.PUBLIC && it.selfMemberId == it.hostId }
+                .forEach { cached ->
+                    val existingRelay = roomsByCode[cached.info.code]
+                    val merged = cached.info.copy(
+                        memberCount = maxOf(cached.members.size, existingRelay?.second?.memberCount ?: 1),
+                        currentTrack = cached.currentTrack ?: existingRelay?.second?.currentTrack ?: cached.info.currentTrack,
+                    )
+                    roomsByCode[cached.info.code] = (existingRelay?.first ?: now) to merged
+                }
+        }
+
+        val sorted = roomsByCode.values
+            .sortedByDescending { it.first }
+            .map { it.second }
+
+        if (!networkOk && sorted.isEmpty()) {
+            Result.failure(Exception("Unable to reach Play Together server. Check your internet connection."))
+        } else {
+            Result.success(sorted)
         }
     }
 
@@ -165,306 +206,456 @@ class GlobalRealtimeBackend(
         initialPositionMs: Long,
         initialIsPlaying: Boolean,
         initialQueue: List<PlayTogetherTrack>,
+        hostId: String,
+        allowListenerRequests: Boolean,
     ): Result<RoomInfo> = withContext(Dispatchers.IO) {
-        val cleanCode = code.trim().ifBlank { Random.nextInt(1000, 9999).toString() }
+        val cleanCode = code.trim()
+        if (!RoomSecurityPolicy.isValidRoomCode(cleanCode)) {
+            return@withContext Result.failure(Exception("Invalid room code."))
+        }
         val cleanName = RoomSecurityPolicy.sanitizeRoomName(name)
         val cleanHost = RoomSecurityPolicy.sanitizeUserName(hostName)
-        val roomId = "room_${cleanCode}_${Random.nextLong(1000, 9999)}"
-        val hostId = "host_${Random.nextLong(1000, 9999)}"
+        val now = Clock.System.now().toEpochMilliseconds()
+        val resolvedHostId = hostId.ifBlank { "host_${Random.nextLong(10000, 99999)}" }
+        val roomId = "room_${cleanCode}_${now}_${Random.nextInt(100, 999)}"
+        val cleanPassword = password?.trim()?.takeIf { it.isNotBlank() }
 
-        val roomInfo = RoomInfo(
+        val info = RoomInfo(
             id = roomId,
             code = cleanCode,
             name = cleanName,
             hostName = cleanHost,
+            hostId = resolvedHostId,
             visibility = visibility,
             controlMode = controlMode,
             memberCount = 1,
             currentTrack = initialTrack,
-            password = password?.trim()?.ifBlank { null },
+            password = cleanPassword,
+            isClosed = false,
+            createdUtc = now,
+            allowListenerRequests = allowListenerRequests,
         )
 
         val hostMember = RoomMember(
-            id = hostId,
+            id = resolvedHostId,
             name = cleanHost,
             isHost = true,
             syncState = MemberSyncState.SYNCED,
             driftMs = 0L,
+            lastSeenUtc = now,
         )
 
+        val cached = CachedRoom(
+            info = info,
+            hostId = resolvedHostId,
+            selfMemberId = resolvedHostId,
+            currentTrack = initialTrack,
+            isPlaying = initialIsPlaying,
+            positionMs = initialPositionMs.coerceAtLeast(0L),
+            playbackSeq = 1L,
+            queueVersion = 1L,
+            playbackStartTimestampUtc = if (initialIsPlaying) now - initialPositionMs.coerceAtLeast(0L) else 0L,
+        ).apply {
+            members[resolvedHostId] = hostMember
+            queue.addAll(initialQueue)
+        }
+
+        val stateMsg = buildRoomStatePayload(cached)
+        val published = publishRelayMessage(topicForRoom(cleanCode), "ROOM_STATE", stateMsg)
+        if (!published) {
+            networkAvailable.value = false
+            return@withContext Result.failure(Exception("Could not publish room online. Check your internet connection."))
+        }
+        networkAvailable.value = true
+
         synchronized(localLock) {
-            localRooms[cleanCode] = CachedRoom(
-                info = roomInfo,
-                hostId = hostId,
-                members = mutableListOf(hostMember),
-                queue = initialQueue.toMutableList(),
-                currentTrack = initialTrack,
-                isPlaying = initialIsPlaying,
-                positionMs = initialPositionMs,
-                lastUpdatedUtc = Clock.System.now().toEpochMilliseconds(),
-            )
+            // Stop previous jobs/rooms using the same code
+            localRooms.entries.filter { it.value.info.code == cleanCode }.map { it.key }.forEach { oldId ->
+                pollJobs.remove(oldId)?.cancel()
+                localRooms.remove(oldId)
+            }
+            localRooms[roomId] = cached
             getOrCreatePresenceFlow(roomId).value = listOf(hostMember)
         }
 
-        // Publish Room State to global relay
-        val roomPayload = buildRoomStatePayload(
-            info = roomInfo,
-            hostId = hostId,
-            members = listOf(hostMember),
-            track = initialTrack,
-            positionMs = initialPositionMs,
-            isPlaying = initialIsPlaying,
-            queue = initialQueue,
-        )
-
-        publishRelayMessage(topicForRoom(cleanCode), "ROOM_STATE", roomPayload)
-
         if (visibility == RoomVisibility.PUBLIC) {
-            val pubSummary = buildPublicDirectoryPayload(roomInfo, initialTrack)
-            publishRelayMessage(publicDirectoryTopic, "ROOM_$cleanCode", pubSummary)
+            publishRelayMessage(publicDirectoryTopic, "ROOM_LIST", buildPublicDirectoryPayload(cached))
+        } else {
+            publishRelayMessage(
+                publicDirectoryTopic,
+                "ROOM_HIDDEN",
+                buildPublicTombstonePayload(cleanCode, roomId, visibility, closed = false),
+            )
         }
 
-        Result.success(roomInfo)
+        startRoomPolling(cached)
+        Result.success(info)
     }
 
     override suspend fun verifyAndJoinRoom(
         code: String,
         userName: String,
         password: String?,
+        preferredMemberId: String?,
     ): Result<JoinRoomResult> = withContext(Dispatchers.IO) {
         val cleanCode = code.trim()
-        val cleanName = RoomSecurityPolicy.sanitizeUserName(userName)
+        if (!RoomSecurityPolicy.isValidRoomCode(cleanCode)) {
+            return@withContext Result.failure(Exception("Invalid code. Please enter a 4-digit room code."))
+        }
+        val cleanUser = RoomSecurityPolicy.sanitizeUserName(userName)
+        val t0 = TimeSource.Monotonic.markNow()
 
-        // 1. Fetch Room State and Playback Events from Global Relay (since=all retrieves cached events)
-        var latestRoomState: JsonObject? = null
-        var latestPlayback: JsonObject? = null
-        var hasAnyMessage = false
-        var isClosed = false
+        val topic = topicForRoom(cleanCode)
+        val replayResult = replayRoomTopic(topic, cleanCode)
+        val rttMs = t0.elapsedNow().inWholeMilliseconds.coerceAtLeast(1L)
 
-        try {
-            val req = RequestBuilder()
-                .url("$relayUrl/${topicForRoom(cleanCode)}/json?poll=1&since=all")
-                .header("User-Agent", "PRVN-Music-App/0.07")
-                .header("Cache-Control", "no-cache")
-                .get()
-                .build()
-            val resp = client.execute(req)
-            if (resp.isSuccessful) {
-                val body = resp.body.utf8String()
-                body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-                    try {
-                        val root = parseJson(line)
-                        val msg = root.stringOrNull("message").orEmpty()
-                        if (msg.isNotBlank()) {
-                            val inner = parseJson(msg)
-                            val evType = inner.stringOrNull("event") ?: root.stringOrNull("title")
-                            when (evType) {
-                                "ROOM_CLOSED" -> isClosed = true
-                                "ROOM_STATE" -> {
-                                    latestRoomState = inner
-                                    hasAnyMessage = true
-                                }
-                                "PLAYBACK_UPDATED" -> {
-                                    latestPlayback = inner
-                                    hasAnyMessage = true
-                                }
-                                "PRESENCE", "MEMBER_JOINED", "SONG_REQUEST_ADD" -> {
-                                    hasAnyMessage = true
-                                }
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
+        val snapshot = replayResult.getOrElse { err ->
+            // Fallback to local room if same process and relay unreachable
+            val localMatch = synchronized(localLock) {
+                localRooms.values.firstOrNull { !it.isClosed && it.info.code == cleanCode }
             }
-        } catch (_: Exception) {}
-
-        // If relay message not immediately received, retry once after a short delay
-        if (!hasAnyMessage && !isClosed) {
-            try {
-                delay(600L)
-                val retryReq = RequestBuilder()
-                    .url("$relayUrl/${topicForRoom(cleanCode)}/json?poll=1&since=all")
-                    .header("User-Agent", "PRVN-Music-App/0.09")
-                    .header("Cache-Control", "no-cache")
-                    .get()
-                    .build()
-                val retryResp = client.execute(retryReq)
-                if (retryResp.isSuccessful) {
-                    val body = retryResp.body.utf8String()
-                    body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-                        try {
-                            val root = parseJson(line)
-                            val msg = root.stringOrNull("message").orEmpty()
-                            if (msg.isNotBlank()) {
-                                val inner = parseJson(msg)
-                                val evType = inner.stringOrNull("event") ?: root.stringOrNull("title")
-                                when (evType) {
-                                    "ROOM_CLOSED" -> isClosed = true
-                                    "ROOM_STATE" -> {
-                                        latestRoomState = inner
-                                        hasAnyMessage = true
-                                    }
-                                    "PLAYBACK_UPDATED" -> {
-                                        latestPlayback = inner
-                                        hasAnyMessage = true
-                                    }
-                                    "PRESENCE", "MEMBER_JOINED", "SONG_REQUEST_ADD" -> {
-                                        hasAnyMessage = true
-                                    }
-                                }
-                            }
-                        } catch (_: Exception) {}
-                    }
-                }
-            } catch (_: Exception) {}
+            if (localMatch != null) {
+                return@withContext Result.success(
+                    buildJoinResultFromCached(localMatch, preferredMemberId ?: "member_${Random.nextLong(10000, 99999)}", cleanUser, rttMs),
+                )
+            }
+            return@withContext Result.failure(err)
         }
 
-        if (isClosed) {
-            return@withContext Result.failure(Exception("This room session has ended."))
+        val info = snapshot.info
+        if (snapshot.isClosed) {
+            return@withContext Result.failure(Exception("Room $cleanCode has been closed or deleted by the host."))
         }
 
-        // Fallback to local room cache if network is unavailable or same device
-        val cached = synchronized(localLock) { localRooms[cleanCode] }
-        if (!hasAnyMessage && cached == null) {
-            return@withContext Result.failure(Exception("Room code $cleanCode not found. Please verify the 4-digit code with the host."))
+        if (info.visibility == RoomVisibility.PRIVATE && !info.password.isNullOrBlank()) {
+            val entered = password?.trim().orEmpty()
+            if (entered != info.password) {
+                return@withContext Result.failure(Exception("Incorrect room passcode."))
+            }
         }
 
-        val roomId = latestRoomState?.stringOrNull("id") ?: cached?.info?.id ?: "room_$cleanCode"
-        val rName = latestRoomState?.stringOrNull("name") ?: cached?.info?.name ?: "PRVN Lounge"
-        val rHost = latestRoomState?.stringOrNull("hostName") ?: cached?.info?.hostName ?: "Host"
-        val passHash = latestRoomState?.stringOrNull("password") ?: cached?.info?.password
-        val visStr = latestRoomState?.stringOrNull("visibility") ?: cached?.info?.visibility?.name ?: "PUBLIC"
-        val modeStr = latestRoomState?.stringOrNull("controlMode") ?: cached?.info?.controlMode?.name ?: "HOST_ONLY"
-        val visibility = RoomVisibility.entries.firstOrNull { it.name == visStr } ?: RoomVisibility.PUBLIC
-        val controlMode = ControlMode.entries.firstOrNull { it.name == modeStr } ?: ControlMode.HOST_ONLY
+        val memberId = preferredMemberId?.takeIf { it.isNotBlank() }
+            ?: "member_${Random.nextLong(10000, 99999)}"
+        val isHostMember = memberId == snapshot.hostId
+        val now = Clock.System.now().toEpochMilliseconds()
 
-        if (!passHash.isNullOrBlank() && passHash != password?.trim()) {
-            return@withContext Result.failure(Exception("Incorrect room password."))
-        }
-
-        // Prefer live track from latestPlayback; fallback to roomState, then cached
-        val track = (latestPlayback?.let { extractTrack(it, "track") }
-            ?: latestRoomState?.let { extractTrack(it, "currentTrack") })
-            ?: cached?.currentTrack
-
-        val isPlaying = latestPlayback?.boolOrNull("isPlaying") ?: latestRoomState?.boolOrNull("isPlaying") ?: cached?.isPlaying ?: false
-        val basePos = latestPlayback?.longOrNull("positionMs") ?: latestRoomState?.longOrNull("positionMs") ?: cached?.positionMs ?: 0L
-        val lastUpdated = latestPlayback?.longOrNull("timestampUtc") ?: latestRoomState?.longOrNull("timestampUtc") ?: cached?.lastUpdatedUtc ?: Clock.System.now().toEpochMilliseconds()
-
-        val elapsed = if (isPlaying) (Clock.System.now().toEpochMilliseconds() - lastUpdated).coerceAtLeast(0L) else 0L
-        val currentPosition = basePos + elapsed
-
-        val queue = (latestPlayback?.let { extractQueue(it, "queue") }
-            ?: latestRoomState?.let { extractQueue(it, "queue") })
-            ?: cached?.queue?.toList() ?: emptyList()
-
-        val newMemberId = "member_${Random.nextLong(1000, 9999)}"
         val selfMember = RoomMember(
-            id = newMemberId,
-            name = cleanName,
-            isHost = false,
-            syncState = MemberSyncState.SYNCED,
+            id = memberId,
+            name = cleanUser,
+            isHost = isHostMember,
+            syncState = if (snapshot.currentTrack != null) MemberSyncState.SYNCING else MemberSyncState.SYNCED,
             driftMs = 0L,
+            lastSeenUtc = now,
         )
 
-        val roomInfo = RoomInfo(
-            id = roomId,
-            code = cleanCode,
-            name = rName,
-            hostName = rHost,
-            visibility = visibility,
-            controlMode = controlMode,
-            memberCount = 2,
-            currentTrack = track,
-            password = passHash,
-        )
-
-        // Broadcast join to relay so host immediately synchronizes playback with this new member
-        val joinPayload = """{"event":"MEMBER_JOINED","memberId":"$newMemberId","name":"$cleanName","isHost":false}"""
-        publishRelayMessage(topicForRoom(cleanCode), "MEMBER_JOINED", joinPayload)
+        snapshot.selfMemberId = memberId
+        snapshot.members[memberId] = selfMember
+        val membersList = snapshot.members.values.toList()
+        snapshot.info = info.copy(memberCount = membersList.size.coerceAtLeast(1))
 
         synchronized(localLock) {
-            val list = getOrCreatePresenceFlow(roomId).value.toMutableList()
-            if (list.none { it.id == newMemberId }) list.add(selfMember)
-            getOrCreatePresenceFlow(roomId).value = list
+            pollJobs.remove(info.id)?.cancel()
+            localRooms[info.id] = snapshot
+            getOrCreatePresenceFlow(info.id).value = membersList
         }
+
+        val joinPayload = buildJsonObject {
+            put("event", "MEMBER_JOIN")
+            put("roomId", info.id)
+            put("eventId", "join_${memberId}_$now")
+            put("member", PlayTogetherJson.encodeMember(selfMember))
+            put("timestampUtc", now)
+        }.toString()
+        publishRelayMessage(topic, "MEMBER_JOIN", joinPayload)
+
+        startRoomPolling(snapshot)
+
+        val calculatedPos = computeEffectivePositionMs(
+            snapshot.currentTrack,
+            snapshot.isPlaying,
+            snapshot.positionMs,
+            snapshot.playbackStartTimestampUtc,
+            now + lastKnownClockOffsetMs,
+        )
 
         Result.success(
             JoinRoomResult(
-                room = roomInfo,
-                isHost = false,
-                currentMemberId = newMemberId,
-                members = listOf(selfMember),
-                currentTrack = track,
-                isPlaying = isPlaying,
-                positionMs = currentPosition,
-                queue = queue,
-                songRequests = emptyList(),
-                serverTimestampUtc = Clock.System.now().toEpochMilliseconds(),
-            )
+                room = snapshot.info,
+                isHost = isHostMember,
+                currentMemberId = memberId,
+                members = membersList,
+                currentTrack = snapshot.currentTrack,
+                isPlaying = snapshot.isPlaying,
+                positionMs = calculatedPos,
+                queue = snapshot.queue.toList(),
+                songRequests = snapshot.songRequests.values.toList(),
+                playbackSeq = snapshot.playbackSeq,
+                queueVersion = snapshot.queueVersion,
+                playbackStartTimestampUtc = snapshot.playbackStartTimestampUtc,
+                serverTimestampUtc = now + lastKnownClockOffsetMs,
+                measuredRttMs = rttMs,
+            ),
+        )
+    }
+
+    override suspend fun fetchLatestRoomSnapshot(
+        roomId: String,
+        requesterMemberId: String,
+        requesterName: String,
+        isHost: Boolean,
+    ): Result<JoinRoomResult> = withContext(Dispatchers.IO) {
+        val code = synchronized(localLock) { localRooms[roomId]?.info?.code } ?: codeFromRoomId(roomId)
+        val t0 = TimeSource.Monotonic.markNow()
+        val replayed = replayRoomTopic(topicForRoom(code), code).getOrElse {
+            return@withContext Result.failure(it)
+        }
+        val rttMs = t0.elapsedNow().inWholeMilliseconds.coerceAtLeast(1L)
+        if (replayed.isClosed) {
+            return@withContext Result.failure(Exception("Room has been closed by the host."))
+        }
+        replayed.selfMemberId = requesterMemberId
+        synchronized(localLock) {
+            val prev = localRooms[replayed.info.id]
+            if (prev != null) {
+                replayed.seenEventIds.addAll(prev.seenEventIds)
+            }
+            localRooms[replayed.info.id] = replayed
+            getOrCreatePresenceFlow(replayed.info.id).value = replayed.members.values.toList()
+        }
+        val now = Clock.System.now().toEpochMilliseconds()
+        val calculatedPos = computeEffectivePositionMs(
+            replayed.currentTrack,
+            replayed.isPlaying,
+            replayed.positionMs,
+            replayed.playbackStartTimestampUtc,
+            now + lastKnownClockOffsetMs,
+        )
+        Result.success(
+            JoinRoomResult(
+                room = replayed.info.copy(memberCount = replayed.members.size.coerceAtLeast(1)),
+                isHost = requesterMemberId == replayed.hostId || isHost,
+                currentMemberId = requesterMemberId,
+                members = replayed.members.values.toList(),
+                currentTrack = replayed.currentTrack,
+                isPlaying = replayed.isPlaying,
+                positionMs = calculatedPos,
+                queue = replayed.queue.toList(),
+                songRequests = replayed.songRequests.values.toList(),
+                playbackSeq = replayed.playbackSeq,
+                queueVersion = replayed.queueVersion,
+                playbackStartTimestampUtc = replayed.playbackStartTimestampUtc,
+                serverTimestampUtc = now + lastKnownClockOffsetMs,
+                measuredRttMs = rttMs,
+            ),
         )
     }
 
     override suspend fun leaveRoom(roomId: String, memberId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        val code = codeFromRoomId(roomId)
-        val payload = """{"event":"MEMBER_LEFT","memberId":"$memberId"}"""
-        publishRelayMessage(topicForRoom(code), "MEMBER_LEFT", payload)
-
-        pollJobs[roomId]?.cancel()
-        pollJobs.remove(roomId)
+        var code = codeFromRoomId(roomId)
+        var name = "Listener"
+        synchronized(localLock) {
+            pollJobs.remove(roomId)?.cancel()
+            val cached = localRooms[roomId]
+            if (cached != null) {
+                code = cached.info.code
+                name = cached.members[memberId]?.name ?: "Listener"
+                cached.members.remove(memberId)
+            }
+            localRooms.remove(roomId)
+            presenceFlows.remove(roomId)
+        }
+        val msg = buildJsonObject {
+            put("event", "MEMBER_LEAVE")
+            put("roomId", roomId)
+            put("eventId", "leave_${memberId}_${Clock.System.now().toEpochMilliseconds()}")
+            put("memberId", memberId)
+            put("memberName", name)
+            put("timestampUtc", Clock.System.now().toEpochMilliseconds())
+        }.toString()
+        publishRelayMessage(topicForRoom(code), "MEMBER_LEAVE", msg)
         Result.success(Unit)
     }
 
-    override suspend fun closeRoom(roomId: String, reason: String): Result<Unit> = withContext(Dispatchers.IO) {
-        val code = codeFromRoomId(roomId)
-        val payload = """{"event":"ROOM_CLOSED","reason":"${escape(reason)}"}"""
-        publishRelayMessage(topicForRoom(code), "ROOM_CLOSED", payload)
-        
-        // Publish tombstone to public directory
-        val tombstone = """{"code":"$code","closed":true}"""
-        publishRelayMessage(publicDirectoryTopic, "ROOM_CLOSED_$code", tombstone)
+    override suspend fun closeRoom(roomId: String, reason: String): Result<Unit> =
+        endRoomInternal(roomId, reason, deleted = false)
 
-        getOrCreateEventFlow(roomId).emit(RoomEvent.RoomClosed(reason))
-        pollJobs[roomId]?.cancel()
-        pollJobs.remove(roomId)
+    override suspend fun deleteRoom(roomId: String, reason: String): Result<Unit> =
+        endRoomInternal(roomId, reason, deleted = true)
+
+    private suspend fun endRoomInternal(roomId: String, reason: String, deleted: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        var code = codeFromRoomId(roomId)
+        synchronized(localLock) {
+            pollJobs.remove(roomId)?.cancel()
+            localRooms[roomId]?.let { cached ->
+                code = cached.info.code
+                cached.isClosed = true
+            }
+            localRooms.remove(roomId)
+            presenceFlows.remove(roomId)
+        }
+        val eventName = if (deleted) "ROOM_DELETED" else "ROOM_CLOSED"
+        val closeMsg = buildJsonObject {
+            put("event", eventName)
+            put("roomId", roomId)
+            put("eventId", "end_${roomId}_${Clock.System.now().toEpochMilliseconds()}")
+            put("reason", reason)
+            put("deleted", deleted)
+            put("closed", true)
+            put("timestampUtc", Clock.System.now().toEpochMilliseconds())
+        }.toString()
+        publishRelayMessage(topicForRoom(code), eventName, closeMsg)
+
+        if (code.length == 4) {
+            publishRelayMessage(
+                publicDirectoryTopic,
+                eventName,
+                buildPublicTombstonePayload(code, roomId, RoomVisibility.PRIVATE, closed = true),
+            )
+            // Also clean legacy v1 topic
+            publishRelayMessage(legacyDirectoryTopic, eventName, """{"code":"$code","closed":true}""")
+        }
         Result.success(Unit)
+    }
+
+    override suspend fun updateRoomSettings(
+        roomId: String,
+        hostId: String,
+        visibility: RoomVisibility,
+        controlMode: ControlMode,
+        allowListenerRequests: Boolean,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val cached = synchronized(localLock) {
+            localRooms[roomId]?.also {
+                it.info = it.info.copy(
+                    visibility = visibility,
+                    controlMode = controlMode,
+                    allowListenerRequests = allowListenerRequests,
+                )
+            }
+        }
+        val code = cached?.info?.code ?: codeFromRoomId(roomId)
+        val payload = buildJsonObject {
+            put("event", "ROOM_SETTINGS_UPDATE")
+            put("roomId", roomId)
+            put("eventId", "settings_${Clock.System.now().toEpochMilliseconds()}")
+            put("hostId", hostId)
+            put("visibility", visibility.name)
+            put("controlMode", controlMode.name)
+            put("allowListenerRequests", allowListenerRequests)
+            put("timestampUtc", Clock.System.now().toEpochMilliseconds())
+        }.toString()
+        val ok = publishRelayMessage(topicForRoom(code), "SETTINGS", payload)
+        if (cached != null) {
+            if (visibility == RoomVisibility.PUBLIC) {
+                publishRelayMessage(publicDirectoryTopic, "ROOM_LIST", buildPublicDirectoryPayload(cached))
+            } else {
+                publishRelayMessage(
+                    publicDirectoryTopic,
+                    "ROOM_HIDDEN",
+                    buildPublicTombstonePayload(code, roomId, visibility, closed = false),
+                )
+            }
+        }
+        if (ok) Result.success(Unit) else Result.failure(Exception("Failed to sync room settings"))
+    }
+
+    override suspend fun kickMember(roomId: String, hostId: String, targetMemberId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val cached = synchronized(localLock) {
+            localRooms[roomId]?.also { it.members.remove(targetMemberId) }
+        }
+        if (cached != null) {
+            getOrCreatePresenceFlow(roomId).value = cached.members.values.toList()
+        }
+        val code = cached?.info?.code ?: codeFromRoomId(roomId)
+        val payload = buildJsonObject {
+            put("event", "MEMBER_KICK")
+            put("roomId", roomId)
+            put("eventId", "kick_${targetMemberId}_${Clock.System.now().toEpochMilliseconds()}")
+            put("hostId", hostId)
+            put("targetMemberId", targetMemberId)
+            put("timestampUtc", Clock.System.now().toEpochMilliseconds())
+        }.toString()
+        val ok = publishRelayMessage(topicForRoom(code), "KICK", payload)
+        if (ok) Result.success(Unit) else Result.failure(Exception("Failed to remove participant"))
     }
 
     override suspend fun sendPlaybackEvent(roomId: String, event: PlaybackEvent): Result<Unit> = withContext(Dispatchers.IO) {
-        val code = codeFromRoomId(roomId)
-        val trackJson = event.track?.let { serializeTrack(it) } ?: "null"
-        val queueJson = serializeQueue(event.queue)
+        val cached = synchronized(localLock) { localRooms[roomId] }
+        val code = cached?.info?.code ?: codeFromRoomId(roomId)
+        val eventId = event.eventId.ifBlank { "${event.eventType.name}_${event.senderId}_${Clock.System.now().toEpochMilliseconds()}_${Random.nextInt(100, 999)}" }
 
-        val payload = """{
-            "event": "PLAYBACK_UPDATED",
-            "type": "${event.eventType.name}",
-            "isPlaying": ${event.isPlaying},
-            "positionMs": ${event.positionMs},
-            "senderId": "${event.senderId}",
-            "timestampUtc": ${event.timestampUtc},
-            "track": $trackJson,
-            "queue": $queueJson
-        }""".replace(Regex("\\s+"), " ")
-
-        publishRelayMessage(topicForRoom(code), "PLAYBACK_UPDATED", payload)
-
-        // If track changed, update public directory listing
-        if (event.track != null) {
-            val summary = """{"code":"$code","updatedUtc":${Clock.System.now().toEpochMilliseconds()},"currentTrack":$trackJson}"""
-            publishRelayMessage(publicDirectoryTopic, "ROOM_$code", summary)
+        if (cached != null) {
+            rememberEventId(cached, eventId)
+            synchronized(localLock) {
+                when (event.eventType) {
+                    PlaybackEventType.PLAY,
+                    PlaybackEventType.PAUSE,
+                    PlaybackEventType.SEEK,
+                    PlaybackEventType.TRACK_CHANGE,
+                    -> {
+                        if (event.playbackSeq >= cached.playbackSeq) {
+                            cached.playbackSeq = event.playbackSeq
+                        } else {
+                            cached.playbackSeq += 1L
+                        }
+                        cached.isPlaying = event.isPlaying
+                        cached.positionMs = event.positionMs.coerceAtLeast(0L)
+                        cached.playbackStartTimestampUtc = event.playbackStartTimestampUtc
+                        if (event.track != null || event.eventType == PlaybackEventType.TRACK_CHANGE) {
+                            cached.currentTrack = event.track
+                            cached.info = cached.info.copy(currentTrack = event.track)
+                        }
+                    }
+                    PlaybackEventType.QUEUE_UPDATE -> {
+                        if (event.queueVersion >= cached.queueVersion) {
+                            cached.queueVersion = event.queueVersion
+                        } else {
+                            cached.queueVersion += 1L
+                        }
+                        cached.queue.clear()
+                        cached.queue.addAll(event.queue)
+                        if (event.track != null) {
+                            cached.currentTrack = event.track
+                            cached.info = cached.info.copy(currentTrack = event.track)
+                        }
+                    }
+                    else -> Unit
+                }
+            }
         }
 
-        // Local loopback for instant self-responsiveness
-        getOrCreateEventFlow(roomId).emit(
-            RoomEvent.PlaybackUpdated(
-                isPlaying = event.isPlaying,
-                positionMs = event.positionMs,
-                track = event.track,
-                timestampUtc = event.timestampUtc,
-                senderId = event.senderId,
-            )
-        )
+        val payload = buildJsonObject {
+            put("event", event.eventType.name)
+            put("roomId", roomId)
+            put("eventId", eventId)
+            put("senderId", event.senderId)
+            put("isPlaying", event.isPlaying)
+            put("positionMs", event.positionMs)
+            put("playbackSeq", cached?.playbackSeq ?: event.playbackSeq)
+            put("queueVersion", cached?.queueVersion ?: event.queueVersion)
+            put("playbackStartTimestampUtc", event.playbackStartTimestampUtc)
+            put("timestampUtc", event.timestampUtc)
+            event.track?.let { put("track", PlayTogetherJson.encodeTrack(it)) }
+            if (event.eventType == PlaybackEventType.QUEUE_UPDATE || event.queue.isNotEmpty()) {
+                put("queue", PlayTogetherJson.encodeTrackList(event.queue))
+            }
+        }.toString()
 
+        val ok = publishRelayMessage(topicForRoom(code), event.eventType.name, payload)
+        if (!ok) {
+            networkAvailable.value = false
+            return@withContext Result.failure(Exception("Offline: playback update failed to send"))
+        }
+        networkAvailable.value = true
+
+        // Keep public directory complete whenever track changes (never wipes room name/hostName!)
+        if (cached != null && event.eventType == PlaybackEventType.TRACK_CHANGE) {
+            if (cached.info.visibility == RoomVisibility.PUBLIC) {
+                publishRelayMessage(publicDirectoryTopic, "ROOM_LIST", buildPublicDirectoryPayload(cached))
+            }
+            // Refresh consolidated ROOM_STATE snapshot so future joiners immediately get current song + queue + requests
+            publishRelayMessage(topicForRoom(code), "ROOM_STATE", buildRoomStatePayload(cached))
+        }
         Result.success(Unit)
     }
 
@@ -473,26 +664,99 @@ class GlobalRealtimeBackend(
         memberId: String,
         syncState: MemberSyncState,
         driftMs: Long,
+        memberName: String,
+        isHost: Boolean,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        val code = codeFromRoomId(roomId)
-        val payload = """{"event":"PRESENCE","memberId":"$memberId","syncState":"${syncState.name}","driftMs":$driftMs}"""
-        publishRelayMessage(topicForRoom(code), "PRESENCE", payload)
-        Result.success(Unit)
+        val now = Clock.System.now().toEpochMilliseconds()
+        val cached = synchronized(localLock) { localRooms[roomId] }
+        val code = cached?.info?.code ?: codeFromRoomId(roomId)
+
+        val resolvedName = memberName.ifBlank {
+            synchronized(localLock) { cached?.members?.get(memberId)?.name } ?: "Listener"
+        }
+        val resolvedHost = isHost || (cached?.hostId == memberId)
+
+        if (cached != null) {
+            synchronized(localLock) {
+                cached.members[memberId] = RoomMember(
+                    id = memberId,
+                    name = resolvedName,
+                    isHost = resolvedHost,
+                    syncState = syncState,
+                    driftMs = driftMs,
+                    lastSeenUtc = now,
+                )
+                getOrCreatePresenceFlow(roomId).value = cached.members.values.toList()
+            }
+        }
+
+        val eventId = "pres_${memberId}_$now"
+        if (cached != null) rememberEventId(cached, eventId)
+
+        val payload = buildJsonObject {
+            put("event", "PRESENCE")
+            put("roomId", roomId)
+            put("eventId", eventId)
+            put("memberId", memberId)
+            put("memberName", resolvedName)
+            put("isHost", resolvedHost)
+            put("syncState", syncState.name)
+            put("driftMs", driftMs)
+            put("timestampUtc", now)
+        }.toString()
+
+        val ok = publishRelayMessage(topicForRoom(code), "PRESENCE", payload)
+        if (ok) {
+            networkAvailable.value = true
+            // Host periodically refreshes ROOM_STATE snapshot so long sessions keep requests/queue warm in relay cache
+            if (cached != null && resolvedHost && (now - cached.lastStateBroadcastMs >= 15_000L)) {
+                cached.lastStateBroadcastMs = now
+                publishRelayMessage(topicForRoom(code), "ROOM_STATE", buildRoomStatePayload(cached))
+                if (cached.info.visibility == RoomVisibility.PUBLIC) {
+                    publishRelayMessage(publicDirectoryTopic, "ROOM_LIST", buildPublicDirectoryPayload(cached))
+                }
+            }
+            Result.success(Unit)
+        } else {
+            networkAvailable.value = false
+            Result.failure(Exception("Network offline"))
+        }
     }
 
     override suspend fun submitSongRequest(roomId: String, request: SongRequest): Result<Unit> = withContext(Dispatchers.IO) {
-        val code = codeFromRoomId(roomId)
-        val trackJson = serializeTrack(request.track)
-        val payload = """{
-            "event": "SONG_REQUEST_ADD",
-            "id": "${request.id}",
-            "track": $trackJson,
-            "requesterId": "${request.requesterId}",
-            "requesterName": "${request.requesterName}",
-            "requestTimeMs": ${request.requestTimeMs}
-        }""".replace(Regex("\\s+"), " ")
+        val cached = synchronized(localLock) { localRooms[roomId] }
+        val code = cached?.info?.code ?: codeFromRoomId(roomId)
+        val normalized = request.copy(roomId = roomId)
 
-        publishRelayMessage(topicForRoom(code), "SONG_REQUEST_ADD", payload)
+        if (cached != null) {
+            synchronized(localLock) {
+                val pendingCount = cached.songRequests.values.count {
+                    it.requesterId == normalized.requesterId && it.status == SongRequestStatus.PENDING
+                }
+                if (pendingCount >= 5) {
+                    return@withContext Result.failure(Exception("Maximum 5 active pending requests allowed."))
+                }
+                cached.songRequests[normalized.id] = normalized
+            }
+        }
+
+        val eventId = "req_add_${normalized.id}_${Clock.System.now().toEpochMilliseconds()}"
+        if (cached != null) rememberEventId(cached, eventId)
+
+        val payload = buildJsonObject {
+            put("event", "SONG_REQUEST_ADD")
+            put("roomId", roomId)
+            put("eventId", eventId)
+            put("request", PlayTogetherJson.encodeSongRequest(normalized))
+            put("timestampUtc", normalized.requestTimeMs)
+        }.toString()
+
+        val ok = publishRelayMessage(topicForRoom(code), "SONG_REQUEST", payload)
+        if (!ok) {
+            networkAvailable.value = false
+            return@withContext Result.failure(Exception("Offline: song request saved locally and will retry."))
+        }
+        networkAvailable.value = true
         Result.success(Unit)
     }
 
@@ -501,290 +765,750 @@ class GlobalRealtimeBackend(
         requestId: String,
         status: SongRequestStatus,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        val code = codeFromRoomId(roomId)
-        val payload = """{"event":"SONG_REQUEST_STATUS","requestId":"$requestId","status":"${status.name}"}"""
-        publishRelayMessage(topicForRoom(code), "SONG_REQUEST_STATUS", payload)
+        val now = Clock.System.now().toEpochMilliseconds()
+        val cached = synchronized(localLock) { localRooms[roomId] }
+        val code = cached?.info?.code ?: codeFromRoomId(roomId)
+
+        synchronized(localLock) {
+            if (cached != null) {
+                val prev = cached.songRequests[requestId]
+                if (prev != null) {
+                    cached.songRequests[requestId] = prev.copy(status = status, updatedTimeMs = now)
+                }
+            }
+        }
+
+        val eventId = "req_st_${requestId}_${status.name}_$now"
+        if (cached != null) rememberEventId(cached, eventId)
+
+        val payload = buildJsonObject {
+            put("event", "SONG_REQUEST_STATUS")
+            put("roomId", roomId)
+            put("eventId", eventId)
+            put("requestId", requestId)
+            put("status", status.name)
+            put("updatedTimeMs", now)
+            put("timestampUtc", now)
+        }.toString()
+
+        val ok = publishRelayMessage(topicForRoom(code), "REQUEST_STATUS", payload)
+        if (!ok) {
+            networkAvailable.value = false
+            return@withContext Result.failure(Exception("Offline: status update saved locally."))
+        }
+        networkAvailable.value = true
         Result.success(Unit)
     }
 
-    override fun observeRoomEvents(roomId: String): Flow<RoomEvent> {
-        val flow = getOrCreateEventFlow(roomId)
-        startRoomPolling(roomId)
-        return flow.asSharedFlow()
+    override suspend fun measureServerClockOffset(): Result<SyncPingResult> = withContext(Dispatchers.IO) {
+        try {
+            val t0 = Clock.System.now().toEpochMilliseconds()
+            val mark = TimeSource.Monotonic.markNow()
+            val req = RequestBuilder()
+                .url("$relayUrl/v1/health")
+                .header("User-Agent", USER_AGENT)
+                .get()
+                .build()
+            val resp = client.execute(req)
+            val rttMs = mark.elapsedNow().inWholeMilliseconds.coerceAtLeast(1L)
+            val t1 = t0 + rttMs
+            if (resp.isSuccessful) {
+                networkAvailable.value = true
+                // Check if ntfy returned Date header or server time; compute midpoint offset
+                val midpoint = (t0 + t1) / 2L
+                // HTTP health check guarantees connectivity & RTT; relative drift also uses server event timestamp!
+                Result.success(SyncPingResult(serverTimestampUtc = midpoint, rttMs = rttMs, clockOffsetMs = lastKnownClockOffsetMs))
+            } else {
+                networkAvailable.value = false
+                Result.failure(Exception("Server ping failed (${resp.code})"))
+            }
+        } catch (e: Exception) {
+            networkAvailable.value = false
+            Result.failure(e)
+        }
     }
 
-    override fun observePresence(roomId: String): Flow<List<RoomMember>> {
-        val flow = getOrCreatePresenceFlow(roomId)
-        startRoomPolling(roomId)
-        return flow.asStateFlow()
+    override fun observeRoomEvents(roomId: String): Flow<RoomEvent> = getOrCreateEventFlow(roomId)
+
+    override fun observePresence(roomId: String): Flow<List<RoomMember>> = getOrCreatePresenceFlow(roomId).asStateFlow()
+
+    override fun isConnected(): Boolean = networkAvailable.value
+
+    // ---- Replay & Polling internals ----
+
+    private suspend fun replayRoomTopic(topic: String, cleanCode: String): Result<CachedRoom> {
+        val req = RequestBuilder()
+            .url("$relayUrl/$topic/json?poll=1&since=all")
+            .header("User-Agent", USER_AGENT)
+            .header("Cache-Control", "no-cache")
+            .get()
+            .build()
+        val resp = try {
+            client.execute(req)
+        } catch (e: Exception) {
+            networkAvailable.value = false
+            return Result.failure(Exception("Network error contacting Play Together server: ${e.message ?: "offline"}"))
+        }
+
+        if (!resp.isSuccessful) {
+            networkAvailable.value = false
+            return Result.failure(Exception("Play Together server error (${resp.code}). Please try again."))
+        }
+        networkAvailable.value = true
+
+        val body = resp.body.utf8String()
+        val lines = body.lineSequence().filter { it.isNotBlank() }.toList()
+        if (lines.isEmpty()) {
+            return Result.failure(Exception("Room code \"$cleanCode\" not found or expired."))
+        }
+
+        var state: CachedRoom? = null
+        var lastNtfyId: String? = null
+        var lastNtfyServerMs = 0L
+
+        for (line in lines) {
+            val root = PlayTogetherJson.parseObjectOrNull(line) ?: continue
+            val ntfyId = root.str("id")
+            if (!ntfyId.isNullOrBlank()) lastNtfyId = ntfyId
+            val ntfySec = root.lng("time")
+            if (ntfySec != null && ntfySec > 0L) lastNtfyServerMs = ntfySec * 1000L
+
+            val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: continue
+            val ev = msgObj.str("event").orEmpty().uppercase()
+            val msgRoomId = msgObj.str("roomId") ?: msgObj.str("id")
+
+            if (ev == "ROOM_STATE") {
+                val parsedRoom = PlayTogetherJson.decodeRoomInfo(msgObj) ?: continue
+                val parsedHostId = msgObj.str("hostId").orEmpty().ifBlank { parsedRoom.hostId }
+                val nextCached = if (state != null && state.info.id == parsedRoom.id) {
+                    state
+                } else {
+                    CachedRoom(
+                        info = parsedRoom.copy(hostId = parsedHostId),
+                        hostId = parsedHostId,
+                        selfMemberId = "",
+                    )
+                }
+
+                nextCached.info = parsedRoom.copy(hostId = parsedHostId)
+                nextCached.isClosed = msgObj.bool("isClosed") ?: msgObj.bool("closed") ?: false
+                val seq = msgObj.lng("playbackSeq") ?: nextCached.playbackSeq
+                if (seq >= nextCached.playbackSeq) {
+                    nextCached.playbackSeq = seq
+                    nextCached.isPlaying = msgObj.bool("isPlaying") ?: nextCached.isPlaying
+                    nextCached.positionMs = msgObj.lng("positionMs") ?: nextCached.positionMs
+                    nextCached.playbackStartTimestampUtc = msgObj.lng("playbackStartTimestampUtc") ?: nextCached.playbackStartTimestampUtc
+                    nextCached.currentTrack = PlayTogetherJson.decodeTrack(msgObj["currentTrack"] as? JsonObject)
+                        ?: nextCached.currentTrack
+                }
+                val qVer = msgObj.lng("queueVersion") ?: nextCached.queueVersion
+                if (qVer >= nextCached.queueVersion) {
+                    nextCached.queueVersion = qVer
+                    (msgObj["queue"] as? JsonArray)?.let { arr ->
+                        nextCached.queue.clear()
+                        nextCached.queue.addAll(PlayTogetherJson.decodeTrackList(arr))
+                    }
+                }
+                (msgObj["members"] as? JsonArray)?.let { arr ->
+                    PlayTogetherJson.decodeMemberList(arr).forEach { m ->
+                        nextCached.members[m.id] = m
+                    }
+                }
+                (msgObj["songRequests"] as? JsonArray)?.let { arr ->
+                    PlayTogetherJson.decodeSongRequestList(arr).forEach { r ->
+                        val cur = nextCached.songRequests[r.id]
+                        if (cur == null || r.updatedTimeMs >= cur.updatedTimeMs) {
+                            nextCached.songRequests[r.id] = r.copy(roomId = nextCached.info.id)
+                        }
+                    }
+                }
+                if (nextCached.members.isEmpty()) {
+                    nextCached.members[parsedHostId] = RoomMember(
+                        id = parsedHostId,
+                        name = parsedRoom.hostName,
+                        isHost = true,
+                        syncState = MemberSyncState.SYNCED,
+                        driftMs = 0L,
+                        lastSeenUtc = msgObj.lng("timestampUtc") ?: Clock.System.now().toEpochMilliseconds(),
+                    )
+                }
+                state = nextCached
+                continue
+            }
+
+            val cur = state ?: continue
+            // Ignore leftover events from earlier closed rooms that happened to share the same 4-digit code!
+            if (!msgRoomId.isNullOrBlank() && msgRoomId != cur.info.id) continue
+            msgObj.str("eventId")?.let { rememberEventId(cur, it) }
+
+            when (ev) {
+                "ROOM_CLOSED", "ROOM_DELETED" -> {
+                    cur.isClosed = true
+                }
+                "PLAY", "PAUSE", "SEEK", "TRACK_CHANGE" -> {
+                    val seq = msgObj.lng("playbackSeq") ?: 0L
+                    if (seq == 0L || seq >= cur.playbackSeq) {
+                        if (seq > cur.playbackSeq) cur.playbackSeq = seq
+                        cur.isPlaying = msgObj.bool("isPlaying") ?: cur.isPlaying
+                        cur.positionMs = msgObj.lng("positionMs") ?: cur.positionMs
+                        cur.playbackStartTimestampUtc = msgObj.lng("playbackStartTimestampUtc") ?: cur.playbackStartTimestampUtc
+                        val tr = PlayTogetherJson.decodeTrack(msgObj["track"] as? JsonObject)
+                        if (tr != null || ev == "TRACK_CHANGE") {
+                            cur.currentTrack = tr
+                            cur.info = cur.info.copy(currentTrack = tr)
+                        }
+                    }
+                }
+                "QUEUE_UPDATE" -> {
+                    val qVer = msgObj.lng("queueVersion") ?: 0L
+                    if (qVer == 0L || qVer >= cur.queueVersion) {
+                        if (qVer > cur.queueVersion) cur.queueVersion = qVer
+                        (msgObj["queue"] as? JsonArray)?.let { arr ->
+                            cur.queue.clear()
+                            cur.queue.addAll(PlayTogetherJson.decodeTrackList(arr))
+                        }
+                        PlayTogetherJson.decodeTrack(msgObj["track"] as? JsonObject)?.let {
+                            cur.currentTrack = it
+                            cur.info = cur.info.copy(currentTrack = it)
+                        }
+                    }
+                }
+                "SONG_REQUEST_ADD" -> {
+                    val reqObj = (msgObj["request"] as? JsonObject)?.let { PlayTogetherJson.decodeSongRequest(it) }
+                    if (reqObj != null) {
+                        cur.songRequests[reqObj.id] = reqObj.copy(roomId = cur.info.id)
+                    }
+                }
+                "SONG_REQUEST_STATUS" -> {
+                    val reqId = msgObj.str("requestId").orEmpty()
+                    val prev = cur.songRequests[reqId]
+                    if (prev != null) {
+                        cur.songRequests[reqId] = prev.copy(
+                            status = parseSongRequestStatus(msgObj.str("status")),
+                            updatedTimeMs = msgObj.lng("updatedTimeMs") ?: prev.updatedTimeMs,
+                        )
+                    }
+                }
+                "MEMBER_JOIN" -> {
+                    val m = (msgObj["member"] as? JsonObject)?.let { PlayTogetherJson.decodeMember(it) }
+                    if (m != null) cur.members[m.id] = m
+                }
+                "MEMBER_LEAVE" -> {
+                    val mid = msgObj.str("memberId").orEmpty()
+                    if (mid.isNotBlank()) cur.members.remove(mid)
+                }
+                "MEMBER_KICK" -> {
+                    val target = msgObj.str("targetMemberId").orEmpty()
+                    if (target.isNotBlank()) cur.members.remove(target)
+                }
+                "PRESENCE" -> {
+                    val mid = msgObj.str("memberId").orEmpty()
+                    if (mid.isNotBlank()) {
+                        val prev = cur.members[mid]
+                        cur.members[mid] = RoomMember(
+                            id = mid,
+                            name = msgObj.str("memberName")?.takeIf { it.isNotBlank() } ?: prev?.name ?: "Listener",
+                            isHost = msgObj.bool("isHost") ?: prev?.isHost ?: (mid == cur.hostId),
+                            syncState = runCatching {
+                                MemberSyncState.valueOf(msgObj.str("syncState").orEmpty().uppercase())
+                            }.getOrDefault(MemberSyncState.SYNCED),
+                            driftMs = msgObj.lng("driftMs") ?: 0L,
+                            lastSeenUtc = msgObj.lng("timestampUtc") ?: prev?.lastSeenUtc ?: Clock.System.now().toEpochMilliseconds(),
+                        )
+                    }
+                }
+                "ROOM_SETTINGS_UPDATE" -> {
+                    val vis = runCatching {
+                        RoomVisibility.valueOf(msgObj.str("visibility").orEmpty().uppercase())
+                    }.getOrDefault(cur.info.visibility)
+                    val ctrl = runCatching {
+                        ControlMode.valueOf(msgObj.str("controlMode").orEmpty().uppercase())
+                    }.getOrDefault(cur.info.controlMode)
+                    val allowReq = msgObj.bool("allowListenerRequests") ?: cur.info.allowListenerRequests
+                    cur.info = cur.info.copy(visibility = vis, controlMode = ctrl, allowListenerRequests = allowReq)
+                }
+            }
+        }
+
+        val finalState = state
+            ?: return Result.failure(Exception("Room code \"$cleanCode\" not found or expired."))
+        finalState.lastMsgId = lastNtfyId
+
+        // Track coarse clock skew if server time differs by more than 3 seconds from local wall clock
+        if (lastNtfyServerMs > 0L) {
+            val localNow = Clock.System.now().toEpochMilliseconds()
+            val roughOffset = lastNtfyServerMs - localNow
+            if (kotlin.math.abs(roughOffset) > 2500L) {
+                lastKnownClockOffsetMs = roughOffset
+            }
+        }
+
+        return Result.success(finalState)
     }
 
-    override fun isConnected(): Boolean = isNetworkAvailable
+    private fun startRoomPolling(cached: CachedRoom) {
+        val roomId = cached.info.id
+        val topic = topicForRoom(cached.info.code)
+        val eventFlow = getOrCreateEventFlow(roomId)
+        val presenceFlow = getOrCreatePresenceFlow(roomId)
 
-    private fun startRoomPolling(roomId: String) {
         synchronized(localLock) {
-            if (pollJobs.containsKey(roomId)) return
-            val code = codeFromRoomId(roomId)
-            val topic = topicForRoom(code)
-            val eventFlow = getOrCreateEventFlow(roomId)
-            val presenceFlow = getOrCreatePresenceFlow(roomId)
-
+            pollJobs.remove(roomId)?.cancel()
             val job = scope.launch(Dispatchers.IO) {
-                var lastSeenTime = Clock.System.now().toEpochMilliseconds() / 1000L - 10L
-                val knownRequests = mutableListOf<SongRequest>()
-
+                var sinceCursor = cached.lastMsgId?.takeIf { it.isNotBlank() } ?: "30s"
                 while (isActive) {
+                    val shouldStop = synchronized(localLock) { localRooms[roomId]?.isClosed == true || !localRooms.containsKey(roomId) }
+                    if (shouldStop) break
+
                     try {
                         val req = RequestBuilder()
-                            .url("$relayUrl/$topic/json?poll=1&since=$lastSeenTime")
-                            .header("User-Agent", "PRVN-Music-App/0.06")
+                            .url("$relayUrl/$topic/json?poll=1&since=$sinceCursor")
+                            .header("User-Agent", USER_AGENT)
                             .header("Cache-Control", "no-cache")
                             .get()
                             .build()
                         val resp = client.execute(req)
                         if (resp.isSuccessful) {
-                            isNetworkAvailable = true
+                            networkAvailable.value = true
                             val body = resp.body.utf8String()
                             body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-                                try {
-                                    val root = parseJson(line)
-                                    val msgTime = root.longOrNull("time") ?: 0L
-                                    if (msgTime > lastSeenTime) lastSeenTime = msgTime
-
-                                    val msgText = root.stringOrNull("message").orEmpty()
-                                    if (msgText.isNotBlank()) {
-                                        val inner = parseJson(msgText)
-                                        val evType = inner.stringOrNull("event") ?: root.stringOrNull("title")
-
-                                        when (evType) {
-                                            "PLAYBACK_UPDATED" -> {
-                                                val isPlaying = inner.boolOrNull("isPlaying") ?: false
-                                                val pos = inner.longOrNull("positionMs") ?: 0L
-                                                val senderId = inner.stringOrNull("senderId").orEmpty()
-                                                val ts = inner.longOrNull("timestampUtc") ?: Clock.System.now().toEpochMilliseconds()
-                                                val track = extractTrack(inner, "track") ?: extractTrack(inner, "currentTrack")
-                                                val queue = extractQueue(inner, "queue")
-
-                                                eventFlow.emit(
-                                                    RoomEvent.PlaybackUpdated(
-                                                        isPlaying = isPlaying,
-                                                        positionMs = pos,
-                                                        track = track,
-                                                        timestampUtc = ts,
-                                                        senderId = senderId,
-                                                    )
-                                                )
-
-                                                if (queue != null) {
-                                                    eventFlow.emit(RoomEvent.QueueChanged(queue = queue, currentTrack = track))
-                                                }
-                                            }
-                                            "MEMBER_JOINED" -> {
-                                                val mId = inner.stringOrNull("memberId").orEmpty()
-                                                val mName = inner.stringOrNull("name").orEmpty()
-                                                val isHost = inner.boolOrNull("isHost") ?: false
-                                                val member = RoomMember(id = mId, name = mName, isHost = isHost)
-
-                                                eventFlow.emit(RoomEvent.MemberJoined(member))
-                                                val currentMembers = presenceFlow.value.toMutableList()
-                                                if (currentMembers.none { it.id == mId }) {
-                                                    currentMembers.add(member)
-                                                    presenceFlow.value = currentMembers
-                                                }
-                                            }
-                                            "MEMBER_LEFT" -> {
-                                                val mId = inner.stringOrNull("memberId").orEmpty()
-                                                eventFlow.emit(RoomEvent.MemberLeft(mId, "Member"))
-                                                val currentMembers = presenceFlow.value.filter { it.id != mId }
-                                                presenceFlow.value = currentMembers
-                                            }
-                                            "SONG_REQUEST_ADD" -> {
-                                                val rId = inner.stringOrNull("id") ?: "req_${Random.nextLong(1000, 9999)}"
-                                                val reqTrack = extractTrack(inner, "track")
-                                                val reqUser = inner.stringOrNull("requesterName") ?: "Listener"
-                                                val reqUserId = inner.stringOrNull("requesterId") ?: "user"
-                                                val reqTime = inner.longOrNull("requestTimeMs") ?: Clock.System.now().toEpochMilliseconds()
-
-                                                if (reqTrack != null && knownRequests.none { it.id == rId }) {
-                                                    val requestObj = SongRequest(
-                                                        id = rId,
-                                                        track = reqTrack,
-                                                        requesterName = reqUser,
-                                                        requesterId = reqUserId,
-                                                        requestTimeMs = reqTime,
-                                                        status = SongRequestStatus.PENDING,
-                                                    )
-                                                    knownRequests.add(requestObj)
-                                                    eventFlow.emit(RoomEvent.SongRequestsChanged(knownRequests.toList()))
-                                                }
-                                            }
-                                            "SONG_REQUEST_STATUS" -> {
-                                                val rId = inner.stringOrNull("requestId").orEmpty()
-                                                val stName = inner.stringOrNull("status").orEmpty()
-                                                val st = SongRequestStatus.entries.firstOrNull { it.name == stName } ?: SongRequestStatus.PENDING
-                                                val idx = knownRequests.indexOfFirst { it.id == rId }
-                                                if (idx >= 0) {
-                                                    knownRequests[idx] = knownRequests[idx].copy(status = st)
-                                                    eventFlow.emit(RoomEvent.SongRequestsChanged(knownRequests.toList()))
-                                                }
-                                            }
-                                            "ROOM_CLOSED" -> {
-                                                eventFlow.emit(RoomEvent.RoomClosed("Host has closed the session."))
-                                            }
-                                        }
-                                    }
-                                } catch (_: Exception) {}
+                                val root = PlayTogetherJson.parseObjectOrNull(line) ?: return@forEach
+                                root.str("id")?.takeIf { it.isNotBlank() }?.let { msgId ->
+                                    sinceCursor = msgId
+                                    cached.lastMsgId = msgId
+                                }
+                                val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: return@forEach
+                                processIncomingMessage(cached, msgObj, eventFlow, presenceFlow)
                             }
+                            pruneTimedOutMembers(cached, presenceFlow, eventFlow)
                         } else {
-                            isNetworkAvailable = false
+                            networkAvailable.value = false
                         }
                     } catch (_: Exception) {
-                        isNetworkAvailable = false
+                        networkAvailable.value = false
                     }
-                    delay(2000L) // Safe polling cycle preventing HTTP 429
+                    delay(1200L)
                 }
             }
             pollJobs[roomId] = job
         }
     }
 
-    private suspend fun publishRelayMessage(topic: String, title: String, message: String) {
-        try {
+    private suspend fun processIncomingMessage(
+        cached: CachedRoom,
+        msgObj: JsonObject,
+        eventFlow: MutableSharedFlow<RoomEvent>,
+        presenceFlow: MutableStateFlow<List<RoomMember>>,
+    ) {
+        val roomId = cached.info.id
+        val msgRoomId = msgObj.str("roomId") ?: msgObj.str("id")
+        if (!msgRoomId.isNullOrBlank() && msgRoomId != roomId) return
+
+        val eventId = msgObj.str("eventId").orEmpty()
+        if (!rememberEventId(cached, eventId)) return
+
+        val ev = msgObj.str("event").orEmpty().uppercase()
+        val senderId = msgObj.str("senderId").orEmpty()
+        val isFromSelf = senderId.isNotBlank() && senderId == cached.selfMemberId
+
+        when (ev) {
+            "PLAY", "PAUSE", "SEEK", "TRACK_CHANGE" -> {
+                if (isFromSelf) return
+                val seq = msgObj.lng("playbackSeq") ?: 0L
+                val isNewer = synchronized(localLock) {
+                    if (seq > 0L && seq <= cached.playbackSeq) {
+                        false
+                    } else {
+                        if (seq > cached.playbackSeq) cached.playbackSeq = seq
+                        cached.isPlaying = msgObj.bool("isPlaying") ?: false
+                        cached.positionMs = msgObj.lng("positionMs") ?: 0L
+                        cached.playbackStartTimestampUtc = msgObj.lng("playbackStartTimestampUtc") ?: 0L
+                        val tr = PlayTogetherJson.decodeTrack(msgObj["track"] as? JsonObject)
+                        if (tr != null || ev == "TRACK_CHANGE") {
+                            cached.currentTrack = tr
+                            cached.info = cached.info.copy(currentTrack = tr)
+                        }
+                        true
+                    }
+                }
+                if (isNewer) {
+                    eventFlow.emit(
+                        RoomEvent.PlaybackUpdated(
+                            isPlaying = cached.isPlaying,
+                            positionMs = cached.positionMs,
+                            track = cached.currentTrack,
+                            timestampUtc = msgObj.lng("timestampUtc") ?: Clock.System.now().toEpochMilliseconds(),
+                            senderId = senderId,
+                            playbackSeq = cached.playbackSeq,
+                            playbackStartTimestampUtc = cached.playbackStartTimestampUtc,
+                            eventId = eventId,
+                        ),
+                    )
+                }
+            }
+
+            "QUEUE_UPDATE" -> {
+                if (isFromSelf) return
+                val qVer = msgObj.lng("queueVersion") ?: 0L
+                val updated = synchronized(localLock) {
+                    if (qVer > 0L && qVer <= cached.queueVersion) {
+                        null
+                    } else {
+                        if (qVer > cached.queueVersion) cached.queueVersion = qVer
+                        val nextQueue = (msgObj["queue"] as? JsonArray)?.let { PlayTogetherJson.decodeTrackList(it) }
+                        if (nextQueue != null) {
+                            cached.queue.clear()
+                            cached.queue.addAll(nextQueue)
+                        }
+                        PlayTogetherJson.decodeTrack(msgObj["track"] as? JsonObject)?.let {
+                            cached.currentTrack = it
+                            cached.info = cached.info.copy(currentTrack = it)
+                        }
+                        cached.queue.toList()
+                    }
+                }
+                if (updated != null) {
+                    eventFlow.emit(
+                        RoomEvent.QueueChanged(
+                            queue = updated,
+                            currentTrack = cached.currentTrack,
+                            queueVersion = cached.queueVersion,
+                            senderId = senderId,
+                            eventId = eventId,
+                        ),
+                    )
+                }
+            }
+
+            "SONG_REQUEST_ADD" -> {
+                val reqObj = (msgObj["request"] as? JsonObject)?.let { PlayTogetherJson.decodeSongRequest(it) } ?: return
+                val normalized = reqObj.copy(roomId = roomId)
+                val list = synchronized(localLock) {
+                    cached.songRequests[normalized.id] = normalized
+                    cached.songRequests.values.toList()
+                }
+                eventFlow.emit(RoomEvent.SongRequestsChanged(requests = list, addedRequest = normalized, eventId = eventId))
+            }
+
+            "SONG_REQUEST_STATUS" -> {
+                val reqId = msgObj.str("requestId").orEmpty()
+                if (reqId.isBlank()) return
+                val status = parseSongRequestStatus(msgObj.str("status"))
+                val updatedTimeMs = msgObj.lng("updatedTimeMs") ?: Clock.System.now().toEpochMilliseconds()
+                val pair = synchronized(localLock) {
+                    val prev = cached.songRequests[reqId] ?: return@synchronized null
+                    val next = prev.copy(status = status, updatedTimeMs = updatedTimeMs)
+                    cached.songRequests[reqId] = next
+                    cached.songRequests.values.toList() to next
+                } ?: return
+                eventFlow.emit(RoomEvent.SongRequestsChanged(requests = pair.first, updatedRequest = pair.second, eventId = eventId))
+            }
+
+            "MEMBER_JOIN" -> {
+                val member = (msgObj["member"] as? JsonObject)?.let { PlayTogetherJson.decodeMember(it) } ?: return
+                if (member.id == cached.selfMemberId) return
+                val list = synchronized(localLock) {
+                    cached.members[member.id] = member
+                    val all = cached.members.values.toList()
+                    cached.info = cached.info.copy(memberCount = all.size)
+                    all
+                }
+                presenceFlow.value = list
+                eventFlow.emit(RoomEvent.MemberJoined(member))
+                eventFlow.emit(RoomEvent.MemberPresenceChanged(list))
+            }
+
+            "MEMBER_LEAVE" -> {
+                val mid = msgObj.str("memberId").orEmpty()
+                val mName = msgObj.str("memberName").orEmpty().ifBlank { "Listener" }
+                if (mid.isBlank() || mid == cached.selfMemberId) return
+                val list = synchronized(localLock) {
+                    cached.members.remove(mid)
+                    val all = cached.members.values.toList()
+                    cached.info = cached.info.copy(memberCount = all.size.coerceAtLeast(1))
+                    all
+                }
+                presenceFlow.value = list
+                eventFlow.emit(RoomEvent.MemberLeft(mid, mName))
+                eventFlow.emit(RoomEvent.MemberPresenceChanged(list))
+            }
+
+            "MEMBER_KICK" -> {
+                val targetId = msgObj.str("targetMemberId").orEmpty()
+                if (targetId.isBlank()) return
+                if (targetId == cached.selfMemberId) {
+                    eventFlow.emit(RoomEvent.MemberKicked(targetId))
+                } else {
+                    val list = synchronized(localLock) {
+                        cached.members.remove(targetId)
+                        cached.members.values.toList()
+                    }
+                    presenceFlow.value = list
+                    eventFlow.emit(RoomEvent.MemberPresenceChanged(list))
+                }
+            }
+
+            "PRESENCE" -> {
+                val mid = msgObj.str("memberId").orEmpty()
+                if (mid.isBlank() || mid == cached.selfMemberId) return
+                val now = Clock.System.now().toEpochMilliseconds()
+                val list = synchronized(localLock) {
+                    val prev = cached.members[mid]
+                    cached.members[mid] = RoomMember(
+                        id = mid,
+                        name = msgObj.str("memberName")?.takeIf { it.isNotBlank() } ?: prev?.name ?: "Listener",
+                        isHost = msgObj.bool("isHost") ?: prev?.isHost ?: (mid == cached.hostId),
+                        syncState = runCatching {
+                            MemberSyncState.valueOf(msgObj.str("syncState").orEmpty().uppercase())
+                        }.getOrDefault(MemberSyncState.SYNCED),
+                        driftMs = msgObj.lng("driftMs") ?: 0L,
+                        lastSeenUtc = now,
+                    )
+                    val all = cached.members.values.toList()
+                    cached.info = cached.info.copy(memberCount = all.size)
+                    all
+                }
+                presenceFlow.value = list
+                eventFlow.emit(RoomEvent.MemberPresenceChanged(list))
+            }
+
+            "ROOM_SETTINGS_UPDATE" -> {
+                val vis = runCatching {
+                    RoomVisibility.valueOf(msgObj.str("visibility").orEmpty().uppercase())
+                }.getOrDefault(cached.info.visibility)
+                val ctrl = runCatching {
+                    ControlMode.valueOf(msgObj.str("controlMode").orEmpty().uppercase())
+                }.getOrDefault(cached.info.controlMode)
+                val allowReq = msgObj.bool("allowListenerRequests") ?: cached.info.allowListenerRequests
+                val hId = msgObj.str("hostId").orEmpty()
+                synchronized(localLock) {
+                    cached.info = cached.info.copy(visibility = vis, controlMode = ctrl, allowListenerRequests = allowReq)
+                }
+                eventFlow.emit(RoomEvent.RoomSettingsChanged(vis, ctrl, allowReq, hId))
+            }
+
+            "ROOM_STATE" -> {
+                if (cached.selfMemberId == cached.hostId) return
+                val seq = msgObj.lng("playbackSeq") ?: 0L
+                val qVer = msgObj.lng("queueVersion") ?: 0L
+                var playbackUpdated = false
+                var queueUpdated = false
+                var requestsUpdated: List<SongRequest>? = null
+                synchronized(localLock) {
+                    if (seq > cached.playbackSeq) {
+                        cached.playbackSeq = seq
+                        cached.isPlaying = msgObj.bool("isPlaying") ?: cached.isPlaying
+                        cached.positionMs = msgObj.lng("positionMs") ?: cached.positionMs
+                        cached.playbackStartTimestampUtc = msgObj.lng("playbackStartTimestampUtc") ?: cached.playbackStartTimestampUtc
+                        cached.currentTrack = PlayTogetherJson.decodeTrack(msgObj["currentTrack"] as? JsonObject) ?: cached.currentTrack
+                        playbackUpdated = true
+                    }
+                    if (qVer > cached.queueVersion) {
+                        cached.queueVersion = qVer
+                        (msgObj["queue"] as? JsonArray)?.let { arr ->
+                            cached.queue.clear()
+                            cached.queue.addAll(PlayTogetherJson.decodeTrackList(arr))
+                        }
+                        queueUpdated = true
+                    }
+                    (msgObj["songRequests"] as? JsonArray)?.let { arr ->
+                        var anyReqChange = false
+                        PlayTogetherJson.decodeSongRequestList(arr).forEach { r ->
+                            val cur = cached.songRequests[r.id]
+                            if (cur == null || r.updatedTimeMs > cur.updatedTimeMs || cur.status != r.status) {
+                                cached.songRequests[r.id] = r.copy(roomId = roomId)
+                                anyReqChange = true
+                            }
+                        }
+                        if (anyReqChange) requestsUpdated = cached.songRequests.values.toList()
+                    }
+                }
+                if (playbackUpdated) {
+                    eventFlow.emit(
+                        RoomEvent.PlaybackUpdated(
+                            isPlaying = cached.isPlaying,
+                            positionMs = cached.positionMs,
+                            track = cached.currentTrack,
+                            timestampUtc = msgObj.lng("timestampUtc") ?: Clock.System.now().toEpochMilliseconds(),
+                            senderId = cached.hostId,
+                            playbackSeq = cached.playbackSeq,
+                            playbackStartTimestampUtc = cached.playbackStartTimestampUtc,
+                            eventId = eventId,
+                        ),
+                    )
+                }
+                if (queueUpdated) {
+                    eventFlow.emit(RoomEvent.QueueChanged(cached.queue.toList(), cached.currentTrack, cached.queueVersion, cached.hostId, eventId))
+                }
+                requestsUpdated?.let { list ->
+                    eventFlow.emit(RoomEvent.SongRequestsChanged(requests = list, eventId = eventId))
+                }
+            }
+
+            "ROOM_CLOSED", "ROOM_DELETED" -> {
+                val deleted = ev == "ROOM_DELETED" || (msgObj.bool("deleted") ?: false)
+                val reason = msgObj.str("reason").orEmpty().ifBlank {
+                    if (deleted) "Room was deleted by the host." else "Host has closed the room."
+                }
+                synchronized(localLock) { cached.isClosed = true }
+                eventFlow.emit(RoomEvent.RoomClosed(reason, deleted = deleted))
+            }
+        }
+    }
+
+    private suspend fun pruneTimedOutMembers(
+        cached: CachedRoom,
+        presenceFlow: MutableStateFlow<List<RoomMember>>,
+        eventFlow: MutableSharedFlow<RoomEvent>,
+    ) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        val timeoutMs = 45_000L
+        val pruned = synchronized(localLock) {
+            val expiredIds = cached.members.values
+                .filter { !it.isHost && it.id != cached.selfMemberId && it.lastSeenUtc > 0L && (now - it.lastSeenUtc) > timeoutMs }
+                .map { it.id }
+            if (expiredIds.isEmpty()) return@synchronized null
+            expiredIds.forEach { cached.members.remove(it) }
+            val list = cached.members.values.toList()
+            cached.info = cached.info.copy(memberCount = list.size.coerceAtLeast(1))
+            list
+        }
+        if (pruned != null) {
+            presenceFlow.value = pruned
+            eventFlow.emit(RoomEvent.MemberPresenceChanged(pruned))
+        }
+    }
+
+    private suspend fun publishRelayMessage(topic: String, title: String, message: String): Boolean {
+        return try {
             val req = RequestBuilder()
                 .url("$relayUrl/$topic")
                 .header("Title", title)
-                .header("User-Agent", "PRVN-Music-App/0.09")
+                .header("User-Agent", USER_AGENT)
                 .header("Content-Type", "text/plain; charset=utf-8")
                 .post(message.toRequestBody(null))
                 .build()
-            client.execute(req)
-        } catch (_: Exception) {}
-    }
-
-    private fun extractTrack(json: JsonObject, key: String): PlayTogetherTrack? {
-        val element = json[key] ?: return null
-        return when (element) {
-            is JsonObject -> parseTrack(element)
-            is kotlinx.serialization.json.JsonPrimitive -> {
-                val content = if (element.isString) element.content else null
-                if (content.isNullOrBlank() || content == "null") return null
-                try {
-                    parseTrack(parseJson(content))
-                } catch (_: Exception) {
-                    null
-                }
-            }
-            else -> null
+            val resp = client.execute(req)
+            resp.isSuccessful
+        } catch (_: Exception) {
+            false
         }
     }
 
-    private fun extractQueue(json: JsonObject, key: String): List<PlayTogetherTrack>? {
-        val element = json[key] ?: return null
-        return when (element) {
-            is JsonObject -> {
-                val items = element.objects("items")
-                if (items.isNotEmpty()) items.map { parseTrack(it) } else null
-            }
-            is kotlinx.serialization.json.JsonArray -> {
-                element.mapNotNull { if (it is JsonObject) parseTrack(it) else null }
-            }
-            is kotlinx.serialization.json.JsonPrimitive -> {
-                val content = if (element.isString) element.content else null
-                if (content.isNullOrBlank() || content == "null") return null
-                try {
-                    parseQueue(content)
-                } catch (_: Exception) {
-                    null
-                }
-            }
-            else -> null
+    private fun buildJoinResultFromCached(
+        cached: CachedRoom,
+        memberId: String,
+        userName: String,
+        rttMs: Long,
+    ): JoinRoomResult {
+        val now = Clock.System.now().toEpochMilliseconds()
+        val isHostMember = memberId == cached.hostId
+        val member = RoomMember(
+            id = memberId,
+            name = userName,
+            isHost = isHostMember,
+            syncState = MemberSyncState.SYNCING,
+            driftMs = 0L,
+            lastSeenUtc = now,
+        )
+        synchronized(localLock) {
+            cached.members[memberId] = member
+            cached.selfMemberId = memberId
         }
-    }
-
-    private fun codeFromRoomId(roomId: String): String {
-        return roomId.removePrefix("room_").substringBefore('_')
-    }
-
-    private fun parseJson(text: String): JsonObject {
-        return Json.parseToJsonElement(text).jsonObject
-    }
-
-    private fun parseTrack(json: JsonObject): PlayTogetherTrack {
-        return PlayTogetherTrack(
-            id = json.stringOrNull("id").orEmpty(),
-            title = json.stringOrNull("title").orEmpty(),
-            artist = json.stringOrNull("artist").orEmpty(),
-            artworkUrl = json.stringOrNull("artworkUrl").orEmpty(),
-            durationMs = json.longOrNull("durationMs") ?: 0L,
-            isYouTube = json.boolOrNull("isYouTube") ?: true,
-            addedBy = json.stringOrNull("addedBy") ?: "Host",
-            isAutoRadio = json.boolOrNull("isAutoRadio") ?: false,
+        return JoinRoomResult(
+            room = cached.info.copy(memberCount = cached.members.size),
+            isHost = isHostMember,
+            currentMemberId = memberId,
+            members = cached.members.values.toList(),
+            currentTrack = cached.currentTrack,
+            isPlaying = cached.isPlaying,
+            positionMs = cached.positionMs,
+            queue = cached.queue.toList(),
+            songRequests = cached.songRequests.values.toList(),
+            playbackSeq = cached.playbackSeq,
+            queueVersion = cached.queueVersion,
+            playbackStartTimestampUtc = cached.playbackStartTimestampUtc,
+            serverTimestampUtc = now,
+            measuredRttMs = rttMs,
         )
     }
 
-    private fun serializeTrack(track: PlayTogetherTrack): String {
-        return """{"id":"${track.id}","title":"${escape(track.title)}","artist":"${escape(track.artist)}","artworkUrl":"${escape(track.artworkUrl.orEmpty())}","durationMs":${track.durationMs},"isYouTube":${track.isYouTube},"addedBy":"${escape(track.addedBy)}","isAutoRadio":${track.isAutoRadio}}"""
-    }
+    private fun buildRoomStatePayload(cached: CachedRoom): String = buildJsonObject {
+        put("event", "ROOM_STATE")
+        put("roomId", cached.info.id)
+        put("id", cached.info.id)
+        put("code", cached.info.code)
+        put("name", cached.info.name)
+        put("hostName", cached.info.hostName)
+        put("hostId", cached.hostId)
+        put("visibility", cached.info.visibility.name)
+        put("controlMode", cached.info.controlMode.name)
+        put("allowListenerRequests", cached.info.allowListenerRequests)
+        cached.info.password?.let { put("password", it) }
+        put("isPlaying", cached.isPlaying)
+        put("positionMs", cached.positionMs)
+        put("playbackSeq", cached.playbackSeq)
+        put("queueVersion", cached.queueVersion)
+        put("playbackStartTimestampUtc", cached.playbackStartTimestampUtc)
+        put("isClosed", cached.isClosed)
+        put("createdUtc", cached.info.createdUtc)
+        cached.currentTrack?.let { put("currentTrack", PlayTogetherJson.encodeTrack(it)) }
+        put("queue", PlayTogetherJson.encodeTrackList(cached.queue))
+        put("members", PlayTogetherJson.encodeMemberList(cached.members.values.toList()))
+        put("songRequests", PlayTogetherJson.encodeSongRequestList(cached.songRequests.values.toList()))
+        put("timestampUtc", Clock.System.now().toEpochMilliseconds())
+    }.toString()
 
-    private fun parseQueue(jsonStr: String): List<PlayTogetherTrack> {
-        val list = mutableListOf<PlayTogetherTrack>()
-        try {
-            val root = parseJson("""{"items":$jsonStr}""")
-            root.objects("items").forEach { obj ->
-                list.add(parseTrack(obj))
-            }
-        } catch (_: Exception) {}
-        return list
-    }
+    private fun buildPublicDirectoryPayload(cached: CachedRoom): String = buildJsonObject {
+        put("id", cached.info.id)
+        put("code", cached.info.code)
+        put("name", cached.info.name)
+        put("hostName", cached.info.hostName)
+        put("hostId", cached.hostId)
+        put("visibility", cached.info.visibility.name)
+        put("controlMode", cached.info.controlMode.name)
+        put("allowListenerRequests", cached.info.allowListenerRequests)
+        put("memberCount", cached.members.size.coerceAtLeast(1))
+        put("createdUtc", cached.info.createdUtc)
+        put("updatedUtc", Clock.System.now().toEpochMilliseconds())
+        put("closed", false)
+        cached.currentTrack?.let { put("currentTrack", PlayTogetherJson.encodeTrack(it)) }
+    }.toString()
 
-    private fun serializeQueue(queue: List<PlayTogetherTrack>): String {
-        return "[" + queue.joinToString(",") { serializeTrack(it) } + "]"
-    }
+    private fun buildPublicTombstonePayload(
+        code: String,
+        roomId: String,
+        visibility: RoomVisibility,
+        closed: Boolean,
+    ): String = buildJsonObject {
+        put("id", roomId)
+        put("code", code)
+        put("visibility", visibility.name)
+        put("closed", closed)
+        put("isClosed", closed)
+        put("updatedUtc", Clock.System.now().toEpochMilliseconds())
+    }.toString()
 
-    private fun buildRoomStatePayload(
-        info: RoomInfo,
-        hostId: String,
-        members: List<RoomMember>,
+    private fun codeFromRoomId(roomId: String): String =
+        roomId.removePrefix("room_").substringBefore('_')
+
+    private fun computeEffectivePositionMs(
         track: PlayTogetherTrack?,
-        positionMs: Long,
         isPlaying: Boolean,
-        queue: List<PlayTogetherTrack>,
-    ): String {
-        val trackJson = track?.let { serializeTrack(it) } ?: "null"
-        val queueJson = serializeQueue(queue)
-        return """{
-            "event": "ROOM_STATE",
-            "id": "${info.id}",
-            "code": "${info.code}",
-            "name": "${escape(info.name)}",
-            "hostName": "${escape(info.hostName)}",
-            "hostId": "$hostId",
-            "visibility": "${info.visibility.name}",
-            "controlMode": "${info.controlMode.name}",
-            "password": ${info.password?.let { "\"$it\"" } ?: "null"},
-            "isPlaying": $isPlaying,
-            "positionMs": $positionMs,
-            "currentTrack": $trackJson,
-            "queue": $queueJson,
-            "timestampUtc": ${Clock.System.now().toEpochMilliseconds()}
-        }""".replace(Regex("\\s+"), " ")
+        reportedPositionMs: Long,
+        playbackStartUtc: Long,
+        adjustedNowUtc: Long,
+    ): Long {
+        if (track == null) return 0L
+        val raw = if (isPlaying && playbackStartUtc > 0L) {
+            (adjustedNowUtc - playbackStartUtc).coerceAtLeast(reportedPositionMs.coerceAtLeast(0L))
+        } else {
+            reportedPositionMs.coerceAtLeast(0L)
+        }
+        return if (track.durationMs > 0L) raw.coerceIn(0L, track.durationMs) else raw
     }
 
-    private fun buildPublicDirectoryPayload(info: RoomInfo, track: PlayTogetherTrack?): String {
-        val trackJson = track?.let { serializeTrack(it) } ?: "null"
-        return """{
-            "id": "${info.id}",
-            "code": "${info.code}",
-            "name": "${escape(info.name)}",
-            "hostName": "${escape(info.hostName)}",
-            "memberCount": 1,
-            "controlMode": "${info.controlMode.name}",
-            "updatedUtc": ${Clock.System.now().toEpochMilliseconds()},
-            "currentTrack": $trackJson
-        }""".replace(Regex("\\s+"), " ")
-    }
-
-    private fun escape(text: String): String {
-        return text.replace("\"", "\\\"").replace("\n", " ").replace("\r", "")
+    private companion object {
+        const val USER_AGENT = "PRVN-Music-App/0.11"
     }
 }

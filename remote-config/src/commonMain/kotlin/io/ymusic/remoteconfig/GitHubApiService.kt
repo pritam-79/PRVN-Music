@@ -42,11 +42,12 @@ class GitHubApiService(
 
         // 1. Check configurable remote JSON update manifest
         try {
-            val manifestUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/main/update.json"
+            val cacheBuster = now() / 60_000L
+            val manifestUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/main/update.json?cb=$cacheBuster"
             val mReq = RequestBuilder()
                 .url(manifestUrl)
                 .header("User-Agent", "PRVN-Music-App")
-                .header("Cache-Control", "no-cache")
+                .header("Cache-Control", "no-cache, no-store")
                 .get()
                 .build()
             val mResp = client.execute(mReq)
@@ -58,6 +59,8 @@ class GitHubApiService(
                 val dlUrl = manifestJson.stringOrNull("downloadUrl") ?: ""
                 val notes = manifestJson.stringOrNull("releaseNotes") ?: ""
                 val force = manifestJson.boolOrNull("forceUpdate") ?: false
+                val dlSize = runCatching { manifestJson.long("size") }.getOrDefault(0L)
+                val dlSha = manifestJson.stringOrNull("sha256").orEmpty().lowercase()
 
                 if (vCode > 0 && dlUrl.isNotBlank()) {
                     appUpdate = AppUpdate(
@@ -65,8 +68,8 @@ class GitHubApiService(
                         versionName = vName,
                         notes = notes,
                         url = dlUrl,
-                        size = 0L,
-                        sha256 = "",
+                        size = dlSize,
+                        sha256 = dlSha,
                         signature = "",
                         changelogUrl = htmlUrl,
                         downloadPage = htmlUrl,

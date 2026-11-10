@@ -1,5 +1,8 @@
 package io.ymusic.ui
 
+import io.ymusic.ui.playtogether.LocalPlayTogetherActions
+import io.ymusic.ui.playtogether.TrackResolver
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -760,25 +763,36 @@ private fun androidx.compose.foundation.lazy.LazyListScope.feedSection(
     }
 }
 
+@Composable
 private fun itemClick(
     item: YtFeedItem,
     section: YtSection,
     coordinator: PlaybackCoordinator,
     onOpen: ((YtFeedItem) -> Unit)?,
     onPlayItem: ((YtFeedItem) -> Unit)?,
-): (() -> Unit)? = when (item.kind) {
-    YtFeedItem.KIND_VIDEO -> ({
-        when {
-            onPlayItem != null -> onPlayItem(item)
-            section.playMode == YtSection.PLAY_QUEUE -> {
-                val videos = section.items.filter { it.kind == YtFeedItem.KIND_VIDEO }
-                coordinator.playAll(videos, startIndex = videos.indexOfFirst { it.id == item.id }.coerceAtLeast(0))
+): (() -> Unit)? {
+    val ptActions = LocalPlayTogetherActions.current
+    return when (item.kind) {
+        YtFeedItem.KIND_VIDEO -> ({
+            val fallbackPlay: () -> Unit = {
+                when {
+                    onPlayItem != null -> onPlayItem(item)
+                    section.playMode == YtSection.PLAY_QUEUE -> {
+                        val videos = section.items.filter { it.kind == YtFeedItem.KIND_VIDEO }
+                        coordinator.playAll(videos, startIndex = videos.indexOfFirst { it.id == item.id }.coerceAtLeast(0))
+                    }
+                    else -> coordinator.playNow(item)
+                }
             }
-            else -> coordinator.playNow(item)
-        }
-    })
-    YtFeedItem.KIND_PLAYLIST, YtFeedItem.KIND_CHANNEL, YtFeedItem.KIND_TAG -> onOpen?.let { { it(item) } }
-    else -> null
+            if (ptActions.isInRoom && !item.live && TrackResolver.isValidYouTubeId(item.id) && ptActions.onDirectPlayClick != null) {
+                ptActions.onDirectPlayClick.invoke(item, fallbackPlay)
+            } else {
+                fallbackPlay()
+            }
+        })
+        YtFeedItem.KIND_PLAYLIST, YtFeedItem.KIND_CHANNEL, YtFeedItem.KIND_TAG -> onOpen?.let { { it(item) } }
+        else -> null
+    }
 }
 
 /** Overflow "Remove from playlist" on the viewer's own playlist (items carrying a removeToken). */
@@ -795,10 +809,20 @@ private fun itemActions(item: YtFeedItem, coordinator: PlaybackCoordinator): Ite
     val ytPlaylists = LocalYtPlaylistActions.current
     val removeFromYtPlaylist = LocalRemoveFromYtPlaylist.current
     val share = LocalShareYoutube.current
+    val ptActions = LocalPlayTogetherActions.current
     val subscribe = if (item.kind == YtFeedItem.KIND_CHANNEL) rememberChannelSubscriber(coordinator) else null
     return ItemActions(
         if (item.kind == YtFeedItem.KIND_VIDEO) {
             buildList {
+                if (ptActions.isInRoom && !item.live && TrackResolver.isValidYouTubeId(item.id)) {
+                    if (ptActions.canControl) {
+                        add("Play in Play Together" to { ptActions.playInRoom(item) })
+                        add("Queue in Play Together" to { ptActions.queueInRoom(item) })
+                    }
+                    if (ptActions.allowRequests || ptActions.isHost) {
+                        add("Request in Play Together" to { ptActions.requestInRoom(item) })
+                    }
+                }
                 add(stringResource(Res.string.menu_play_single) to { coordinator.playSingle(item) })
                 add(stringResource(Res.string.menu_start_radio) to { coordinator.playNow(item) })
                 add(stringResource(Res.string.queue_next) to { coordinator.playNext(item) })

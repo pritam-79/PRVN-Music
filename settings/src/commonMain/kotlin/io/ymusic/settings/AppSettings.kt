@@ -220,6 +220,9 @@ object AppSettings {
     /** Supabase anon public API key for Realtime WebSocket authentication. */
     val playTogetherAnonKey = StringSetting("playtogether.anonKey", "")
 
+    /** Saved display name used when hosting or joining Play Together rooms. */
+    val playTogetherUserName = StringSetting("playtogether.userName", "Listener")
+
     /** Room activity and invite notifications. */
     val roomNotifications = BoolSetting("notifications.roomNotifications", true)
 

@@ -66,13 +66,18 @@ fun GlassBottomNavigation(
     currentSection: AppSection,
     onNavigate: (AppSection) -> Unit,
     onSearchClick: () -> Unit,
+    isSearchActive: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val activeItem = when (currentSection) {
-        AppSection.YtMusic, AppSection.Discover -> GlassNavItem.HOME
-        AppSection.PlayTogether -> GlassNavItem.MIX
-        AppSection.Library -> GlassNavItem.LIBRARY
-        else -> null
+    val activeItem = if (isSearchActive) {
+        GlassNavItem.SEARCH
+    } else {
+        when (currentSection) {
+            AppSection.YtMusic, AppSection.Discover -> GlassNavItem.HOME
+            AppSection.PlayTogether -> GlassNavItem.MIX
+            AppSection.Library -> GlassNavItem.LIBRARY
+            else -> null
+        }
     }
 
     Box(

@@ -169,6 +169,8 @@ import io.ymusic.ui.loaderYoutubeArt
 import io.ymusic.ui.mediaStoreArtFetcher
 import io.ymusic.ui.playhistory.PlayHistoryStore
 import io.ymusic.ui.playhistory.playHistoryJdbcDriver
+import io.ymusic.ui.playtogether.storage.PlayTogetherStore
+import io.ymusic.ui.playtogether.storage.playTogetherJdbcDriver
 import io.ymusic.ui.registerCompletedDownload
 import io.ymusic.ui.resources.Res
 import io.ymusic.ui.resources.cd_always_on_top
@@ -1153,6 +1155,7 @@ private suspend fun buildGraph(settings: AppStoreSettings, session: CookieSessio
         playerCache = playerCache,
         mediaStore = mediaStore,
         playHistory = PlayHistoryStore(playHistoryJdbcDriver(File(dataDir, "play-history.db").absolutePath)),
+        playTogetherStore = PlayTogetherStore(playTogetherJdbcDriver(File(dataDir, "play-together.db").absolutePath)),
         sponsorBlockStore = SqliteSponsorBlockStore(
             sponsorBlockJdbcDriver(File(dataDir, "sponsor-block.db").absolutePath),
         ),

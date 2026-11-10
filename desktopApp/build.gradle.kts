@@ -354,7 +354,13 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "YMusic"
-            packageVersion = desktopVersion
+            packageVersion = desktopVersion.split('.').let { p ->
+                when (p.size) {
+                    1 -> "${p[0]}.0.0"
+                    2 -> "${p[0]}.${p[1]}.0"
+                    else -> p.take(3).joinToString(".")
+                }
+            }
             description = "Music player"
             vendor = "YMusic"
             macOS {

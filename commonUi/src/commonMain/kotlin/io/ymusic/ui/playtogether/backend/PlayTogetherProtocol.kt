@@ -7,6 +7,7 @@ import io.ymusic.ui.playtogether.RoomInfo
 import io.ymusic.ui.playtogether.RoomMember
 import io.ymusic.ui.playtogether.RoomVisibility
 import io.ymusic.ui.playtogether.SongRequest
+import io.ymusic.ui.playtogether.SongRequestStatus
 import kotlin.time.Clock
 
 /**
@@ -21,10 +22,12 @@ enum class PlaybackEventType {
     SYNC_PING,
     SONG_REQUEST_ADD,
     SONG_REQUEST_STATUS,
+    ROOM_SETTINGS_UPDATE,
+    MEMBER_KICK,
 }
 
 /**
- * Real-time playback synchronization payload sent over WebSocket / Phoenix channel.
+ * Real-time playback synchronization payload sent over the relay channel.
  */
 data class PlaybackEvent(
     val roomId: String,
@@ -35,6 +38,14 @@ data class PlaybackEvent(
     val isPlaying: Boolean = false,
     val queue: List<PlayTogetherTrack> = emptyList(),
     val songRequests: List<SongRequest> = emptyList(),
+    val playbackSeq: Long = 0L,
+    val queueVersion: Long = 0L,
+    val playbackStartTimestampUtc: Long = 0L,
+    val visibility: RoomVisibility? = null,
+    val controlMode: ControlMode? = null,
+    val allowListenerRequests: Boolean? = null,
+    val targetMemberId: String? = null,
+    val eventId: String = "",
     val timestampUtc: Long = Clock.System.now().toEpochMilliseconds(),
 )
 
@@ -48,15 +59,24 @@ sealed interface RoomEvent {
         val track: PlayTogetherTrack?,
         val timestampUtc: Long,
         val senderId: String,
+        val playbackSeq: Long = 0L,
+        val playbackStartTimestampUtc: Long = 0L,
+        val eventId: String = "",
     ) : RoomEvent
 
     data class QueueChanged(
         val queue: List<PlayTogetherTrack>,
         val currentTrack: PlayTogetherTrack?,
+        val queueVersion: Long = 0L,
+        val senderId: String = "",
+        val eventId: String = "",
     ) : RoomEvent
 
     data class SongRequestsChanged(
         val requests: List<SongRequest>,
+        val addedRequest: SongRequest? = null,
+        val updatedRequest: SongRequest? = null,
+        val eventId: String = "",
     ) : RoomEvent
 
     data class MemberPresenceChanged(
@@ -72,8 +92,21 @@ sealed interface RoomEvent {
         val memberName: String,
     ) : RoomEvent
 
+    data class MemberKicked(
+        val targetMemberId: String,
+        val reason: String = "You were removed from the room by the host.",
+    ) : RoomEvent
+
+    data class RoomSettingsChanged(
+        val visibility: RoomVisibility,
+        val controlMode: ControlMode,
+        val allowListenerRequests: Boolean,
+        val hostId: String = "",
+    ) : RoomEvent
+
     data class RoomClosed(
         val reason: String,
+        val deleted: Boolean = false,
     ) : RoomEvent
 
     data class Error(
@@ -82,7 +115,16 @@ sealed interface RoomEvent {
 }
 
 /**
- * Result returned upon successfully verifying and joining a room.
+ * Clock synchronization probe result.
+ */
+data class SyncPingResult(
+    val serverTimestampUtc: Long,
+    val rttMs: Long,
+    val clockOffsetMs: Long,
+)
+
+/**
+ * Result returned upon successfully verifying and joining (or reconnecting to) a room.
  */
 data class JoinRoomResult(
     val room: RoomInfo,
@@ -94,14 +136,18 @@ data class JoinRoomResult(
     val positionMs: Long,
     val queue: List<PlayTogetherTrack>,
     val songRequests: List<SongRequest> = emptyList(),
+    val playbackSeq: Long = 0L,
+    val queueVersion: Long = 0L,
+    val playbackStartTimestampUtc: Long = 0L,
     val serverTimestampUtc: Long = Clock.System.now().toEpochMilliseconds(),
+    val measuredRttMs: Long = 0L,
 )
 
 /**
  * Sliding-window rate limiter to prevent brute-forcing 4-digit room codes or spamming requests.
  */
 class RateLimiter(
-    private val maxRequests: Int = 5,
+    private val maxRequests: Int = 8,
     private val windowMs: Long = 30_000L,
 ) {
     private val timestamps = mutableListOf<Long>()
@@ -146,7 +192,7 @@ object RoomSecurityPolicy {
 
     fun sanitizeRoomName(name: String): String {
         val trimmed = name.trim().take(40)
-        return trimmed.ifBlank { "PRVN Music Room" }
+        return trimmed.ifBlank { "PRVN Music Lounge" }
     }
 
     fun sanitizeUserName(name: String): String {
@@ -163,22 +209,41 @@ object RoomSecurityPolicy {
 }
 
 /**
- * Invitation link generator and parser for Play Together deep links.
+ * Invitation link generator and parser for Play Together deep links (`prvn://` & `ymusic://` & https).
  */
 object InviteLinkHelper {
     private const val PRVN_SCHEME = "prvn://playtogether"
     private const val WEB_BASE = "https://prvn.music/together"
 
-    fun createDeepLink(roomCode: String, roomName: String): String {
-        return "$PRVN_SCHEME?code=$roomCode"
+    fun createDeepLink(roomCode: String, @Suppress("UNUSED_PARAMETER") roomName: String): String {
+        return "$PRVN_SCHEME?code=${roomCode.trim()}"
     }
 
-    fun createWebLink(roomCode: String, roomName: String): String {
-        return "$WEB_BASE?code=$roomCode"
+    fun createWebLink(roomCode: String, @Suppress("UNUSED_PARAMETER") roomName: String): String {
+        return "$WEB_BASE?code=${roomCode.trim()}"
     }
 
     fun parseRoomCode(uri: String): String? {
-        val codeMatch = Regex("[?&]code=([0-9]{4})").find(uri)
-        return codeMatch?.groupValues?.get(1)
+        val trimmed = uri.trim()
+        val queryMatch = Regex("[?&]code=([0-9]{4})(?:&|$)").find(trimmed)
+        if (queryMatch != null) return queryMatch.groupValues[1]
+        val pathMatch = Regex("(?:playtogether|together|room)/([0-9]{4})(?:[/?#]|$)").find(trimmed)
+        if (pathMatch != null) return pathMatch.groupValues[1]
+        val rawCodeMatch = Regex("^([0-9]{4})$").find(trimmed)
+        return rawCodeMatch?.groupValues?.get(1)
+    }
+}
+
+/** Parse status string including legacy v0.06–v0.10 `"APPROVED"`. */
+fun parseSongRequestStatus(raw: String?): SongRequestStatus {
+    val clean = raw?.trim()?.uppercase() ?: return SongRequestStatus.PENDING
+    return when (clean) {
+        "PENDING" -> SongRequestStatus.PENDING
+        "ACCEPTED" -> SongRequestStatus.ACCEPTED
+        "APPROVED", "ADDED_TO_QUEUE", "QUEUED" -> SongRequestStatus.ADDED_TO_QUEUE
+        "PLAYED" -> SongRequestStatus.PLAYED
+        "REJECTED" -> SongRequestStatus.REJECTED
+        "CANCELLED", "CANCELED" -> SongRequestStatus.CANCELLED
+        else -> SongRequestStatus.PENDING
     }
 }

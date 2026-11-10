@@ -48,6 +48,8 @@ import io.ymusic.ui.CatalogueScreen
 import io.ymusic.ui.ensureAppLanguage
 import io.ymusic.ui.playhistory.PlayHistoryStore
 import io.ymusic.ui.playhistory.playHistoryNativeDriver
+import io.ymusic.ui.playtogether.storage.PlayTogetherStore
+import io.ymusic.ui.playtogether.storage.playTogetherNativeDriver
 import io.ymusic.ui.sponsorblock.SqliteSponsorBlockStore
 import io.ymusic.ui.sponsorblock.sponsorBlockNativeDriver
 import io.ymusic.ui.startupFailedMessage
@@ -309,6 +311,7 @@ private suspend fun buildIosGraph(container: UIView): AppGraph {
         playerCache = playerCache,
         mediaStore = null,
         playHistory = PlayHistoryStore(playHistoryNativeDriver()),
+        playTogetherStore = PlayTogetherStore(playTogetherNativeDriver()),
         sponsorBlockStore = SqliteSponsorBlockStore(sponsorBlockNativeDriver()),
         scanLibraryFolder = null,
         imageLoader = imageLoader,

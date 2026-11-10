@@ -105,6 +105,8 @@ import io.ymusic.ui.loaderYoutubeArt
 import io.ymusic.ui.mediaStoreArtFetcher
 import io.ymusic.ui.playhistory.PlayHistoryStore
 import io.ymusic.ui.playhistory.playHistoryAndroidDriver
+import io.ymusic.ui.playtogether.storage.PlayTogetherStore
+import io.ymusic.ui.playtogether.storage.playTogetherAndroidDriver
 import io.ymusic.ui.registerCompletedDownload
 import io.ymusic.ui.sponsorblock.SqliteSponsorBlockStore
 import io.ymusic.ui.sponsorblock.sponsorBlockAndroidDriver
@@ -498,7 +500,7 @@ class YMusicApplication : Application() {
             autoDownload = { settings.flow(AppSettings.autoDownloadUpdates).value },
             autoDownloadFailed = { settings.flow(AppSettings.updateAutoDownloadFailed).value },
             rememberAutoDownloadFailed = { settings.put(AppSettings.updateAutoDownloadFailed, it) },
-            freshConfig = { remoteConfig.awaitFresh(timeoutMs = 3_000L) },
+            freshConfig = { remoteConfig.awaitFresh(timeoutMs = 10_000L) },
             downloadSite = { remoteConfig.config.value.features.downloadPageUrl },
             configUpdates = remoteConfig.appUpdate,
         )
@@ -733,6 +735,7 @@ class YMusicApplication : Application() {
             remoteConfig = shared.remoteConfig.config,
             mediaStore = shared.mediaStore,
             playHistory = PlayHistoryStore(playHistoryAndroidDriver(this)),
+            playTogetherStore = PlayTogetherStore(playTogetherAndroidDriver(this)),
             sponsorBlockStore = SqliteSponsorBlockStore(sponsorBlockAndroidDriver(this)),
             scanLibraryFolder = { onProgress -> scanPickedFolder(shared.mediaStore, onProgress) },
             libraryFolderPicker = { pickAndRegisterFolder(shared.mediaStore) },

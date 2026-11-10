@@ -197,6 +197,8 @@ import io.ymusic.ui.resources.error_supervised_account
 import io.ymusic.ui.resources.ic_sponsor_block
 import io.ymusic.ui.resources.media_engine_unavailable
 import io.ymusic.ui.resources.menu_add_to_playlist
+import io.ymusic.ui.playtogether.LocalPlayTogetherActions
+import io.ymusic.ui.playtogether.TrackResolver
 import io.ymusic.ui.resources.menu_details_comments
 import io.ymusic.ui.resources.menu_go_to_album
 import io.ymusic.ui.resources.menu_go_to_artist
@@ -1489,6 +1491,7 @@ private fun PlayerMoreMenu(coordinator: PlaybackCoordinator) {
     val ytPlaylists = LocalYtPlaylistActions.current
     val shareYoutube = LocalShareYoutube.current
     val snackbar = LocalSnackbar.current
+    val ptActions = LocalPlayTogetherActions.current
     val noVideos = stringResource(Res.string.yt_playlist_queue_empty)
     val scope = rememberCoroutineScope()
     var tracksOpen by remember { mutableStateOf(false) }
@@ -1499,6 +1502,22 @@ private fun PlayerMoreMenu(coordinator: PlaybackCoordinator) {
         ActionIcon(Icons.Default.MoreVert, stringResource(Res.string.cd_more), onClick = { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.width(MoreMenuWidth)) {
             if (video != null) {
+                if (ptActions.isInRoom && TrackResolver.isValidYouTubeId(video.videoId)) {
+                    val feedItem = TrackResolver.fromPlayableItem(video)?.let { coordinator.graph.trackResolver.toFeedItem(it) }
+                    if (feedItem != null) {
+                        if (ptActions.canControl) {
+                            MoreMenuItem(Icons.AutoMirrored.Outlined.QueueMusic, "Queue in Play Together") {
+                                ptActions.queueInRoom(feedItem)
+                                open = false
+                            }
+                        } else if (ptActions.allowRequests || ptActions.isHost) {
+                            MoreMenuItem(Icons.AutoMirrored.Outlined.PlaylistAdd, "Request in Play Together") {
+                                ptActions.requestInRoom(feedItem)
+                                open = false
+                            }
+                        }
+                    }
+                }
                 MoreMenuItem(Icons.Outlined.Info, stringResource(Res.string.menu_details_comments)) {
                     detailsOpen = true
                     open = false

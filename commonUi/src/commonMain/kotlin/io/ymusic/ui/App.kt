@@ -138,7 +138,14 @@ import io.ymusic.ui.resources.section_discover
 import io.ymusic.ui.resources.section_donate
 import io.ymusic.ui.resources.section_downloads
 import io.ymusic.ui.resources.section_feedback
+import io.ymusic.ui.playtogether.LocalPlayTogetherActions
 import io.ymusic.ui.playtogether.PlayTogetherScreen
+import io.ymusic.ui.playtogether.PlayTogetherState
+import io.ymusic.ui.playtogether.PlayTogetherUiActions
+import io.ymusic.ui.playtogether.RoomTab
+import io.ymusic.ui.playtogether.TrackResolver
+import io.ymusic.ui.playtogether.backend.InviteLinkHelper
+import io.ymusic.ui.playtogether.backend.RoomSecurityPolicy
 import io.ymusic.ui.resources.section_play_together
 import io.ymusic.ui.resources.section_library
 import io.ymusic.ui.resources.section_play_again
@@ -725,6 +732,14 @@ private fun AppRoot(
         LaunchedEffect(graph, coordinator) {
             IncomingLinks.links.collect { (url, action) ->
                 val log = graph.logger?.fork("IncomingLink", mapOf("action" to action.name))
+                if (url.startsWith("prvn://", ignoreCase = true) ||
+                    (url.contains("/together", ignoreCase = true) && InviteLinkHelper.parseRoomCode(url) != null)
+                ) {
+                    graph.pip.nowPlayingOpen.value = false
+                    latestOnSection(AppSection.PlayTogether)
+                    graph.playTogether.joinByDeepLink(url)
+                    return@collect
+                }
                 val target = try {
                     graph.engines.resolveLink(url, log)
                 } catch (c: kotlinx.coroutines.CancellationException) {
@@ -805,6 +820,79 @@ private fun AppRoot(
             val needsConsent = target == AppSection.Feedback && graph.captureFeedbackReport != null &&
                 !graph.settings.flow(AppSettings.crashReports).value
             if (needsConsent) askFeedbackConsent = true else onSection(target)
+        }
+        var pendingPtVideoChoice by remember { mutableStateOf<Pair<YtFeedItem, () -> Unit>?>(null) }
+        val ptState by graph.playTogether.state.collectAsState()
+        val playTogetherUiActions = remember(ptState, graph, scope, showSnackbar) {
+            val roomState = ptState as? PlayTogetherState.InRoom
+            if (roomState == null) {
+                PlayTogetherUiActions()
+            } else {
+                val canCtrl = RoomSecurityPolicy.canControlPlayback(roomState.isHost, roomState.controlMode)
+                val addedName = roomState.currentUserName
+                PlayTogetherUiActions(
+                    isInRoom = true,
+                    roomName = roomState.room.name,
+                    isHost = roomState.isHost,
+                    canControl = canCtrl,
+                    allowRequests = roomState.allowListenerRequests,
+                    requestInRoom = { item ->
+                        val track = TrackResolver.fromYtFeedItem(item, addedBy = addedName, validated = true)
+                        graph.playTogether.requestSong(track)
+                        showSnackbar("Requested \"${item.title}\" in ${roomState.room.name}")
+                    },
+                    queueInRoom = { item ->
+                        val track = TrackResolver.fromYtFeedItem(item, addedBy = addedName, validated = true)
+                        graph.playTogether.addToQueue(track)
+                        showSnackbar("Queued \"${item.title}\" in ${roomState.room.name}")
+                    },
+                    playInRoom = { item ->
+                        val track = TrackResolver.fromYtFeedItem(item, addedBy = addedName, validated = true)
+                        graph.playTogether.playNow(track)
+                        showSnackbar("Playing \"${item.title}\" in ${roomState.room.name}")
+                    },
+                    onDirectPlayClick = { item, fallbackLocalPlay ->
+                        if (canCtrl) {
+                            val track = TrackResolver.fromYtFeedItem(item, addedBy = addedName, validated = true)
+                            graph.playTogether.playNow(track)
+                            showSnackbar("Playing \"${item.title}\" in ${roomState.room.name}")
+                        } else {
+                            pendingPtVideoChoice = item to fallbackLocalPlay
+                        }
+                    },
+                )
+            }
+        }
+        pendingPtVideoChoice?.let { (chosenItem, fallbackLocalPlay) ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { pendingPtVideoChoice = null },
+                title = { Text("In Play Together: ${playTogetherUiActions.roomName}") },
+                text = { Text("You're listening in a room. Would you like to request \"${chosenItem.title}\" for everyone, or leave the room to play locally?") },
+                confirmButton = {
+                    if (playTogetherUiActions.allowRequests) {
+                        androidx.compose.material3.TextButton(
+                            onClick = {
+                                pendingPtVideoChoice = null
+                                playTogetherUiActions.requestInRoom(chosenItem)
+                            },
+                        ) { Text("Request Song") }
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.foundation.layout.Row {
+                        androidx.compose.material3.TextButton(onClick = { pendingPtVideoChoice = null }) {
+                            Text("Cancel")
+                        }
+                        androidx.compose.material3.TextButton(
+                            onClick = {
+                                pendingPtVideoChoice = null
+                                graph.playTogether.leaveRoom()
+                                fallbackLocalPlay()
+                            },
+                        ) { Text("Leave & Play") }
+                    }
+                },
+            )
         }
         if (askFeedbackConsent) {
             ReportsOffDialog(
@@ -972,6 +1060,7 @@ private fun AppRoot(
                             *songActions.provided(),
                             LocalCaptchaResolver provides captchaResolver,
                             LocalSignInResolver provides signInResolver,
+                            LocalPlayTogetherActions provides playTogetherUiActions,
                         ) {
                             DefaultDownloadLocationPrompt(graph)
                             Scaffold(
@@ -1207,8 +1296,22 @@ private fun AppRoot(
                                             }
                                             GlassBottomNavigation(
                                                 currentSection = section,
-                                                onNavigate = { openSection(it) },
-                                                onSearchClick = { openMusicSearch() },
+                                                onNavigate = { target ->
+                                                    layers.clear()
+                                                    openSection(target)
+                                                },
+                                                onSearchClick = {
+                                                    if (section == AppSection.PlayTogether && ptState is PlayTogetherState.InRoom && layers.isEmpty()) {
+                                                        graph.playTogether.selectTab(RoomTab.SEARCH_MUSIC)
+                                                    } else if (section == AppSection.Library && graph.mediaStore != null) {
+                                                        openLibrarySearch()
+                                                    } else if (section == AppSection.Discover) {
+                                                        openSearch()
+                                                    } else {
+                                                        openMusicSearch()
+                                                    }
+                                                },
+                                                isSearchActive = layers.lastOrNull() is AppLayer.Search || layers.lastOrNull() is AppLayer.LibrarySearch,
                                                 modifier = Modifier.padding(bottom = 8.dp),
                                             )
                                         }

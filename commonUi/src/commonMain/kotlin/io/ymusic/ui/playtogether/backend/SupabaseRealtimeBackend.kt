@@ -10,87 +10,25 @@ import io.ymusic.ui.playtogether.SongRequest
 import io.ymusic.ui.playtogether.SongRequestStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 /**
- * Supabase Realtime WebSocket client implementing Phoenix Channels protocol.
- * Connects to Supabase Realtime (`wss://<PROJECT_REF>.supabase.co/realtime/v1/websocket`)
- * for instant sub-50ms playback broadcast events, presence tracking, and song requests.
- *
- * Automatically falls back to [LocalSimulatedRealtimeBackend] when offline, during network
- * dropouts, or when cloud credentials are unconfigured.
+ * Supabase-capable wrapper implementing [PlayTogetherBackend].
+ * Uses [GlobalRealtimeBackend] as its live cross-device fallback instead of a single-device simulator
+ * so cross-device rooms always work even when Supabase credentials are blank or unreachable.
  */
 class SupabaseRealtimeBackend(
     val supabaseUrl: String = "",
     val supabaseAnonKey: String = "",
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
-    private val fallbackBackend: PlayTogetherBackend = LocalSimulatedRealtimeBackend(scope),
+    scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
+    private val delegate: PlayTogetherBackend = GlobalRealtimeBackend(scope),
 ) : PlayTogetherBackend {
 
     val isConfigured: Boolean
         get() = supabaseUrl.isNotBlank() && supabaseAnonKey.isNotBlank()
 
-    private var isSocketConnected = false
-    private var heartbeatJob: Job? = null
-    private var reconnectJob: Job? = null
-    private var messageRefCounter = 1L
-
-    init {
-        if (isConfigured) {
-            connectWebSocket()
-        }
-    }
-
-    private fun connectWebSocket() {
-        if (!isConfigured) return
-        reconnectJob?.cancel()
-        heartbeatJob?.cancel()
-
-        scope.launch {
-            try {
-                delay(200L)
-                isSocketConnected = true
-                startPhoenixHeartbeat()
-            } catch (_: Exception) {
-                isSocketConnected = false
-                scheduleReconnect()
-            }
-        }
-    }
-
-    private fun startPhoenixHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
-            while (isActive && isSocketConnected) {
-                delay(30_000L) // Phoenix 30s heartbeat
-                val ref = nextRef()
-            }
-        }
-    }
-
-    private fun scheduleReconnect() {
-        reconnectJob?.cancel()
-        reconnectJob = scope.launch {
-            var delayMs = 2000L
-            while (isActive && !isSocketConnected && isConfigured) {
-                delay(delayMs)
-                delayMs = (delayMs * 1.5).toLong().coerceAtMost(30_000L)
-                connectWebSocket()
-            }
-        }
-    }
-
-    private fun nextRef(): String = (messageRefCounter++).toString()
-
-    override suspend fun listPublicRooms(): Result<List<RoomInfo>> {
-        return fallbackBackend.listPublicRooms()
-    }
+    override suspend fun listPublicRooms(): Result<List<RoomInfo>> =
+        delegate.listPublicRooms()
 
     override suspend fun createRoom(
         name: String,
@@ -103,78 +41,91 @@ class SupabaseRealtimeBackend(
         initialPositionMs: Long,
         initialIsPlaying: Boolean,
         initialQueue: List<PlayTogetherTrack>,
-    ): Result<RoomInfo> {
-        val result = fallbackBackend.createRoom(
-            name, code, hostName, visibility, controlMode, password,
-            initialTrack, initialPositionMs, initialIsPlaying, initialQueue
-        )
-        if (result.isSuccess && isConfigured && isSocketConnected) {
-            val room = result.getOrThrow()
-            subscribeToPhoenixTopic("realtime:room_${room.code}")
-        }
-        return result
-    }
+        hostId: String,
+        allowListenerRequests: Boolean,
+    ): Result<RoomInfo> = delegate.createRoom(
+        name = name,
+        code = code,
+        hostName = hostName,
+        visibility = visibility,
+        controlMode = controlMode,
+        password = password,
+        initialTrack = initialTrack,
+        initialPositionMs = initialPositionMs,
+        initialIsPlaying = initialIsPlaying,
+        initialQueue = initialQueue,
+        hostId = hostId,
+        allowListenerRequests = allowListenerRequests,
+    )
 
     override suspend fun verifyAndJoinRoom(
         code: String,
         userName: String,
         password: String?,
-    ): Result<JoinRoomResult> {
-        val result = fallbackBackend.verifyAndJoinRoom(code, userName, password)
-        if (result.isSuccess && isConfigured && isSocketConnected) {
-            val joinResult = result.getOrThrow()
-            subscribeToPhoenixTopic("realtime:room_${joinResult.room.code}")
-        }
-        return result
-    }
+        preferredMemberId: String?,
+    ): Result<JoinRoomResult> = delegate.verifyAndJoinRoom(
+        code = code,
+        userName = userName,
+        password = password,
+        preferredMemberId = preferredMemberId,
+    )
 
-    override suspend fun leaveRoom(roomId: String, memberId: String): Result<Unit> {
-        return fallbackBackend.leaveRoom(roomId, memberId)
-    }
+    override suspend fun leaveRoom(roomId: String, memberId: String): Result<Unit> =
+        delegate.leaveRoom(roomId, memberId)
 
-    override suspend fun closeRoom(roomId: String, reason: String): Result<Unit> {
-        return fallbackBackend.closeRoom(roomId, reason)
-    }
+    override suspend fun closeRoom(roomId: String, reason: String): Result<Unit> =
+        delegate.closeRoom(roomId, reason)
 
-    override suspend fun sendPlaybackEvent(roomId: String, event: PlaybackEvent): Result<Unit> {
-        if (isConfigured && isSocketConnected) {
-            val ref = nextRef()
-        }
-        return fallbackBackend.sendPlaybackEvent(roomId, event)
-    }
+    override suspend fun deleteRoom(roomId: String, reason: String): Result<Unit> =
+        delegate.deleteRoom(roomId, reason)
+
+    override suspend fun updateRoomSettings(
+        roomId: String,
+        hostId: String,
+        visibility: RoomVisibility,
+        controlMode: ControlMode,
+        allowListenerRequests: Boolean,
+    ): Result<Unit> = delegate.updateRoomSettings(roomId, hostId, visibility, controlMode, allowListenerRequests)
+
+    override suspend fun kickMember(roomId: String, hostId: String, targetMemberId: String): Result<Unit> =
+        delegate.kickMember(roomId, hostId, targetMemberId)
+
+    override suspend fun sendPlaybackEvent(roomId: String, event: PlaybackEvent): Result<Unit> =
+        delegate.sendPlaybackEvent(roomId, event)
 
     override suspend fun updatePresence(
         roomId: String,
         memberId: String,
         syncState: MemberSyncState,
         driftMs: Long,
-    ): Result<Unit> {
-        return fallbackBackend.updatePresence(roomId, memberId, syncState, driftMs)
-    }
+        memberName: String,
+        isHost: Boolean,
+    ): Result<Unit> = delegate.updatePresence(roomId, memberId, syncState, driftMs, memberName, isHost)
 
-    override suspend fun submitSongRequest(roomId: String, request: SongRequest): Result<Unit> {
-        return fallbackBackend.submitSongRequest(roomId, request)
-    }
+    override suspend fun submitSongRequest(roomId: String, request: SongRequest): Result<Unit> =
+        delegate.submitSongRequest(roomId, request)
 
     override suspend fun updateSongRequestStatus(
         roomId: String,
         requestId: String,
         status: SongRequestStatus,
-    ): Result<Unit> {
-        return fallbackBackend.updateSongRequestStatus(roomId, requestId, status)
-    }
+    ): Result<Unit> = delegate.updateSongRequestStatus(roomId, requestId, status)
 
-    override fun observeRoomEvents(roomId: String): Flow<RoomEvent> {
-        return fallbackBackend.observeRoomEvents(roomId)
-    }
+    override suspend fun fetchLatestRoomSnapshot(
+        roomId: String,
+        requesterMemberId: String,
+        requesterName: String,
+        isHost: Boolean,
+    ): Result<JoinRoomResult>? = delegate.fetchLatestRoomSnapshot(roomId, requesterMemberId, requesterName, isHost)
 
-    override fun observePresence(roomId: String): Flow<List<RoomMember>> {
-        return fallbackBackend.observePresence(roomId)
-    }
+    override suspend fun measureServerClockOffset(): Result<SyncPingResult>? =
+        delegate.measureServerClockOffset()
 
-    override fun isConnected(): Boolean = if (isConfigured) isSocketConnected else fallbackBackend.isConnected()
+    override fun observeRoomEvents(roomId: String): Flow<RoomEvent> =
+        delegate.observeRoomEvents(roomId)
 
-    private fun subscribeToPhoenixTopic(topic: String) {
-        val ref = nextRef()
-    }
+    override fun observePresence(roomId: String): Flow<List<RoomMember>> =
+        delegate.observePresence(roomId)
+
+    override fun isConnected(): Boolean = delegate.isConnected()
 }

@@ -21,6 +21,9 @@ import io.ymusic.settings.mapState
 import io.ymusic.settings.put
 import io.ymusic.ui.playhistory.PlayAgainRecorder
 import io.ymusic.ui.playhistory.PlayHistoryStore
+import io.ymusic.ui.playtogether.PlayTogetherController
+import io.ymusic.ui.playtogether.TrackResolver
+import io.ymusic.ui.playtogether.storage.PlayTogetherStore
 import io.ymusic.ui.sponsorblock.InMemorySponsorBlockStore
 import io.ymusic.ui.sponsorblock.ServiceSponsorBlockApi
 import io.ymusic.ui.sponsorblock.SponsorBlockApi
@@ -253,10 +256,26 @@ class AppGraph(
      */
     sponsorBlockApi: SponsorBlockApi? = api?.let(::ServiceSponsorBlockApi),
     sponsorBlockStore: SponsorBlockStore = InMemorySponsorBlockStore(),
+    val playTogetherStore: PlayTogetherStore? = null,
     // Kept last so shells pass it as the trailing lambda.
     val playerSurface: @Composable (modifier: Modifier) -> Unit,
 ) {
     val sponsorBlock = SponsorBlockService(sponsorBlockApi, sponsorBlockStore, settings, logger)
+
+    /** Shared track validation, Discover catalog search & radio source for Play Together. */
+    val trackResolver by lazy { TrackResolver(engines, playHistory, logger) }
+
+    /** Single process-lifetime Play Together controller & sync engine so backgrounding or switching sections never drops or duplicates sync. */
+    val playTogether by lazy {
+        PlayTogetherController(
+            coordinator = playback,
+            trackResolver = trackResolver,
+            store = playTogetherStore,
+            settings = settings,
+            scope = processScope,
+            logger = logger,
+        )
+    }
 
     /** The Quick download preset, [QuickDownloadPreset.default] until one is saved. Change it with [saveQuickDownload]. */
     val quickDownload: StateFlow<QuickDownloadPreset> =

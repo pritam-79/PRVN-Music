@@ -8,344 +8,399 @@ import io.ymusic.settings.AppSettings
 import io.ymusic.settings.SettingsStore
 import io.ymusic.settings.flow
 import io.ymusic.ui.PlaybackCoordinator
-import io.ymusic.ui.playtogether.backend.PlaybackEvent
-import io.ymusic.ui.playtogether.backend.PlaybackEventType
-import io.ymusic.ui.playtogether.backend.RoomEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.time.Clock
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
+
+data class SyncTelemetry(
+    val trackId: String? = null,
+    val localPositionMs: Long = 0L,
+    val expectedPositionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val driftMs: Long = 0L,
+    val isPrepared: Boolean = false,
+    val isBuffering: Boolean = false,
+    val isPlayingLocally: Boolean = false,
+    val isActuallySynced: Boolean = false,
+    val playerError: String? = null,
+)
+
+interface PlayTogetherSyncCallbacks {
+    fun currentRoomSnapshot(): PlayTogetherState.InRoom?
+    fun onTelemetryUpdate(telemetry: SyncTelemetry)
+    fun onTrackEnded(finishedTrackId: String)
+    fun onHostTransportPlayPause(isPlaying: Boolean, positionMs: Long)
+    fun onHostTransportSeek(positionMs: Long)
+    fun onHostPlayedNewTrack(track: PlayTogetherTrack, positionMs: Long, isPlaying: Boolean)
+}
 
 /**
- * Real-time synchronization engine bridging [PlayTogetherController] and the native audio [Player].
+ * Single authoritative bridge between [PlayTogetherController] and the app's single [Player].
  *
- * Enforces:
- * 1. Synchronized play/pause, seek, track changes, and queue advancement.
- * 2. YouTube streaming only: local offline files are strictly barred from Play Together rooms to prevent
- *    desynchronization across differing client devices.
- * 3. Latency and clock drift compensation: checks playback drift against [AppSettings.playTogetherSyncDriftMs]
- *    (default 500ms). When drift is within tolerance, audio plays uninterrupted without stutter.
- * 4. Mid-song catch-up on room join: calculates elapsed time and initiates playback at the precise current head.
- * 5. Network disconnection recovery and auto-resync.
+ * Guarantees:
+ * - Zero duplicate audio engines (drives [PlaybackCoordinator.player] exclusively).
+ * - Monotonic-clock playback anchor preventing cross-device wall-clock skew desync.
+ * - Buffering-aware, cooldown-guarded drift correction without audio stuttering.
+ * - Loop-free bidirectional sync when Host uses MiniPlayer, NowPlaying, Notification, or Discover.
+ * - Honest sync telemetry (never reports fake synced status when idle, preparing, buffering, or errored).
  */
 class PlayTogetherSyncEngine(
     private val coordinator: PlaybackCoordinator,
-    private val controller: PlayTogetherController,
+    private val trackResolver: TrackResolver,
     private val settings: SettingsStore,
+    private val callbacks: PlayTogetherSyncCallbacks,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) {
     private val player: Player get() = coordinator.player
 
-    private var roomEventsJob: Job? = null
-    private var driftMonitorJob: Job? = null
-    private var playerStatusJob: Job? = null
-    private var stateObserverJob: Job? = null
-    private var currentActiveRoomId: String? = null
-    private var lastPlaybackEventTimestamp: Long = 0L
-    private var lastSeekTimestampMs: Long = 0L
+    private var statusObserverJob: Job? = null
+    private var driftLoopJob: Job? = null
+    private var seekDebounceJob: Job? = null
+    private var attachedRoomId: String? = null
+
+    private var applyingRemoteUntilMs: Long = 0L
+    private var lastSeekCorrectionMs: Long = 0L
+    private var lastReportedEndedKey: String? = null
+    private var lastObservedPlayWhenReady: Boolean? = null
+    private var lastObservedVideoId: String? = null
+    private var lastProgressSamplePosMs: Long = 0L
+    private var lastProgressSampleAtMs: Long = 0L
+
+    // Monotonic clock anchor for rock-solid drift estimation independent of timezone/wall-clock skew
+    private var anchorTrackId: String? = null
+    private var anchorBasePositionMs: Long = 0L
+    private var anchorIsPlaying: Boolean = false
+    private var anchorMarkedAt: TimeMark = TimeSource.Monotonic.markNow()
+
+    private val syncToleranceMs: Long
+        get() = settings.flow(AppSettings.playTogetherSyncDriftMs).value.toLong().coerceAtLeast(250L)
+
+    fun attachRoom(roomId: String, initialTrack: PlayTogetherTrack?, initialPosMs: Long, isPlaying: Boolean) {
+        if (attachedRoomId != roomId) {
+            attachedRoomId = roomId
+            lastReportedEndedKey = null
+            lastSeekCorrectionMs = 0L
+            startObservers()
+        }
+        updateMonotonicAnchor(initialTrack?.id, initialPosMs, isPlaying)
+        if (initialTrack != null) {
+            val currentItem = player.queue.value.currentItem as? PlayableItem.YtMedia
+            val alreadyLoadedSame = currentItem?.videoId == initialTrack.id
+            // Host creating room from currently playing music keeps playing smoothly without reset glitch!
+            if (alreadyLoadedSame) {
+                val st = player.status.value
+                lastObservedVideoId = initialTrack.id
+                lastObservedPlayWhenReady = st.playWhenReady
+                updateMonotonicAnchor(initialTrack.id, player.progress.value.positionMs, st.playWhenReady)
+                emitTelemetryNow()
+            } else {
+                applyAuthoritativePlayback(
+                    track = initialTrack,
+                    targetPositionMs = initialPosMs,
+                    playWhenReady = isPlaying,
+                    forceSeek = true,
+                )
+            }
+        } else {
+            emitTelemetryNow()
+        }
+    }
+
+    fun detachRoom() {
+        attachedRoomId = null
+        statusObserverJob?.cancel()
+        statusObserverJob = null
+        driftLoopJob?.cancel()
+        driftLoopJob = null
+        seekDebounceJob?.cancel()
+        seekDebounceJob = null
+        lastReportedEndedKey = null
+        lastObservedPlayWhenReady = null
+        lastObservedVideoId = null
+        anchorTrackId = null
+    }
+
+    /** Update expected room timeline anchor whenever authoritative state changes. */
+    fun updateMonotonicAnchor(trackId: String?, basePositionMs: Long, isPlaying: Boolean) {
+        anchorTrackId = trackId
+        anchorBasePositionMs = basePositionMs.coerceAtLeast(0L)
+        anchorIsPlaying = isPlaying
+        anchorMarkedAt = TimeSource.Monotonic.markNow()
+    }
+
+    fun expectedPositionMs(durationLimitMs: Long = 0L): Long {
+        if (anchorTrackId == null) return 0L
+        val elapsed = if (anchorIsPlaying) anchorMarkedAt.elapsedNow().inWholeMilliseconds.coerceAtLeast(0L) else 0L
+        val raw = (anchorBasePositionMs + elapsed).coerceAtLeast(0L)
+        return if (durationLimitMs > 0L) raw.coerceIn(0L, durationLimitMs) else raw
+    }
 
     /**
-     * Configured drift tolerance in milliseconds from AppSettings (250ms, 500ms, 750ms, 1000ms).
+     * Applies authoritative track/play/pause/seek directly to [Player] without firing host bounce-back loops.
      */
-    private val syncDriftToleranceMs: Long
-        get() = settings.flow(AppSettings.playTogetherSyncDriftMs).value.toLong()
+    fun applyAuthoritativePlayback(
+        track: PlayTogetherTrack?,
+        targetPositionMs: Long,
+        playWhenReady: Boolean,
+        forceSeek: Boolean = false,
+    ) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        applyingRemoteUntilMs = now + 700L
 
-    init {
-        startStateObserver()
-    }
-
-    private fun startStateObserver() {
-        stateObserverJob?.cancel()
-        stateObserverJob = scope.launch {
-            controller.state.collectLatest { state ->
-                when (state) {
-                    is PlayTogetherState.InRoom -> {
-                        if (currentActiveRoomId != state.room.id) {
-                            currentActiveRoomId = state.room.id
-                            attachToActiveRoom(state)
-                        }
-                    }
-                    is PlayTogetherState.Lobby -> {
-                        if (currentActiveRoomId != null) {
-                            currentActiveRoomId = null
-                            detachFromRoom()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun attachToActiveRoom(roomState: PlayTogetherState.InRoom) {
-        roomEventsJob?.cancel()
-        driftMonitorJob?.cancel()
-
-        // Sync initial track and position on join
-        roomState.currentTrack?.let { track ->
-            if (validateTrack(track)) {
-                syncToTrack(track, roomState.positionMs, roomState.isPlaying)
-            }
-        }
-
-        // 1. Observe incoming peer events from backend
-        val roomId = roomState.room.id
-        roomEventsJob = scope.launch {
-            controller.backend.observeRoomEvents(roomId).collect { event ->
-                val current = controller.state.value
-                if (current is PlayTogetherState.InRoom && current.room.id == roomId) {
-                    handleRoomEvent(event, current)
-                }
-            }
-        }
-
-        // 2. Start continuous drift monitor
-        driftMonitorJob = scope.launch {
-            while (isActive) {
-                delay(2000L)
-                val current = controller.state.value
-                if (current is PlayTogetherState.InRoom && current.isPlaying && current.currentTrack != null) {
-                    checkAndCompensateDrift(current)
-                }
-            }
-        }
-
-        // 3. Observe local player completion for automatic continuous transition
-        playerStatusJob?.cancel()
-        playerStatusJob = scope.launch {
-            player.status.collect { status ->
-                val s = status.state
-                if (s is PlaybackState.Prepared && s.ended) {
-                    val current = controller.state.value
-                    if (current is PlayTogetherState.InRoom && (current.isHost || current.controlMode == ControlMode.COLLABORATIVE)) {
-                        controller.onTrackEnded()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun detachFromRoom() {
-        roomEventsJob?.cancel()
-        roomEventsJob = null
-        driftMonitorJob?.cancel()
-        driftMonitorJob = null
-        playerStatusJob?.cancel()
-        playerStatusJob = null
-        lastPlaybackEventTimestamp = 0L
-    }
-
-    private fun handleRoomEvent(event: RoomEvent, roomState: PlayTogetherState.InRoom) {
-        when (event) {
-            is RoomEvent.PlaybackUpdated -> {
-                if (event.timestampUtc < lastPlaybackEventTimestamp) return
-                lastPlaybackEventTimestamp = event.timestampUtc
-
-                // If event originated from peer, apply to local player
-                if (event.senderId != roomState.currentMemberId) {
-                    val targetTrack = event.track ?: roomState.currentTrack
-                    if (targetTrack != null && validateTrack(targetTrack)) {
-                        val currentYtId = (player.queue.value.currentItem as? PlayableItem.YtMedia)?.videoId
-                        if (currentYtId != targetTrack.id) {
-                            syncToTrack(targetTrack, event.positionMs, event.isPlaying)
-                        } else {
-                            val state = player.status.value.state
-                            val isPrepared = state is PlaybackState.Prepared
-                            val isBuffering = isPrepared && state.buffering
-
-                            if (event.isPlaying && (state !is PlaybackState.Prepared || !state.playWhenReady)) {
-                                player.play()
-                            } else if (!event.isPlaying && isPrepared && state.playWhenReady) {
-                                player.pause()
-                            }
-
-                            if (isPrepared && !isBuffering && !roomState.isHost) {
-                                val elapsed = (Clock.System.now().toEpochMilliseconds() - event.timestampUtc).coerceAtLeast(0L)
-                                val expectedPos = event.positionMs + if (event.isPlaying) elapsed else 0L
-                                val localPos = player.progress.value.positionMs
-                                val drift = abs(localPos - expectedPos)
-                                val now = Clock.System.now().toEpochMilliseconds()
-
-                                val effectiveTolerance = maxOf(syncDriftToleranceMs, 2000L)
-                                if (drift > effectiveTolerance && (now - lastSeekTimestampMs > 5000L)) {
-                                    lastSeekTimestampMs = now
-                                    player.seekTo(expectedPos)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            is RoomEvent.QueueChanged -> {
-                // Shared queue updated
-            }
-            is RoomEvent.MemberPresenceChanged, is RoomEvent.MemberJoined, is RoomEvent.MemberLeft -> {
-                // Presence updates
-            }
-            is RoomEvent.SongRequestsChanged -> {
-                // Song requests updated
-            }
-            is RoomEvent.RoomClosed -> {
-                player.pause()
-                detachFromRoom()
-            }
-            is RoomEvent.Error -> Unit
-        }
-    }
-
-    private fun checkAndCompensateDrift(current: PlayTogetherState.InRoom) {
-        // Authoritative Host is the time source; never seek host for drift
-        if (current.isHost) {
-            controller.updateLocalDrift(0L)
+        if (track == null) {
+            updateMonotonicAnchor(null, 0L, false)
+            player.pause()
+            lastObservedPlayWhenReady = false
+            emitTelemetryNow()
             return
         }
-        val state = player.status.value.state
-        // Critical: Never seek while player is preparing or actively buffering stream chunks
-        if (state !is PlaybackState.Prepared || state.buffering) return
-        val trackId = current.currentTrack?.id ?: return
-        if (!isCurrentTrack(trackId)) return
 
-        val localPos = player.progress.value.positionMs
-        val expectedPos = current.positionMs
-        val drift = abs(localPos - expectedPos)
-
-        // Update measured drift in controller for UI badge and presence reporting
-        controller.updateLocalDrift(drift)
-
-        val now = Clock.System.now().toEpochMilliseconds()
-        val effectiveTolerance = maxOf(syncDriftToleranceMs, 2000L)
-        // Apply controlled seek only when drift exceeds tolerance and seek cooldown (5s) has elapsed
-        if (drift > effectiveTolerance && (now - lastSeekTimestampMs > 5000L)) {
-            lastSeekTimestampMs = now
-            player.seekTo(expectedPos)
+        if (!TrackResolver.isValidYouTubeId(track.id) || TrackResolver.isLocalTrackId(track.id)) {
+            emitTelemetryNow()
+            return
         }
-    }
 
-    /**
-     * Loads and starts playing a synchronized YouTube track at the designated head position.
-     */
-    fun syncToTrack(track: PlayTogetherTrack, startPositionMs: Long, playWhenReady: Boolean) {
-        if (!validateTrack(track)) return
+        updateMonotonicAnchor(track.id, targetPositionMs, playWhenReady)
 
         val currentItem = player.queue.value.currentItem as? PlayableItem.YtMedia
-        if (currentItem?.videoId == track.id) {
-            val state = player.status.value.state
+        val status = player.status.value
+        val state = status.state
+
+        if (currentItem?.videoId != track.id) {
+            lastReportedEndedKey = null
+            lastObservedVideoId = track.id
+            lastObservedPlayWhenReady = playWhenReady
+            lastProgressSamplePosMs = targetPositionMs
+            lastProgressSampleAtMs = now
+
+            player.setQueue(
+                items = listOf(trackResolver.toPlayableMedia(track)),
+                playIndex = 0,
+                startPositionMs = targetPositionMs.coerceAtLeast(0L),
+                playWhenReady = playWhenReady,
+                origin = QueueOrigin.Single,
+            )
+        } else {
+            lastObservedVideoId = track.id
             val isPrepared = state is PlaybackState.Prepared
             val isBuffering = isPrepared && state.buffering
 
-            if (isPrepared && !isBuffering) {
-                val drift = abs(player.progress.value.positionMs - startPositionMs)
-                val now = Clock.System.now().toEpochMilliseconds()
-                if (drift > syncDriftToleranceMs && (now - lastSeekTimestampMs > 4000L)) {
-                    lastSeekTimestampMs = now
-                    player.seekTo(startPositionMs)
-                }
+            if (forceSeek || (isPrepared && !isBuffering && abs(player.progress.value.positionMs - targetPositionMs) > maxOf(syncToleranceMs, 1000L))) {
+                lastSeekCorrectionMs = now
+                lastProgressSamplePosMs = targetPositionMs
+                lastProgressSampleAtMs = now
+                player.seekTo(targetPositionMs.coerceAtLeast(0L))
             }
-            if (playWhenReady && (state !is PlaybackState.Prepared || !state.playWhenReady)) {
+
+            if (playWhenReady && !status.playWhenReady) {
+                lastObservedPlayWhenReady = true
                 player.play()
-            } else if (!playWhenReady && state is PlaybackState.Prepared && state.playWhenReady) {
+            } else if (!playWhenReady && status.playWhenReady) {
+                lastObservedPlayWhenReady = false
                 player.pause()
             }
-            return
         }
+        emitTelemetryNow()
+    }
 
-        val ytMedia = PlayableItem.YtMedia(
-            videoId = track.id,
-            title = track.title,
-            artist = track.artist,
-            thumbnailUrl = track.artworkUrl,
-            durationMs = track.durationMs,
+    fun forceResyncToRoomHead() {
+        val room = callbacks.currentRoomSnapshot() ?: return
+        val track = room.currentTrack ?: return
+        val expected = expectedPositionMs(track.durationMs)
+        applyAuthoritativePlayback(
+            track = track,
+            targetPositionMs = expected,
+            playWhenReady = room.isPlaying,
+            forceSeek = true,
         )
-
-        player.setQueue(
-            items = listOf(ytMedia),
-            playIndex = 0,
-            startPositionMs = startPositionMs,
-            playWhenReady = playWhenReady,
-            origin = QueueOrigin.Single,
-        )
-    }
-
-    fun play() {
-        player.play()
-    }
-
-    fun pause() {
-        player.pause()
-    }
-
-    fun seekTo(positionMs: Long) {
-        player.seekTo(positionMs)
-    }
-
-    fun isPlayerPlaying(): Boolean {
-        val state = player.status.value.state
-        return state is PlaybackState.Prepared && state.playWhenReady && !state.buffering && !state.ended
     }
 
     fun isPlayerBuffering(): Boolean {
-        val state = player.status.value.state
-        return (state is PlaybackState.Prepared && state.buffering)
+        val s = player.status.value.state
+        return s is PlaybackState.Prepared && s.buffering
     }
 
-    fun getPlayerPositionMs(): Long {
-        return player.progress.value.positionMs
-    }
+    fun currentPlayerPositionMs(): Long = player.progress.value.positionMs
 
-    fun getPlayerDurationMs(): Long {
-        return player.progress.value.durationMs
-    }
+    fun currentPlayerDurationMs(): Long = player.progress.value.durationMs
 
-    fun getPlayerError(): String? {
-        val err = player.status.value.error
-        return err?.message
-    }
+    private fun startObservers() {
+        statusObserverJob?.cancel()
+        driftLoopJob?.cancel()
 
-    fun isPlayerEnded(): Boolean {
-        val state = player.status.value.state
-        return state is PlaybackState.Prepared && state.ended
-    }
+        statusObserverJob = scope.launch {
+            combine(player.status, player.queue) { status, queue -> status to queue }
+                .collect { (status, queue) ->
+                    val room = callbacks.currentRoomSnapshot() ?: return@collect
+                    val state = status.state
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    val isApplyingRemote = now <= applyingRemoteUntilMs
+                    val canControl = room.isHost || room.controlMode == ControlMode.COLLABORATIVE
 
-    fun isCurrentTrack(trackId: String): Boolean {
-        val item = player.queue.value.currentItem as? PlayableItem.YtMedia
-        return item?.videoId == trackId
-    }
+                    // 1. Track ended detection (triggers host/collaborative next song or auto-radio)
+                    val endedTrackId = (queue.currentItem as? PlayableItem.YtMedia)?.videoId
+                    if (state is PlaybackState.Prepared && state.ended && endedTrackId != null) {
+                        val endKey = "${room.room.id}_$endedTrackId"
+                        if (lastReportedEndedKey != endKey && endedTrackId == room.currentTrack?.id) {
+                            lastReportedEndedKey = endKey
+                            if (canControl) {
+                                callbacks.onTrackEnded(endedTrackId)
+                            }
+                        }
+                    } else if (state is PlaybackState.Prepared && !state.ended) {
+                        lastReportedEndedKey = null
+                    }
 
-    /**
-     * Strictly verifies that a track is an accessible online YouTube stream.
-     * Rejects local files and offline downloads from being shared in Play Together.
-     */
-    fun validateTrack(track: PlayTogetherTrack): Boolean {
-        val isLocal = !track.isYouTube ||
-            track.id.startsWith("file://") ||
-            track.id.startsWith("local_") ||
-            track.id.startsWith("/") ||
-            track.id.contains("content://")
-        return !isLocal
-    }
+                    // 2. Listener buffer-ready immediate catch-up (only on remote room playback)
+                    if (!room.isHost && !isApplyingRemote && state is PlaybackState.Prepared && !state.buffering && room.isPlaying) {
+                        val expected = expectedPositionMs(room.currentTrack?.durationMs ?: 0L)
+                        val localPos = player.progress.value.positionMs
+                        val drift = abs(localPos - expected)
+                        if (endedTrackId == room.currentTrack?.id && drift > maxOf(syncToleranceMs, 1500L) && (now - lastSeekCorrectionMs > 3000L)) {
+                            lastSeekCorrectionMs = now
+                            applyingRemoteUntilMs = now + 450L
+                            player.seekTo(expected)
+                        }
+                    }
 
-    /**
-     * Public validation helper with detailed error messaging for the UI.
-     */
-    fun validateTrackForRoom(track: PlayTogetherTrack): Result<Unit> {
-        return if (validateTrack(track)) {
-            Result.success(Unit)
-        } else {
-            Result.failure(
-                IllegalArgumentException(
-                    "Local files cannot be shared in Play Together. Only online YouTube streams accessible to all listeners can be synchronized."
-                )
-            )
+                    // 3. Detect local user interactions from MiniPlayer / NowPlaying / Lockscreen / Discover
+                    val curYt = queue.currentItem as? PlayableItem.YtMedia
+                    if (!isApplyingRemote && canControl) {
+                        if (curYt != null && curYt.videoId != lastObservedVideoId && curYt.videoId != room.currentTrack?.id) {
+                            lastObservedVideoId = curYt.videoId
+                            lastObservedPlayWhenReady = status.playWhenReady
+                            val track = TrackResolver.fromPlayableItem(curYt, addedBy = room.currentUserName)
+                            if (track != null) {
+                                val pos = player.progress.value.positionMs
+                                updateMonotonicAnchor(track.id, pos, status.playWhenReady)
+                                callbacks.onHostPlayedNewTrack(track, pos, status.playWhenReady)
+                            }
+                        } else if (room.currentTrack != null && curYt?.videoId == room.currentTrack.id) {
+                            val prevIntent = lastObservedPlayWhenReady
+                            if (prevIntent != null && prevIntent != status.playWhenReady) {
+                                lastObservedPlayWhenReady = status.playWhenReady
+                                val pos = player.progress.value.positionMs
+                                updateMonotonicAnchor(room.currentTrack.id, pos, status.playWhenReady)
+                                callbacks.onHostTransportPlayPause(status.playWhenReady, pos)
+                            }
+                        }
+                    } else if (curYt != null) {
+                        lastObservedVideoId = curYt.videoId
+                        lastObservedPlayWhenReady = status.playWhenReady
+                    }
+
+                    emitTelemetryNow()
+                }
+        }
+
+        driftLoopJob = scope.launch {
+            while (isActive) {
+                delay(1000L)
+                val room = callbacks.currentRoomSnapshot() ?: continue
+                val now = Clock.System.now().toEpochMilliseconds()
+                val curYt = player.queue.value.currentItem as? PlayableItem.YtMedia
+                val state = player.status.value.state
+                val isPrepared = state is PlaybackState.Prepared
+                val isBuffering = isPrepared && state.buffering
+                val localPos = player.progress.value.positionMs
+
+                // Detect manual seek jumps on Host / Collaborative controllers from NowPlaying / Notification slider
+                val canControl = room.isHost || room.controlMode == ControlMode.COLLABORATIVE
+                if (canControl && curYt?.videoId == room.currentTrack?.id && isPrepared && !isBuffering && now > applyingRemoteUntilMs) {
+                    val elapsedSinceSample = (now - lastProgressSampleAtMs).coerceAtLeast(0L)
+                    if (lastProgressSampleAtMs > 0L && elapsedSinceSample < 4000L) {
+                        val expectedNatural = if (player.status.value.playWhenReady) {
+                            lastProgressSamplePosMs + elapsedSinceSample
+                        } else {
+                            lastProgressSamplePosMs
+                        }
+                        if (abs(localPos - expectedNatural) > 1800L) {
+                            scheduleDebouncedHostSeek(localPos, player.status.value.playWhenReady)
+                        }
+                    }
+                    lastProgressSamplePosMs = localPos
+                    lastProgressSampleAtMs = now
+                } else {
+                    lastProgressSamplePosMs = localPos
+                    lastProgressSampleAtMs = now
+                }
+
+                // Controlled seek correction for non-host listeners when playback is ready
+                if (!room.isHost && room.isPlaying && room.currentTrack != null && curYt?.videoId == room.currentTrack.id) {
+                    if (isPrepared && !isBuffering && now > applyingRemoteUntilMs) {
+                        val expected = expectedPositionMs(room.currentTrack.durationMs)
+                        val drift = abs(localPos - expected)
+                        val effectiveTolerance = maxOf(syncToleranceMs, 1500L)
+                        if (drift > effectiveTolerance && (now - lastSeekCorrectionMs > 4500L)) {
+                            lastSeekCorrectionMs = now
+                            applyingRemoteUntilMs = now + 500L
+                            player.seekTo(expected)
+                        }
+                    }
+                }
+
+                emitTelemetryNow()
+            }
         }
     }
 
-    fun release() {
-        stateObserverJob?.cancel()
-        detachFromRoom()
+    private fun scheduleDebouncedHostSeek(positionMs: Long, isPlaying: Boolean) {
+        seekDebounceJob?.cancel()
+        seekDebounceJob = scope.launch {
+            delay(250L)
+            val room = callbacks.currentRoomSnapshot() ?: return@launch
+            if (room.currentTrack == null) return@launch
+            val curPos = player.progress.value.positionMs
+            updateMonotonicAnchor(room.currentTrack.id, curPos, isPlaying)
+            callbacks.onHostTransportSeek(curPos)
+        }
+    }
+
+    private fun emitTelemetryNow() {
+        val room = callbacks.currentRoomSnapshot() ?: return
+        val status = player.status.value
+        val state = status.state
+        val progress = player.progress.value
+        val curYt = player.queue.value.currentItem as? PlayableItem.YtMedia
+        val isPrepared = state is PlaybackState.Prepared
+        val isBuffering = (isPrepared && state.buffering) || (state is PlaybackState.Uninitialized && state.isInitializing)
+        val errMsg = status.error?.message
+        val roomTrack = room.currentTrack
+
+        val duration = progress.durationMs.takeIf { it > 0L } ?: roomTrack?.durationMs ?: 0L
+        val expected = if (roomTrack != null) expectedPositionMs(duration) else 0L
+        val localPos = progress.positionMs
+        val drift = if (room.isHost || roomTrack == null) 0L else abs(localPos - expected)
+
+        val sameTrack = roomTrack == null || curYt?.videoId == roomTrack.id
+        val tolerance = maxOf(syncToleranceMs, 1800L)
+        val synced = room.connectionState == PlaybackConnectionState.CONNECTED &&
+            errMsg == null &&
+            sameTrack &&
+            !isBuffering &&
+            (roomTrack == null || (isPrepared && (room.isHost || !room.isPlaying || drift <= tolerance)))
+
+        callbacks.onTelemetryUpdate(
+            SyncTelemetry(
+                trackId = curYt?.videoId,
+                localPositionMs = localPos,
+                expectedPositionMs = expected,
+                durationMs = duration,
+                driftMs = drift,
+                isPrepared = isPrepared,
+                isBuffering = isBuffering,
+                isPlayingLocally = status.playWhenReady && isPrepared,
+                isActuallySynced = synced,
+                playerError = errMsg,
+            ),
+        )
     }
 }
