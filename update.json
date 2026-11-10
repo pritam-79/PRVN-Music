@@ -1,8 +1,10 @@
 {
-  "versionName": "0.0.10",
-  "versionCode": 13,
+  "versionName": "0.11",
+  "versionCode": 14,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.0.10/PRVN-Music-0.0.10-arm64-v8a-release.apk",
-  "releaseNotes": "PRVN Music v0.0.10 (Build 13): Critical Crash Fix & Stability Release. Resolved app force close when opening or playing songs caused by missing JNI @JvmStatic on setPreamp; wrapped native audio DSP and video surface interfaces in fail-safe try-catch handlers; eliminated potential divide-by-zero edge cases during early audio buffer feeds; guaranteed smooth crash-free playback across all tracks and Listen Together sessions.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.11/PRVN-Music-0.11-arm64-v8a-release.apk",
+  "size": 9948136,
+  "sha256": "a24b28a9e6c838c10bec912609010b3d1842ca6b09771f263bd9731b71f2f7c6",
+  "releaseNotes": "PRVN Music v0.11 (Build 14): Complete Play Together Rebuild & Music Engine Integration. Play Together now runs on PRVN Music's unified Discover & YT Music pipeline and single Player engine; real-time song requests (Pending, Accepted, Added to Queue, Played, Rejected, Cancelled) with host Accept/Reject/Queue notifications; SQLite persistence across reconnects; monotonic sequence sync engine with RTT latency compensation and accurate sync status; prvn:// invite deep linking; shared queue management; host room controls; updater cache hardening.",
   "forceUpdate": false
 }
