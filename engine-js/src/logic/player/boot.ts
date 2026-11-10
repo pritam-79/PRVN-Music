@@ -612,7 +612,9 @@ function baseJsHead(res: HttpResponse): string {
 
 async function fetchPlayerConfig(): Promise<Record<string, unknown>> {
   return callMain("get_player_config", async (pipe) => {
-    const w = pipe.sink.writeObjectAsJson(freshPlayerConfig ? { "maxAge": 0 } : {});
+    const w = pipe.sink.writeObjectAsJson(
+      freshPlayerConfig ? { "maxAge": 0, "invalidate": true } : {},
+    );
     if (w) await w;
     const c = pipe.sink.close();
     if (c) await c;

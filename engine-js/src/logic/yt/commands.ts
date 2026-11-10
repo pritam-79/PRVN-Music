@@ -11,6 +11,7 @@ import { setPlaylistOrder } from "./playlistEdit";
 import { trendingMusicPage } from "./charts";
 import { applyLocaleCookie, invalidateAppLanguage, pulledAppLanguage } from "./cookies";
 import {
+  clearCachedPlayerConfig,
   consumeScrapedHomeData,
   effectiveLocale,
   getSession,
@@ -95,8 +96,18 @@ onAccept(
       typeof args["maxAge"] === "number" && args["maxAge"] >= 0
         ? (args["maxAge"] as number)
         : PLAYER_CONFIG_MAX_AGE_MS;
-    await getSession(maxAge);
-    const cfg = await peekPlayerConfig();
+    const forceFresh = args["invalidate"] === true || maxAge === 0;
+    if (forceFresh) {
+      await clearCachedPlayerConfig();
+    }
+    await getSession(maxAge, !forceFresh);
+    let cfg = await peekPlayerConfig(forceFresh ? PLAYER_CONFIG_MAX_AGE_MS : maxAge);
+    if (cfg == null && !forceFresh) {
+      // Cached session predated player-config TTL or diverged in visitorData: re-scrape once.
+      await clearCachedPlayerConfig();
+      await getSession(0, true);
+      cfg = await peekPlayerConfig(PLAYER_CONFIG_MAX_AGE_MS);
+    }
     if (cfg == null) throw JsEngineErrorImpl.parse("yt session: no player config in homepage");
     const p = out.writeObjectAsJson(cfg);
     if (p) await p;

@@ -712,15 +712,13 @@ private fun PlaybackNotificationStatusRow() {
 private fun UpdatesCheckRow(graph: AppGraph) {
     val uriHandler = LocalUriHandler.current
     var checking by remember { mutableStateOf(false) }
-    var updateRecheck by remember { mutableStateOf(0) }
 
     if (checking) {
         CheckUpdateDialog(graph) { found ->
             checking = false
-            if (found) updateRecheck++
+            if (found) graph.requestUpdatePrompt()
         }
     }
-    UpdateDialog(graph, recheck = updateRecheck)
 
     Row(
         Modifier

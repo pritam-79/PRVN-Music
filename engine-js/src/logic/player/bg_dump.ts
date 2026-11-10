@@ -224,6 +224,8 @@ export function recordBotguardMint(id: Uint8Array, token: unknown): void {
   const pipe = ensureDump();
   if (!pipe) return;
   const idStr = new TextDecoder().decode(id);
+  const potLen =
+    typeof token === "string" ? token.length : token instanceof Uint8Array ? token.length : 0;
   writeChain = writeChain
     .then(function () {
       return wait(pipe.sink.writeUtf8('mint {"id":'));
@@ -232,20 +234,7 @@ export function recordBotguardMint(id: Uint8Array, token: unknown): void {
       return wait(pipe.sink.writeObjectAsJson(idStr));
     })
     .then(function () {
-      if (typeof token === "string") {
-        return wait(pipe.sink.writeUtf8(',"pot":')).then(function () {
-          return wait(pipe.sink.writeObjectAsJson(token));
-        });
-      }
-      if (token instanceof Uint8Array && token.length) {
-        return wait(pipe.sink.writeUtf8(',"pot":"'))
-          .then(function () {
-            return wait(pipe.sink.writeBytesAsBase64url(token));
-          })
-          .then(function () {
-            return wait(pipe.sink.writeUtf8('"'));
-          });
-      }
+      return wait(pipe.sink.writeUtf8(',"potLen":' + potLen));
     })
     .then(function () {
       return wait(pipe.sink.writeUtf8("}"));
@@ -268,8 +257,8 @@ export function recordSabrForDump(url: string, body: Uint8Array | null): void {
 
 let poRejectedHook: (() => void) | null = null;
 
-/** Same limit as the download's SabrSession.maxConsecutiveEmptyRounds. */
-const MAX_WITHHELD_ROUNDS = 3;
+/** Tolerate slightly longer SPS=2 attestation negotiation on high-RTT cellular links before declaring rejection. */
+const MAX_WITHHELD_ROUNDS = 5;
 
 /** Called on StreamProtectionStatus 3 (googlevideo rejected this session's PO token), or when
  *  googlevideo keeps withholding media while attestation stays pending (2). */

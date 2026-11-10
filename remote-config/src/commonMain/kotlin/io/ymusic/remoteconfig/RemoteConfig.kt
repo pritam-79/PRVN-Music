@@ -11,15 +11,16 @@ import kmphttp.json.JsonWriter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -79,7 +80,7 @@ class RemoteConfig(
 
     private val mutex = Mutex()
     private var initialized = false
-    private var inFlight: Job? = null
+    private var inFlight: Deferred<Boolean>? = null
 
     init {
         scope.launch { initIfNotYet() }
@@ -148,17 +149,20 @@ class RemoteConfig(
     }
 
     /**
-     * For a person waiting on an answer ("Check for update"): fetch now and wait up to [timeoutMs]
-     * for the result. Null when none arrives in time — failed, or no service.
+     * For a person waiting on an answer ("Check for update"): fetch now (or join the active
+     * fetch) and wait up to [timeoutMs] for the result. Returns the latest [RemoteConfigData]
+     * immediately once the fetch completes — even when the config contents didn't change — and
+     * returns `null` immediately if there is no service, the fetch fails, or [timeoutMs] expires.
      */
     suspend fun awaitFresh(timeoutMs: Long): RemoteConfigData? {
+        if (api == null) return null
         initIfNotYet()
-        val held = _config.value
-        checkUpdate(acceptMaxAgeMs = 0L)
-        return withTimeoutOrNull(timeoutMs) { config.first { it != held } }
+        val deferred = fetch()
+        val succeeded = withTimeoutOrNull(timeoutMs) { deferred.await() } ?: false
+        return if (succeeded) _config.value else null
     }
 
-    private suspend fun fetch(): Job {
+    private suspend fun fetch(): Deferred<Boolean> {
         // fetch update is app scope, not callable by caller
         check(initialized) { "Do init first" }
         val api = checkNotNull(api) { "api = null" }
@@ -166,7 +170,7 @@ class RemoteConfig(
         mutex.withLock {
             inFlight?.takeIf { it.isActive }?.let { return it }
 
-            return scope.launch {
+            return scope.async {
                 try {
                     val data = api.getConfig()
                     try {
@@ -182,6 +186,7 @@ class RemoteConfig(
                         }
                     }
                     _config.value = data
+                    true
                 } catch (cancel: CancellationException) {
                     // Rethrown, not logged: cancelling the scope is not a fetch failure, and
                     // swallowing it here would leave the coroutine reported as completed normally.
@@ -198,12 +203,15 @@ class RemoteConfig(
                     } else {
                         log?.captureError(refused, "Fetch config failed")
                     }
+                    false
                 } catch (offline: IOException) {
                     // Being offline is a state, not a bug: retrying is the fix, and checkUpdate
                     // will — nothing to capture.
                     log?.info("Fetch config: ${offline.message}")
+                    false
                 } catch (error: Throwable) {
                     log?.captureError(error, "Fetch config failed")
+                    false
                 }
                 // Not nulled on completion: the body can finish before `also` below assigns the
                 // field, which would park a COMPLETED Job here forever. Every reader tests

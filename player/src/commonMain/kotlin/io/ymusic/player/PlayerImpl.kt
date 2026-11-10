@@ -58,6 +58,9 @@ internal class PlayerImpl(
     private val engineJobs = mutableListOf<Job>()
     private var sleepJob: Job? = null
     private var prepareJob: Job? = null
+    private var poRecoveryJob: Job? = null
+    private var poRecoveryAttempts = 0
+    private var lastLoadStartPositionMs = 0L
 
     /** The bound engine missed the prepare deadline: its not-yet-loaded states (Uninitialized,
      *  Idle) must not replace the published E60052 until it plays, fails, or the user moves on. */
@@ -634,6 +637,10 @@ internal class PlayerImpl(
     private fun loadCurrent(startPositionMs: Long) {
         val item = controller.state.currentItem ?: return
         loadGeneration++
+        poRecoveryJob?.cancel()
+        poRecoveryJob = null
+        poRecoveryAttempts = 0
+        lastLoadStartPositionMs = startPositionMs.coerceAtLeast(0L)
         val gen = loadGeneration
         engines.unavailable?.let { error ->
             bind(null)
@@ -794,6 +801,20 @@ internal class PlayerImpl(
                     return@collect
                 }
                 holdPrepareTimeout = false
+                val st = snapshot.state
+                if (st is PlaybackState.Error &&
+                    st.error.code == PlayerError.PO_TOKEN_REJECTED &&
+                    engine is YtEngine &&
+                    poRecoveryAttempts < MAX_PO_RECOVERY_ATTEMPTS &&
+                    controller.state.currentItem is PlayableItem.YtMedia
+                ) {
+                    if (poRecoveryJob?.isActive != true) {
+                        val targetItem = controller.state.currentItem as PlayableItem.YtMedia
+                        attemptPoTokenRecovery(engine, targetItem, loadGeneration)
+                    }
+                    publishStatus(PlaybackStatus(state = PlaybackState.Uninitialized(isInitializing = true)))
+                    return@collect
+                }
                 publishStatus(snapshot)
                 val wasEnded = ended
                 ended = snapshot.state.isEnded()
@@ -859,8 +880,31 @@ internal class PlayerImpl(
         }
     }
 
+    private fun attemptPoTokenRecovery(
+        engine: YtEngine,
+        item: PlayableItem.YtMedia,
+        gen: Int,
+    ) {
+        val attempt = ++poRecoveryAttempts
+        val resumeMs = maxOf(_progress.value.positionMs, lastLoadStartPositionMs)
+        poRecoveryJob?.cancel()
+        poRecoveryJob = scope.launch {
+            delay(attempt * PO_RECOVERY_BACKOFF_MS)
+            if (released || loadGeneration != gen || _currentEngine.value !== engine) return@launch
+            engine.reset("auto recover PO token #$attempt")
+            val err = tryMakePlayerReady(engine)
+            if (released || loadGeneration != gen || _currentEngine.value !== engine) return@launch
+            if (err == null) {
+                loadOn(engine, item, resumeMs)
+            }
+        }
+    }
+
     private fun stopActive() {
         prepareJob?.cancel()
+        poRecoveryJob?.cancel()
+        poRecoveryJob = null
+        poRecoveryAttempts = 0
         holdPrepareTimeout = false
         val engine = _currentEngine.value
         if (engine != null) {
@@ -985,5 +1029,9 @@ internal class PlayerImpl(
 
         /** How long after an E60052 a late-ready engine still gets the item loaded automatically. */
         const val PREPARE_RECOVERY_MS = 15_000L
+
+        /** Max automatic session refreshes on E60065 before surfacing a user-facing error. */
+        const val MAX_PO_RECOVERY_ATTEMPTS = 2
+        const val PO_RECOVERY_BACKOFF_MS = 450L
     }
 }

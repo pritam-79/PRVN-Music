@@ -16,15 +16,25 @@ import io.ymusic.player.PlayableItem
 import io.ymusic.player.PlaybackState
 import io.ymusic.player.PlaybackStatus
 import io.ymusic.player.Player
+import io.ymusic.player.PlayerError
 import io.ymusic.player.Progress
 import io.ymusic.player.QueueOrigin
 import io.ymusic.player.QueueSource
 import io.ymusic.player.QueueState
 import io.ymusic.settings.InMemorySettingsStore
 import io.ymusic.ui.AppGraph
+import io.ymusic.ui.AppSection
 import io.ymusic.ui.CannedHttp
+import io.ymusic.ui.DISCOVER_ROUTE
 import io.ymusic.ui.PlaybackCoordinator
 import io.ymusic.ui.StubPlayer
+import io.ymusic.ui.glass.GlassBottomNavigation
+import io.ymusic.ui.toRoute
+import kmphttp.HeadersBuilder
+import kmphttp.Protocol
+import kmphttp.ResponseBuilder
+import okhttp3.ResponseBody.Companion.asResponseBody
+import okio.Buffer
 import io.ymusic.ui.playtogether.backend.GlobalRealtimeBackend
 import io.ymusic.ui.playtogether.backend.InviteLinkHelper
 import io.ymusic.ui.playtogether.backend.LocalSimulatedRealtimeBackend
@@ -104,20 +114,37 @@ class PlayTogetherTest {
     }
 
     /** In-memory fake ntfy HTTP relay server for cross-device [GlobalRealtimeBackend] unit tests. */
-    private class FakeNtfyRelayServer {
+    private class FakeNtfyRelayServer(
+        private val initialTimeBiasSec: Long = 0L,
+        private val transientFailuresBeforeSuccess: Int = 0,
+    ) {
         private data class StoredMsg(val id: String, val timeSec: Long, val message: String)
 
         private val lock = Any()
         private val topics = mutableMapOf<String, MutableList<StoredMsg>>()
         private var counter = 1L
+        private var remainingFailures = transientFailuresBeforeSuccess
 
         val client = CannedHttp { request, body ->
             val path = request.url.encodedPath
+            synchronized(lock) {
+                if (remainingFailures > 0) {
+                    remainingFailures--
+                    return@CannedHttp ResponseBuilder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(429)
+                        .message("Too Many Requests")
+                        .headers(HeadersBuilder().add("Content-Type", "application/json").build())
+                        .body(Buffer().write("""{"error":"rate limited"}""".encodeToByteArray()).asResponseBody(null, -1L))
+                        .build()
+                }
+            }
             when {
                 path == "/v1/health" -> textResponse(request, """{"healthy":true}""", "application/json")
                 request.method == "POST" -> {
                     val topic = path.trimStart('/')
-                    val nowSec = System.currentTimeMillis() / 1000L
+                    val nowSec = (System.currentTimeMillis() / 1000L) + initialTimeBiasSec
                     val msgId = "msg${counter++}"
                     synchronized(lock) {
                         topics.getOrPut(topic) { mutableListOf() }.add(StoredMsg(msgId, nowSec, body.orEmpty()))
@@ -461,6 +488,166 @@ class PlayTogetherTest {
         } finally {
             scope.cancel()
             runBlocking { engines.close() }
+        }
+    }
+
+    @Test
+    fun global_relay_ignores_historical_message_age_and_recovers_from_429(): Unit = runBlocking {
+        // Simulate a message created 63 seconds earlier and an initial HTTP 429 rate-limit response
+        val relay = FakeNtfyRelayServer(initialTimeBiasSec = -63L, transientFailuresBeforeSuccess = 1)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val backend = GlobalRealtimeBackend(scope = scope, relayUrl = "https://ntfy.test", client = relay.client)
+        try {
+            val roomsFirstTry = backend.listPublicRooms().getOrThrow()
+            assertTrue(roomsFirstTry.isEmpty())
+
+            val track = PlayTogetherTrack("dQw4w9WgXcQ", "Relay Song", "Artist", durationMs = 240_000L, validated = true)
+            backend.createRoom(
+                name = "Clock Safe Room",
+                code = "1028",
+                hostName = "PRVN Host",
+                visibility = RoomVisibility.PUBLIC,
+                controlMode = ControlMode.HOST_ONLY,
+                initialTrack = track,
+                initialPositionMs = 35_000L,
+                initialIsPlaying = true,
+                hostId = "host_clock_1",
+            ).getOrThrow()
+
+            val ping = backend.measureServerClockOffset().getOrThrow()
+            assertEquals(0L, ping.clockOffsetMs, "63-second-old historical message timestamp must NEVER poison clock offset")
+
+            val joined = backend.verifyAndJoinRoom("1028", "Listener").getOrThrow()
+            assertTrue(joined.positionMs >= 35_000L, "Joined position must stay >= 35s, got ${joined.positionMs}")
+            assertTrue(joined.positionMs < 60_000L, "Joined position must not jump backwards/forwards by 63s")
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun listener_stream_error_reports_unavailable_and_sync_drift_tiers(): Unit = runBlocking {
+        val client = CannedHttp { request, _ -> textResponse(request, "{}", "application/json") }
+        val engines = DynamicEngineManager(client, appVersion = 1, jsSource = embeddedEngineJsSource())
+        engines.start()
+        val store = PlayTogetherStore(playTogetherJdbcDriver(":memory:"))
+        val player = SyncCapableStubPlayer()
+        val settings = InMemorySettingsStore()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val backend = LocalSimulatedRealtimeBackend(scope)
+        val controller = PlayTogetherController(
+            coordinator = PlaybackCoordinator(AppGraph(settings = settings, engines = engines, player = player, playerSurface = {}), scope),
+            trackResolver = TrackResolver(engines),
+            store = store,
+            settings = settings,
+            scope = scope,
+            backendProvider = { backend },
+        )
+
+        try {
+            assertEquals(SyncQuality.EXCELLENT, classifySyncDrift(90L, isError = false, isActive = true))
+            assertEquals(SyncQuality.ACCEPTABLE, classifySyncDrift(250L, isError = false, isActive = true))
+            assertEquals(SyncQuality.CORRECTING, classifySyncDrift(600L, isError = false, isActive = true))
+            assertEquals(SyncQuality.OUT_OF_SYNC, classifySyncDrift(1500L, isError = false, isActive = true))
+            assertEquals(SyncQuality.ERROR, classifySyncDrift(63406L, isError = true, isActive = true))
+
+            val track = PlayTogetherTrack("dQw4w9WgXcQ", "Tera Mera Rishta", "Pritam", durationMs = 347_000L, validated = true)
+            backend.createRoom("PRVN Music Lounge", "1028", "Host", RoomVisibility.PUBLIC, ControlMode.HOST_ONLY, initialTrack = track, initialPositionMs = 35_000L, initialIsPlaying = true, hostId = "host_1").getOrThrow()
+            controller.joinRoom("1028", "Listener")
+            withTimeout(5_000L) {
+                controller.state.first { it is PlayTogetherState.InRoom }
+                player.queue.first { (it.currentItem as? PlayableItem.YtMedia)?.videoId == track.id }
+            }
+            delay(50L)
+
+            // Simulate Listener hitting PO_TOKEN_REJECTED (E60065)
+            player.statusFlow.value = PlaybackStatus(
+                state = PlaybackState.Error(PlayerError(PlayerError.PO_TOKEN_REJECTED, "po token rejected", canRetry = true, needReset = true)),
+            )
+
+            withTimeout(5_000L) {
+                controller.state.first {
+                    it is PlayTogetherState.InRoom && it.isPlaybackFailed
+                }
+            }
+            val errRoom = controller.state.value as PlayTogetherState.InRoom
+            assertFalse(errRoom.isActuallySynced, "Listener with E60065 must NEVER appear Synced")
+            assertEquals(0L, errRoom.syncOffsetMs, "Failed stream must not fabricate 63s drift")
+            val selfMember = errRoom.members.first { it.id == errRoom.currentMemberId }
+            assertEquals(MemberSyncState.STREAM_UNAVAILABLE, selfMember.syncState)
+            assertTrue(errRoom.errorMessage?.contains("E60065") == true)
+        } finally {
+            scope.cancel()
+            engines.close()
+        }
+    }
+
+    @Test
+    fun home_bottom_navigation_routes_to_discover_route_never_ytmusic() {
+        assertEquals("discover", DISCOVER_ROUTE)
+        assertEquals(DISCOVER_ROUTE, AppSection.Discover.toRoute())
+        var navigatedTo: AppSection? = null
+        runComposeUiTest {
+            setContent {
+                GlassBottomNavigation(
+                    currentSection = AppSection.PlayTogether,
+                    onNavigate = { navigatedTo = it },
+                    onSearchClick = {},
+                )
+            }
+            onNodeWithText("Home").performClick()
+            assertEquals(AppSection.Discover, navigatedTo)
+        }
+    }
+
+    @Test
+    fun incoming_song_request_notifies_host_once_per_pending_request() = runBlocking {
+        val client = CannedHttp { req, _ -> textResponse(req, "{}", "application/json") }
+        val engines = DynamicEngineManager(client, appVersion = 1, jsSource = embeddedEngineJsSource())
+        engines.start()
+        val store = PlayTogetherStore(playTogetherJdbcDriver(":memory:"))
+        val player = SyncCapableStubPlayer()
+        val settings = InMemorySettingsStore()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val backend = LocalSimulatedRealtimeBackend(scope)
+        val notifications = CopyOnWriteArrayList<Pair<String, String>>()
+        val hostController = PlayTogetherController(
+            coordinator = PlaybackCoordinator(AppGraph(settings = settings, engines = engines, player = player, playerSurface = {}), scope),
+            trackResolver = TrackResolver(engines),
+            store = store,
+            settings = settings,
+            scope = scope,
+            backendProvider = { backend },
+            onIncomingRequestNotify = { title, body -> notifications.add(title to body) },
+        )
+        try {
+            hostController.createRoom("PRVN Host Room", "HostUser", RoomVisibility.PUBLIC, ControlMode.HOST_ONLY)
+            val hosted = withTimeout(5_000L) {
+                hostController.state.first { it is PlayTogetherState.InRoom } as PlayTogetherState.InRoom
+            }
+            val track = PlayTogetherTrack("reqVid123", "Requested Track", "Artist", durationMs = 200_000L, validated = true)
+            val request = SongRequest(
+                id = "req_1",
+                roomId = hosted.room.id,
+                track = track,
+                requesterId = "listener_9",
+                requesterName = "Friend",
+                requestTimeMs = 1_000L,
+                status = SongRequestStatus.PENDING,
+            )
+            backend.submitSongRequest(hosted.room.id, request).getOrThrow()
+            withTimeout(5_000L) {
+                while (notifications.isEmpty()) delay(25L)
+            }
+            // Submitting/syncing the same request ID again must not duplicate notifications.
+            backend.submitSongRequest(hosted.room.id, request).getOrThrow()
+            delay(150L)
+            assertEquals(1, notifications.size)
+            assertTrue(notifications[0].first.contains("Friend"))
+            assertTrue(notifications[0].second.contains("Requested Track"))
+        } finally {
+            scope.cancel()
+            engines.close()
         }
     }
 }

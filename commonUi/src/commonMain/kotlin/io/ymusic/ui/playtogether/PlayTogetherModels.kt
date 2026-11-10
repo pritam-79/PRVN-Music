@@ -11,11 +11,36 @@ enum class ControlMode {
     COLLABORATIVE,
 }
 
-enum class MemberSyncState {
-    SYNCED,
-    BUFFERING,
-    SYNCING,
-    RECONNECTING,
+enum class MemberSyncState(val displayLabel: String) {
+    WAITING("Waiting for stream"),
+    RESOLVING("Resolving stream"),
+    PREPARING("Preparing audio"),
+    BUFFERING("Buffering"),
+    PLAYING("Playing"),
+    PAUSED("Paused"),
+    SYNCING("Syncing"),
+    SYNCED("Synced"),
+    RECONNECTING("Reconnecting"),
+    STREAM_UNAVAILABLE("Stream unavailable"),
+    FAILED("Playback failed"),
+}
+
+enum class SyncQuality {
+    IDLE,
+    EXCELLENT,
+    ACCEPTABLE,
+    CORRECTING,
+    OUT_OF_SYNC,
+    ERROR,
+}
+
+fun classifySyncDrift(driftMs: Long, isError: Boolean, isActive: Boolean): SyncQuality = when {
+    isError -> SyncQuality.ERROR
+    !isActive -> SyncQuality.IDLE
+    driftMs < 150L -> SyncQuality.EXCELLENT
+    driftMs <= 350L -> SyncQuality.ACCEPTABLE
+    driftMs <= 1000L -> SyncQuality.CORRECTING
+    else -> SyncQuality.OUT_OF_SYNC
 }
 
 enum class SongRequestStatus(val displayLabel: String) {
@@ -120,6 +145,8 @@ sealed interface PlayTogetherState {
         val clockOffsetMs: Long = 0L,
         val isBuffering: Boolean = false,
         val isActuallySynced: Boolean = false,
+        val syncQuality: SyncQuality = SyncQuality.IDLE,
+        val isPlaybackFailed: Boolean = false,
         val isConnecting: Boolean = false,
         val connectionState: PlaybackConnectionState = PlaybackConnectionState.CONNECTED,
         val errorMessage: String? = null,

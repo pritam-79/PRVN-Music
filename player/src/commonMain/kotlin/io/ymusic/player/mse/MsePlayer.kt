@@ -703,7 +703,15 @@ class MsePlayer internal constructor(
         if (json.boolOrNull("poRejected") == true) {
             // googlevideo rejected this session's PO token: only a fresh session re-attests.
             tearDownSession("po token rejected")
-            fail(TechnicalException(PlayerError.PO_TOKEN_REJECTED, "googlevideo rejected the PO token (StreamProtectionStatus=3)"), "po token rejected", needReset = true)
+            fail(
+                TechnicalException(
+                    PlayerError.PO_TOKEN_REJECTED,
+                    "googlevideo rejected the PO token (StreamProtectionStatus=3)",
+                ),
+                "po token rejected",
+                needReset = true,
+                userMessage = "Stream protection token rejected (E60065). Tap Retry to refresh session.",
+            )
             return
         }
         _audioSessionId.value = if (hostLive()) videoSurface.audioSessionId() else 0
@@ -836,7 +844,12 @@ class MsePlayer internal constructor(
         _audioTracks.value = AudioTrackState(tracks = json.audioTracks(), selectedId = json.stringOrNull("audioTrack"))
     }
 
-    private fun fail(error: Throwable, message: String, needReset: Boolean) {
+    private fun fail(
+        error: Throwable,
+        message: String,
+        needReset: Boolean,
+        userMessage: String? = null,
+    ) {
         val code = error.errorCode()
             ?: Regex("""E\d{5}""").find(error.message.orEmpty())?.value
             ?: "E60033"
@@ -852,7 +865,7 @@ class MsePlayer internal constructor(
                     PlayerError(
                         code = code,
                         message = "$message: $detail",
-                        userMessage = if (code == "E60033") "Playback stream error ($detail)" else null,
+                        userMessage = userMessage ?: if (code == "E60033") "Playback stream error ($detail)" else null,
                         canRetry = true,
                         needReset = needReset,
                         cause = error,

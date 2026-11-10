@@ -63,13 +63,19 @@ class PlayerFacadeTest {
             it.copy(state = PlaybackState.Prepared(playWhenReady = false, buffering = false, ended = true))
         }
 
-        fun failTrack(canRetry: Boolean = true, needReset: Boolean = false) = _status.update {
+        fun failTrack(
+            code: String = "E60010",
+            canRetry: Boolean = true,
+            needReset: Boolean = false,
+        ) = _status.update {
             it.copy(
                 state = PlaybackState.Error(
-                    PlayerError("E60010", "boom", canRetry = canRetry, needReset = needReset),
+                    PlayerError(code, "boom", canRetry = canRetry, needReset = needReset),
                 ),
             )
         }
+
+        var resetCount = 0
 
         fun tickTo(positionMs: Long) = _progress.update { it.copy(positionMs = positionMs) }
 
@@ -92,6 +98,7 @@ class PlayerFacadeTest {
         }
 
         override fun reset() {
+            resetCount++
             _status.value = PlaybackStatus(state = PlaybackState.Idle)
             _progress.value = Progress()
         }
@@ -460,5 +467,43 @@ class PlayerFacadeTest {
         assertIs<PlayableItem.LocalMedia>(load.item)
         assertEquals(local(3), load.item)
         assertTrue(load.playWhenReady, "playAt implies intent to play")
+    }
+
+    @Test
+    fun po_token_rejected_auto_resets_and_recovers() = runTest {
+        val h = Harness(this)
+        h.player.setQueue(listOf(yt("abc123def45")), playIndex = 0)
+        runCurrent()
+        assertEquals(1, h.youtube.loads.size)
+        h.youtube.tickTo(23_000)
+
+        h.youtube.failTrack(code = PlayerError.PO_TOKEN_REJECTED, canRetry = true, needReset = true)
+        runCurrent()
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        assertEquals(1, h.youtube.resetCount, "PO_TOKEN_REJECTED must trigger a fresh session reset")
+        assertEquals(2, h.youtube.loads.size, "player must automatically reload after PO recovery reset")
+        assertEquals(23_000, h.youtube.loads.last().startMs, "auto recovery must preserve playback position")
+        assertIs<PlaybackState.Prepared>(h.player.status.value.state)
+    }
+
+    @Test
+    fun po_token_rejected_caps_auto_retries_and_surfaces_error() = runTest {
+        val h = Harness(this)
+        h.player.setQueue(listOf(yt("abc123def45")), playIndex = 0)
+        runCurrent()
+
+        repeat(3) {
+            h.youtube.failTrack(code = PlayerError.PO_TOKEN_REJECTED, canRetry = true, needReset = true)
+            runCurrent()
+            advanceTimeBy(2_000)
+            runCurrent()
+        }
+
+        assertEquals(2, h.youtube.resetCount, "auto recovery must stop after max 2 retries (no endless loop)")
+        assertEquals(3, h.youtube.loads.size)
+        val errState = assertIs<PlaybackState.Error>(h.player.status.value.state)
+        assertEquals(PlayerError.PO_TOKEN_REJECTED, errState.error.code)
     }
 }

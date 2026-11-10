@@ -1,10 +1,10 @@
 {
-  "versionName": "0.11",
-  "versionCode": 14,
+  "versionName": "0.12",
+  "versionCode": 15,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.11/PRVN-Music-0.11-arm64-v8a-release.apk",
-  "size": 9948136,
-  "sha256": "a24b28a9e6c838c10bec912609010b3d1842ca6b09771f263bd9731b71f2f7c6",
-  "releaseNotes": "PRVN Music v0.11 (Build 14): Complete Play Together Rebuild & Music Engine Integration. Play Together now runs on PRVN Music's unified Discover & YT Music pipeline and single Player engine; real-time song requests (Pending, Accepted, Added to Queue, Played, Rejected, Cancelled) with host Accept/Reject/Queue notifications; SQLite persistence across reconnects; monotonic sequence sync engine with RTT latency compensation and accurate sync status; prvn:// invite deep linking; shared queue management; host room controls; updater cache hardening.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.12/PRVN-Music-0.12-arm64-v8a-release.apk",
+  "size": 9958708,
+  "sha256": "a2cf0aa85db859f195c4d35d019bbd1b72b6bef8e1cb8e500f0b8762128a8e83",
+  "releaseNotes": "PRVN Music v0.12 (Build 15): Fixed Googlevideo PO token rejection (E60065) with fresh BotGuard session invalidation & capped automatic stream recovery; fixed Play Together listener no-audio & granular stream states; fixed false -63,406ms clock skew & separated Network RTT from sync drift; fixed Home bottom navigation to open PRVN Discover; fixed in-app update prompts during auto-download, uncached update checks, and added Android notifications for app updates and Play Together song requests.",
   "forceUpdate": false
 }

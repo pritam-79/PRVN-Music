@@ -3,6 +3,7 @@ package io.ymusic.ui.playtogether
 import io.ymusic.player.PlayableItem
 import io.ymusic.player.PlaybackState
 import io.ymusic.player.Player
+import io.ymusic.player.PlayerError
 import io.ymusic.player.QueueOrigin
 import io.ymusic.settings.AppSettings
 import io.ymusic.settings.SettingsStore
@@ -31,6 +32,10 @@ data class SyncTelemetry(
     val isPlayingLocally: Boolean = false,
     val isActuallySynced: Boolean = false,
     val playerError: String? = null,
+    val memberState: MemberSyncState = MemberSyncState.WAITING,
+    val syncQuality: SyncQuality = SyncQuality.IDLE,
+    val isInitializing: Boolean = false,
+    val isFailed: Boolean = false,
 )
 
 interface PlayTogetherSyncCallbacks {
@@ -64,6 +69,7 @@ class PlayTogetherSyncEngine(
     private var statusObserverJob: Job? = null
     private var driftLoopJob: Job? = null
     private var seekDebounceJob: Job? = null
+    private var roomStreamRetryJob: Job? = null
     private var attachedRoomId: String? = null
 
     private var applyingRemoteUntilMs: Long = 0L
@@ -73,6 +79,8 @@ class PlayTogetherSyncEngine(
     private var lastObservedVideoId: String? = null
     private var lastProgressSamplePosMs: Long = 0L
     private var lastProgressSampleAtMs: Long = 0L
+    private var streamRetryTrackId: String? = null
+    private var streamRetryAttempted = false
 
     // Monotonic clock anchor for rock-solid drift estimation independent of timezone/wall-clock skew
     private var anchorTrackId: String? = null
@@ -122,10 +130,14 @@ class PlayTogetherSyncEngine(
         driftLoopJob = null
         seekDebounceJob?.cancel()
         seekDebounceJob = null
+        roomStreamRetryJob?.cancel()
+        roomStreamRetryJob = null
         lastReportedEndedKey = null
         lastObservedPlayWhenReady = null
         lastObservedVideoId = null
         anchorTrackId = null
+        streamRetryTrackId = null
+        streamRetryAttempted = false
     }
 
     /** Update expected room timeline anchor whenever authoritative state changes. */
@@ -175,6 +187,10 @@ class PlayTogetherSyncEngine(
         val state = status.state
 
         if (currentItem?.videoId != track.id) {
+            roomStreamRetryJob?.cancel()
+            roomStreamRetryJob = null
+            streamRetryTrackId = track.id
+            streamRetryAttempted = false
             lastReportedEndedKey = null
             lastObservedVideoId = track.id
             lastObservedPlayWhenReady = playWhenReady
@@ -215,12 +231,30 @@ class PlayTogetherSyncEngine(
         val room = callbacks.currentRoomSnapshot() ?: return
         val track = room.currentTrack ?: return
         val expected = expectedPositionMs(track.durationMs)
+        val curErr = (player.status.value.state as? PlaybackState.Error)?.error
+        if (curErr != null) {
+            streamRetryAttempted = false
+            player.play()
+        }
         applyAuthoritativePlayback(
             track = track,
             targetPositionMs = expected,
             playWhenReady = room.isPlaying,
             forceSeek = true,
         )
+    }
+
+    fun retryCurrentStream() {
+        val room = callbacks.currentRoomSnapshot() ?: return
+        val track = room.currentTrack ?: return
+        roomStreamRetryJob?.cancel()
+        roomStreamRetryJob = null
+        streamRetryTrackId = track.id
+        streamRetryAttempted = false
+        val expected = expectedPositionMs(track.durationMs)
+        updateMonotonicAnchor(track.id, expected, room.isPlaying)
+        player.reload()
+        emitTelemetryNow()
     }
 
     fun isPlayerBuffering(): Boolean {
@@ -257,6 +291,43 @@ class PlayTogetherSyncEngine(
                         }
                     } else if (state is PlaybackState.Prepared && !state.ended) {
                         lastReportedEndedKey = null
+                    }
+
+                    // 1b. Bounded room-level stream retry if PlayerImpl's internal recovery still exhausted
+                    val trackIdNow = room.currentTrack?.id
+                    if (state is PlaybackState.Prepared && !state.buffering) {
+                        if (trackIdNow != null && streamRetryTrackId == trackIdNow) {
+                            streamRetryAttempted = false
+                        }
+                        roomStreamRetryJob?.cancel()
+                        roomStreamRetryJob = null
+                    } else if (state is PlaybackState.Error && state.error.canRetry && trackIdNow != null) {
+                        if (streamRetryTrackId != trackIdNow) {
+                            streamRetryTrackId = trackIdNow
+                            streamRetryAttempted = false
+                        }
+                        if (!streamRetryAttempted && roomStreamRetryJob?.isActive != true) {
+                            streamRetryAttempted = true
+                            val retryTargetId = trackIdNow
+                            roomStreamRetryJob = scope.launch {
+                                delay(2_500L)
+                                val latestRoom = callbacks.currentRoomSnapshot() ?: return@launch
+                                if (latestRoom.room.id != room.room.id || latestRoom.currentTrack?.id != retryTargetId) {
+                                    return@launch
+                                }
+                                if (player.status.value.state is PlaybackState.Error) {
+                                    val targetPos = expectedPositionMs(latestRoom.currentTrack.durationMs)
+                                    updateMonotonicAnchor(retryTargetId, targetPos, latestRoom.isPlaying)
+                                    player.setQueue(
+                                        items = listOf(trackResolver.toPlayableMedia(latestRoom.currentTrack)),
+                                        playIndex = 0,
+                                        startPositionMs = targetPos.coerceAtLeast(0L),
+                                        playWhenReady = latestRoom.isPlaying,
+                                        origin = QueueOrigin.Single,
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // 2. Listener buffer-ready immediate catch-up (only on remote room playback)
@@ -338,8 +409,9 @@ class PlayTogetherSyncEngine(
                     if (isPrepared && !isBuffering && now > applyingRemoteUntilMs) {
                         val expected = expectedPositionMs(room.currentTrack.durationMs)
                         val drift = abs(localPos - expected)
-                        val effectiveTolerance = maxOf(syncToleranceMs, 1500L)
-                        if (drift > effectiveTolerance && (now - lastSeekCorrectionMs > 4500L)) {
+                        val severeCooldownElapsed = (now - lastSeekCorrectionMs > 3_000L)
+                        val gentleCooldownElapsed = (now - lastSeekCorrectionMs > 4_500L)
+                        if ((drift > 1_000L && severeCooldownElapsed) || (drift > maxOf(350L, minOf(syncToleranceMs, 1_000L)) && gentleCooldownElapsed)) {
                             lastSeekCorrectionMs = now
                             applyingRemoteUntilMs = now + 500L
                             player.seekTo(expected)
@@ -364,6 +436,15 @@ class PlayTogetherSyncEngine(
         }
     }
 
+    private fun friendlyStreamError(error: PlayerError): String = when {
+        error.code == PlayerError.PO_TOKEN_REJECTED ->
+            "Audio stream protection token rejected (E60065). Tap Retry to refresh stream."
+        error.code == PlayerError.PLAYBACK_UNAVAILABLE ->
+            "Audio stream is unavailable on this device."
+        !error.userMessage.isNullOrBlank() -> error.userMessage!!
+        else -> "Stream playback failed (${error.code}). Tap Retry to try again."
+    }
+
     private fun emitTelemetryNow() {
         val room = callbacks.currentRoomSnapshot() ?: return
         val status = player.status.value
@@ -371,22 +452,48 @@ class PlayTogetherSyncEngine(
         val progress = player.progress.value
         val curYt = player.queue.value.currentItem as? PlayableItem.YtMedia
         val isPrepared = state is PlaybackState.Prepared
-        val isBuffering = (isPrepared && state.buffering) || (state is PlaybackState.Uninitialized && state.isInitializing)
-        val errMsg = status.error?.message
+        val isInitializing = state is PlaybackState.Uninitialized && state.isInitializing
+        val isBuffering = (isPrepared && state.buffering) || isInitializing
+        val rawError = (state as? PlaybackState.Error)?.error ?: status.error
+        val errMsg = rawError?.let { friendlyStreamError(it) }
+        val isFailed = rawError != null
         val roomTrack = room.currentTrack
 
         val duration = progress.durationMs.takeIf { it > 0L } ?: roomTrack?.durationMs ?: 0L
         val expected = if (roomTrack != null) expectedPositionMs(duration) else 0L
         val localPos = progress.positionMs
-        val drift = if (room.isHost || roomTrack == null) 0L else abs(localPos - expected)
-
         val sameTrack = roomTrack == null || curYt?.videoId == roomTrack.id
-        val tolerance = maxOf(syncToleranceMs, 1800L)
+        // Never report fake large drift (e.g., before player prepares or after stream error).
+        val canMeasureDrift = !room.isHost && roomTrack != null && sameTrack && isPrepared && !isFailed
+        val drift = if (canMeasureDrift) abs(localPos - expected) else 0L
+
+        val acceptableCeilingMs = syncToleranceMs.coerceIn(250L, 500L)
+        val syncQuality = classifySyncDrift(
+            driftMs = drift,
+            isError = isFailed,
+            isActive = roomTrack != null && isPrepared && !isBuffering && sameTrack,
+        )
+
         val synced = room.connectionState == PlaybackConnectionState.CONNECTED &&
-            errMsg == null &&
+            !isFailed &&
             sameTrack &&
             !isBuffering &&
-            (roomTrack == null || (isPrepared && (room.isHost || !room.isPlaying || drift <= tolerance)))
+            !isInitializing &&
+            (roomTrack == null || (isPrepared && (room.isHost || !room.isPlaying || drift <= acceptableCeilingMs)))
+
+        val memberState = when {
+            room.connectionState != PlaybackConnectionState.CONNECTED -> MemberSyncState.RECONNECTING
+            rawError?.code == PlayerError.PO_TOKEN_REJECTED -> MemberSyncState.STREAM_UNAVAILABLE
+            isFailed -> MemberSyncState.FAILED
+            roomTrack == null -> MemberSyncState.WAITING
+            !sameTrack || isInitializing -> MemberSyncState.RESOLVING
+            !isPrepared -> MemberSyncState.PREPARING
+            state.buffering -> MemberSyncState.BUFFERING
+            synced && room.isPlaying -> MemberSyncState.PLAYING
+            !room.isPlaying -> MemberSyncState.PAUSED
+            synced -> MemberSyncState.SYNCED
+            else -> MemberSyncState.SYNCING
+        }
 
         callbacks.onTelemetryUpdate(
             SyncTelemetry(
@@ -397,9 +504,13 @@ class PlayTogetherSyncEngine(
                 driftMs = drift,
                 isPrepared = isPrepared,
                 isBuffering = isBuffering,
-                isPlayingLocally = status.playWhenReady && isPrepared,
+                isPlayingLocally = status.playWhenReady && isPrepared && !isFailed,
                 isActuallySynced = synced,
                 playerError = errMsg,
+                memberState = memberState,
+                syncQuality = syncQuality,
+                isInitializing = isInitializing,
+                isFailed = isFailed,
             ),
         )
     }

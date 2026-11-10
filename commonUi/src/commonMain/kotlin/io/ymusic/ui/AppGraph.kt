@@ -257,6 +257,8 @@ class AppGraph(
     sponsorBlockApi: SponsorBlockApi? = api?.let(::ServiceSponsorBlockApi),
     sponsorBlockStore: SponsorBlockStore = InMemorySponsorBlockStore(),
     val playTogetherStore: PlayTogetherStore? = null,
+    /** Posts an OS notification (if enabled) when a Play Together friend sends an incoming request. */
+    val onPlayTogetherNotification: ((title: String, body: String) -> Unit)? = null,
     // Kept last so shells pass it as the trailing lambda.
     val playerSurface: @Composable (modifier: Modifier) -> Unit,
 ) {
@@ -273,6 +275,7 @@ class AppGraph(
             store = playTogetherStore,
             settings = settings,
             scope = processScope,
+            onIncomingRequestNotify = onPlayTogetherNotification,
             logger = logger,
         )
     }
@@ -439,6 +442,13 @@ class AppGraph(
 
     fun requestRefresh() {
         refreshRequests.tryEmit(Unit)
+    }
+
+    /** External trigger (Settings / notification click) to re-surface the root UpdateDialog. */
+    val updatePromptRequests = MutableStateFlow(0)
+
+    fun requestUpdatePrompt() {
+        updatePromptRequests.value++
     }
 }
 

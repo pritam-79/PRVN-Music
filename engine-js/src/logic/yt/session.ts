@@ -83,7 +83,7 @@ const SCRAPE_RETRY_MS = 5_000;
  * SINGLE-FLIGHT: concurrent callers share one. The Cache is best-effort — absent (no store wired)
  * or failing, we degrade to a live scrape, never an error.
  */
-export async function getSession(maxAge: number): Promise<YtSession> {
+export async function getSession(maxAge: number, allowStaleFallback = true): Promise<YtSession> {
   if (inMemory == null) {
     const cached = await readCache();
     if (cached != null) inMemory = cached;
@@ -95,13 +95,15 @@ export async function getSession(maxAge: number): Promise<YtSession> {
   try {
     return await scrapeInFlight();
   } catch (e) {
-    const stale = inMemory ?? (await readCache());
-    if (stale != null) {
-      inMemory = stale;
-      debug(function () {
-        return "yt session scrape failed, serving the stale session: " + errText(e);
-      });
-      return stale;
+    if (allowStaleFallback) {
+      const stale = inMemory ?? (await readCache());
+      if (stale != null) {
+        inMemory = stale;
+        debug(function () {
+          return "yt session scrape failed, serving the stale session: " + errText(e);
+        });
+        return stale;
+      }
     }
     throw e;
   }
@@ -547,6 +549,17 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+export async function clearCachedPlayerConfig(): Promise<void> {
+  inMemoryPlayer = undefined;
+  try {
+    await Cache.delete(CACHE_SCOPE, PLAYER_CONFIG_KEY);
+  } catch (e) {
+    debug(function () {
+      return "yt player config cache clear skipped: " + errText(e);
+    });
+  }
+}
+
 async function storePlayerConfig(html: string, acceptLanguage: string): Promise<void> {
   const cfg = parsePlayerConfig(html);
   if (cfg == null) {
@@ -555,6 +568,7 @@ async function storePlayerConfig(html: string, acceptLanguage: string): Promise<
   }
   // The player's navigator.languages must match the Accept-Language this homepage was fetched with.
   cfg["acceptLanguage"] = acceptLanguage;
+  cfg["fetchedAt"] = Date.now();
   inMemoryPlayer = cfg;
   try {
     await Cache.setJson(CACHE_SCOPE, PLAYER_CONFIG_KEY, cfg);
@@ -565,14 +579,32 @@ async function storePlayerConfig(html: string, acceptLanguage: string): Promise<
   }
 }
 
-/** Memory then host Cache. Null when this session never saw a homepage with BotGuard/jsUrl. */
-export async function peekPlayerConfig(): Promise<Record<string, unknown> | undefined> {
-  if (inMemoryPlayer != null) return inMemoryPlayer;
+function isFreshPlayerConfig(rec: Record<string, unknown>, maxAgeMs: number): boolean {
+  if (typeof rec["jsUrl"] !== "string" || rec["bgChallenge"] == null) return false;
+  const fetchedAt = rec["fetchedAt"];
+  if (typeof fetchedAt !== "number" || !Number.isFinite(fetchedAt)) return false;
+  if (maxAgeMs >= 0 && Date.now() - fetchedAt > maxAgeMs) return false;
+  const ytcfg = rec["ytcfg"];
+  if (inMemory != null && ytcfg != null && typeof ytcfg === "object") {
+    const cfgVisitor = asString(get(ytcfg, "VISITOR_DATA"));
+    if (cfgVisitor != null && cfgVisitor !== "" && cfgVisitor !== inMemory.visitorData) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Memory then host Cache. Null when absent, expired, or mismatched with the active session. */
+export async function peekPlayerConfig(maxAgeMs = 20 * 60 * 1000): Promise<Record<string, unknown> | undefined> {
+  if (inMemoryPlayer != null) {
+    if (isFreshPlayerConfig(inMemoryPlayer, maxAgeMs)) return inMemoryPlayer;
+    inMemoryPlayer = undefined;
+  }
   try {
     const raw = await Cache.getJson(CACHE_SCOPE, PLAYER_CONFIG_KEY);
     if (raw != null && typeof raw === "object") {
       const rec = raw as Record<string, unknown>;
-      if (typeof rec["jsUrl"] === "string" && rec["bgChallenge"] != null) {
+      if (isFreshPlayerConfig(rec, maxAgeMs)) {
         inMemoryPlayer = rec;
         return rec;
       }

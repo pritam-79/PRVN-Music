@@ -469,6 +469,13 @@ private fun PlayTogetherLobbyView(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(state.errorMessage.orEmpty(), color = StatusRed, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(
+                        onClick = onRefresh,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                    ) {
+                        Text("Retry", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
                     IconButton(onClick = onDismissError, modifier = Modifier.size(22.dp)) {
                         Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = StatusRed, modifier = Modifier.size(15.dp))
                     }
@@ -865,6 +872,17 @@ private fun PlayTogetherRoomView(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(msg, fontSize = 12.sp, color = tint, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                if (isErr) {
+                    TextButton(
+                        onClick = {
+                            if (state.isPlaybackFailed) controller.retryCurrentStream() else controller.resyncPlayback()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(26.dp),
+                    ) {
+                        Text("Retry", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
                 IconButton(onClick = { controller.dismissError() }, modifier = Modifier.size(20.dp)) {
                     Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = tint, modifier = Modifier.size(14.dp))
                 }
@@ -943,12 +961,21 @@ private fun RoomSyncStatusPill(
     onClickResync: () -> Unit,
 ) {
     val (label, color) = when {
-        state.connectionState != PlaybackConnectionState.CONNECTED -> "Reconnecting..." to StatusAmber
+        state.connectionState == PlaybackConnectionState.OFFLINE -> "Offline" to StatusRed
+        state.connectionState == PlaybackConnectionState.RECONNECTING -> "Reconnecting..." to StatusAmber
+        state.isPlaybackFailed -> "Stream Error" to StatusRed
         state.isBuffering -> "Buffering..." to BrandCyan
         state.currentTrack == null -> "Connected" to StatusGreen
-        state.isActuallySynced && state.isHost -> "Host Live" to StatusGreen
-        state.isActuallySynced -> "Synced • ${state.syncOffsetMs}ms" to StatusGreen
-        else -> "Syncing • ${state.syncOffsetMs}ms" to BrandPurpleLight
+        state.isHost && state.isPlaying -> "Host Live" to StatusGreen
+        state.isHost -> "Host Paused" to BrandPurpleLight
+        !state.isPlaying -> "Paused" to BrandPurpleLight
+        state.syncQuality == SyncQuality.EXCELLENT || state.syncQuality == SyncQuality.ACCEPTABLE ->
+            "Synced • ${state.syncOffsetMs}ms" to StatusGreen
+        state.syncQuality == SyncQuality.CORRECTING ->
+            "Syncing • ${state.syncOffsetMs}ms" to BrandCyan
+        state.syncQuality == SyncQuality.OUT_OF_SYNC ->
+            "Drift • ${state.syncOffsetMs}ms" to StatusAmber
+        else -> "Syncing..." to BrandPurpleLight
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -981,25 +1008,25 @@ private fun NowPlayingRoomTab(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = bottomInset + 24.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = bottomInset + 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         item {
             // Centered Glowing Liquid Glass Artwork (clickable to expand full NowPlaying Video/Lyrics!)
             Box(
                 modifier = Modifier
-                    .size(228.dp)
-                    .clip(RoundedCornerShape(24.dp))
+                    .size(196.dp)
+                    .clip(RoundedCornerShape(22.dp))
                     .background(
                         Brush.radialGradient(
                             listOf(BrandPurpleMedium, BrandPurpleDark),
                         ),
                     )
-                    .border(1.2.dp, BrandPurpleVibrant.copy(alpha = 0.45f), RoundedCornerShape(24.dp))
+                    .border(1.2.dp, BrandPurpleVibrant.copy(alpha = 0.45f), RoundedCornerShape(22.dp))
                     .clickable(enabled = track != null) { graph.pip.nowPlayingOpen.value = true },
                 contentAlignment = Alignment.Center,
             ) {
-                TrackThumb(track = track, size = 228.dp, cornerRadius = 24.dp, iconSize = 68.dp)
+                TrackThumb(track = track, size = 196.dp, cornerRadius = 22.dp, iconSize = 60.dp)
 
                 if (state.isBuffering && track != null) {
                     Box(
@@ -1029,7 +1056,7 @@ private fun NowPlayingRoomTab(
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(14.dp))
 
             Text(
                 text = track?.title ?: "Ready to Listen Together",
@@ -1071,13 +1098,29 @@ private fun NowPlayingRoomTab(
                                 .background(BrandCyan.copy(alpha = 0.14f))
                                 .padding(horizontal = 8.dp, vertical = 3.dp),
                         ) {
-                            Text("RTT ${state.networkRttMs}ms", fontSize = 10.5.sp, color = BrandCyan)
+                            Text("Net RTT ${state.networkRttMs}ms", fontSize = 10.5.sp, color = BrandCyan)
+                        }
+                    }
+                    if (!state.isHost && !state.isPlaybackFailed && state.syncOffsetMs > 0L) {
+                        val driftColor = when (state.syncQuality) {
+                            SyncQuality.EXCELLENT, SyncQuality.ACCEPTABLE -> StatusGreen
+                            SyncQuality.CORRECTING -> BrandCyan
+                            SyncQuality.OUT_OF_SYNC -> StatusAmber
+                            else -> DesignColors.InkSecondary
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(driftColor.copy(alpha = 0.14f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        ) {
+                            Text("Drift ${state.syncOffsetMs}ms", fontSize = 10.5.sp, color = driftColor)
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Seek Slider
             val fraction = if (totalMs > 0L) (currentMs.toFloat() / totalMs.toFloat()).coerceIn(0f, 1f) else 0f
@@ -1105,7 +1148,7 @@ private fun NowPlayingRoomTab(
                 Text(if (totalMs > 0L) formatDurationMs(totalMs) else "--:--", fontSize = 11.sp, color = DesignColors.InkSecondary)
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Transport Bar
             Row(
@@ -1171,7 +1214,7 @@ private fun NowPlayingRoomTab(
                 )
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(14.dp))
 
             // Quick Actions
             Row(
@@ -1765,10 +1808,12 @@ private fun ParticipantsRoomTab(
             items(state.members, key = { it.id }) { member ->
                 val isSelf = member.id == state.currentMemberId
                 val (syncText, syncColor) = when (member.syncState) {
-                    MemberSyncState.SYNCED -> "Synced" to StatusGreen
-                    MemberSyncState.BUFFERING -> "Buffering" to BrandCyan
-                    MemberSyncState.SYNCING -> "Syncing" to BrandPurpleLight
-                    MemberSyncState.RECONNECTING -> "Reconnecting" to StatusAmber
+                    MemberSyncState.SYNCED, MemberSyncState.PLAYING -> member.syncState.displayLabel to StatusGreen
+                    MemberSyncState.RESOLVING, MemberSyncState.BUFFERING -> member.syncState.displayLabel to BrandCyan
+                    MemberSyncState.WAITING, MemberSyncState.PREPARING, MemberSyncState.PAUSED, MemberSyncState.SYNCING ->
+                        member.syncState.displayLabel to BrandPurpleLight
+                    MemberSyncState.RECONNECTING -> member.syncState.displayLabel to StatusAmber
+                    MemberSyncState.STREAM_UNAVAILABLE, MemberSyncState.FAILED -> member.syncState.displayLabel to StatusRed
                 }
 
                 Card(

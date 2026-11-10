@@ -85,6 +85,8 @@ class AndroidAppUpdates(
 
     /** The newer release the config offers now; null when there is none. */
     private val offer = MutableStateFlow<AppUpdate?>(null)
+    @Volatile
+    private var notifiedOfferRelease: String? = null
 
     private class Tracked(val release: String, val download: UpdateDownload)
 
@@ -136,7 +138,16 @@ class AndroidAppUpdates(
     }
 
     private fun accept(update: AppUpdate?) {
-        offer.value = update?.takeIf { it.versionCode > currentVersionCode }
+        val accepted = update?.takeIf { it.versionCode > currentVersionCode }
+        offer.value = accepted
+        if (accepted == null) {
+            notifiedOfferRelease = null
+            AppNotificationHelper.clearUpdateNotification(context)
+        } else if (notifiedOfferRelease != accepted.release) {
+            if (AppNotificationHelper.notifyUpdateOffered(context, accepted.versionName, accepted.notes)) {
+                notifiedOfferRelease = accepted.release
+            }
+        }
     }
 
     /** While [release] is offered: show whether it is already downloaded, then fetch it automatically
@@ -147,6 +158,9 @@ class AndroidAppUpdates(
         val apk = apkFile(update)
         val downloaded = update.installInApp && withContext(Dispatchers.IO) { apk.isFile && (update.sha256.isEmpty() || sha256Of(apk) == update.sha256) }
         set(release, if (downloaded) UpdateDownload.Ready else UpdateDownload.Idle)
+        if (downloaded) {
+            AppNotificationHelper.notifyUpdateReady(context, update.versionName)
+        }
         if (!downloaded && update.installInApp && autoDownload() && update.sha256 != autoDownloadFailed()) {
             start(update, auto = true)
         }
@@ -208,6 +222,7 @@ class AndroidAppUpdates(
                 val downloaded = withContext(Dispatchers.IO) { apk.isFile && (update.sha256.isEmpty() || sha256Of(apk) == update.sha256) }
                 if (!downloaded) withContext(Dispatchers.IO) { fetch(update) }
                 set(release, UpdateDownload.Ready)
+                AppNotificationHelper.notifyUpdateReady(context, update.versionName)
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Exception) {
@@ -255,6 +270,7 @@ class AndroidAppUpdates(
         val (update, download) = current() ?: return
         if (download !is UpdateDownload.Ready && download !is UpdateDownload.InstallFailed) return
         if (!canInstall()) return needInstallPermission(update, install = true)
+        AppNotificationHelper.clearUpdateNotification(context)
         set(update.release, UpdateDownload.Installing)
         scope.launch {
             try {

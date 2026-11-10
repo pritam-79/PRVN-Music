@@ -16,6 +16,8 @@ import okio.fakefilesystem.FakeFileSystem
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 private val SERVER = RemoteConfigData(
     features = Features(JsonObject(mapOf("variableA" to JsonPrimitive(7), "featureX" to JsonPrimitive(true)))),
@@ -209,5 +211,28 @@ class RemoteConfigTest {
         rc.checkUpdate()
 
         assertEquals(1, api.calls)
+    }
+
+    @Test
+    fun awaitFresh_returns_config_even_when_unchanged_and_within_throttle_window() = runTest {
+        val api = api()
+        val rc = config(api, this)
+        settle(rc)
+
+        // Manual check with unchanged clock & payload must return immediately, not wait until timeout.
+        val fresh = rc.awaitFresh(10_000L)
+
+        assertNotNull(fresh)
+        assertEquals(2, api.calls)
+        assertEquals("https://x/y.msi", fresh.appUpdate?.url)
+    }
+
+    @Test
+    fun awaitFresh_returns_null_immediately_on_failure_and_null_when_offline_service() = runTest {
+        val failingApi = api().apply { failWith = HttpStatusException(503) }
+        val rc = config(failingApi, this)
+
+        assertNull(rc.awaitFresh(10_000L))
+        assertNull(config(api = null, scope = this).awaitFresh(10_000L))
     }
 }

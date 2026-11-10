@@ -36,13 +36,20 @@ class GitHubApiService(
 
     private val log get() = logger?.fork("github-api")
 
+    private data class ReleasePayload(
+        val tagName: String,
+        val body: String,
+        val htmlUrl: String,
+        val assets: List<JsonObject>,
+    )
+
     override suspend fun getConfig(): RemoteConfigData = withContext(Dispatchers.IO) {
         var appUpdate: AppUpdate? = null
         var htmlUrl = "https://github.com/$repoOwner/$repoName/releases"
 
         // 1. Check configurable remote JSON update manifest
         try {
-            val cacheBuster = now() / 60_000L
+            val cacheBuster = now()
             val manifestUrl = "https://raw.githubusercontent.com/$repoOwner/$repoName/main/update.json?cb=$cacheBuster"
             val mReq = RequestBuilder()
                 .url(manifestUrl)
@@ -50,33 +57,34 @@ class GitHubApiService(
                 .header("Cache-Control", "no-cache, no-store")
                 .get()
                 .build()
-            val mResp = client.execute(mReq)
-            if (mResp.isSuccessful) {
-                val manifestJson = JsonReader(mResp.body.asyncSource().buffer()).readObject()
-                val vName = manifestJson.stringOrNull("versionName") ?: ""
-                val vCode = manifestJson.intOrNull("versionCode") ?: 0
-                val minVCode = manifestJson.intOrNull("minimumVersionCode") ?: 1
-                val dlUrl = manifestJson.stringOrNull("downloadUrl") ?: ""
-                val notes = manifestJson.stringOrNull("releaseNotes") ?: ""
-                val force = manifestJson.boolOrNull("forceUpdate") ?: false
-                val dlSize = runCatching { manifestJson.long("size") }.getOrDefault(0L)
-                val dlSha = manifestJson.stringOrNull("sha256").orEmpty().lowercase()
+            client.execute(mReq).use { mResp ->
+                if (mResp.isSuccessful) {
+                    val manifestJson = JsonReader(mResp.body.asyncSource().buffer()).readObject()
+                    val vName = manifestJson.stringOrNull("versionName") ?: ""
+                    val vCode = manifestJson.intOrNull("versionCode") ?: 0
+                    val minVCode = manifestJson.intOrNull("minimumVersionCode") ?: 1
+                    val dlUrl = manifestJson.stringOrNull("downloadUrl") ?: ""
+                    val notes = manifestJson.stringOrNull("releaseNotes") ?: ""
+                    val force = manifestJson.boolOrNull("forceUpdate") ?: false
+                    val dlSize = runCatching { manifestJson.long("size") }.getOrDefault(0L)
+                    val dlSha = manifestJson.stringOrNull("sha256").orEmpty().lowercase()
 
-                if (vCode > 0 && dlUrl.isNotBlank()) {
-                    appUpdate = AppUpdate(
-                        versionCode = vCode,
-                        versionName = vName,
-                        notes = notes,
-                        url = dlUrl,
-                        size = dlSize,
-                        sha256 = dlSha,
-                        signature = "",
-                        changelogUrl = htmlUrl,
-                        downloadPage = htmlUrl,
-                        installInApp = true,
-                        forceUpdate = force,
-                        minimumVersionCode = minVCode,
-                    )
+                    if (vCode > 0 && dlUrl.isNotBlank()) {
+                        appUpdate = AppUpdate(
+                            versionCode = vCode,
+                            versionName = vName,
+                            notes = notes,
+                            url = dlUrl,
+                            size = dlSize,
+                            sha256 = dlSha,
+                            signature = "",
+                            changelogUrl = htmlUrl,
+                            downloadPage = htmlUrl,
+                            installInApp = true,
+                            forceUpdate = force,
+                            minimumVersionCode = minVCode,
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -90,21 +98,26 @@ class GitHubApiService(
                 .url(url)
                 .header("User-Agent", "PRVN-Music-App")
                 .header("Accept", "application/vnd.github.v3+json")
+                .header("Cache-Control", "no-cache, no-store")
                 .get()
                 .build()
 
-            val response = client.execute(request)
-            if (!response.isSuccessful) {
-                log?.info("GitHub release check returned HTTP ${response.code}")
-                throw HttpStatusException(response.code)
-            }
+            val (tagName, body, parsedHtmlUrl, assets) = client.execute(request).use { response ->
+                if (!response.isSuccessful) {
+                    log?.info("GitHub release check returned HTTP ${response.code}")
+                    throw HttpStatusException(response.code)
+                }
 
-            val json = JsonReader(response.body.asyncSource().buffer()).readObject()
-            val tagName = json.string("tag_name")
+                val json = JsonReader(response.body.asyncSource().buffer()).readObject()
+                ReleasePayload(
+                    tagName = json.string("tag_name"),
+                    body = json.stringOrNull("body").orEmpty(),
+                    htmlUrl = json.string("html_url"),
+                    assets = json.objects("assets"),
+                )
+            }
             val versionName = tagName.removePrefix("v").removePrefix("V")
-            val body = json.stringOrNull("body").orEmpty()
-            htmlUrl = json.string("html_url")
-            val assets = json.objects("assets")
+            htmlUrl = parsedHtmlUrl
 
             val apkAsset = assets.firstOrNull {
                 val name = it.stringOrNull("name").orEmpty()
@@ -134,15 +147,16 @@ class GitHubApiService(
                             .header("User-Agent", "PRVN-Music-App")
                             .get()
                             .build()
-                        val csResp = client.execute(csReq)
-                        if (csResp.isSuccessful) {
-                            val csText = csResp.body.utf8String()
-                            val apkName = apkAsset.string("name")
-                            val line = csText.lines().firstOrNull {
-                                it.contains(apkName, ignoreCase = true) || it.contains(".apk", ignoreCase = true)
-                            }
-                            if (line != null) {
-                                sha256 = line.trim().split(Regex("""\s+""")).firstOrNull().orEmpty()
+                        client.execute(csReq).use { csResp ->
+                            if (csResp.isSuccessful) {
+                                val csText = csResp.body.utf8String()
+                                val apkName = apkAsset.string("name")
+                                val line = csText.lines().firstOrNull {
+                                    it.contains(apkName, ignoreCase = true) || it.contains(".apk", ignoreCase = true)
+                                }
+                                if (line != null) {
+                                    sha256 = line.trim().split(Regex("""\s+""")).firstOrNull().orEmpty()
+                                }
                             }
                         }
                     } catch (e: Exception) {

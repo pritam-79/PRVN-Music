@@ -43,7 +43,7 @@ import io.ymusic.ui.DesignColors
 
 /**
  * The 4 main bottom navigation items for PRVN Music:
- * Home (YouTube Music feed), Mix (Listen Together / Radio station), Library, and Search.
+ * Home (PRVN Discover feed), Mix (Play Together), Library, and Search.
  */
 enum class GlassNavItem(
     val title: String,
@@ -73,7 +73,7 @@ fun GlassBottomNavigation(
         GlassNavItem.SEARCH
     } else {
         when (currentSection) {
-            AppSection.YtMusic, AppSection.Discover -> GlassNavItem.HOME
+            AppSection.Discover -> GlassNavItem.HOME
             AppSection.PlayTogether -> GlassNavItem.MIX
             AppSection.Library -> GlassNavItem.LIBRARY
             else -> null
@@ -120,7 +120,7 @@ fun GlassBottomNavigation(
                     isSelected = isSelected,
                     onClick = {
                         when (item) {
-                            GlassNavItem.HOME -> onNavigate(AppSection.YtMusic)
+                            GlassNavItem.HOME -> onNavigate(AppSection.Discover)
                             GlassNavItem.MIX -> onNavigate(AppSection.PlayTogether)
                             GlassNavItem.LIBRARY -> onNavigate(AppSection.Library)
                             GlassNavItem.SEARCH -> onSearchClick()

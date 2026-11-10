@@ -15,6 +15,7 @@ import io.ymusic.ui.playtogether.backend.PlayTogetherJson.str
 import kmphttp.KmpHttpClient
 import kmphttp.RequestBuilder
 import kmphttp.RequestBodyX.toRequestBody
+import kmphttp.Response
 import kmphttp.create
 import kmphttp.utf8String
 import kotlinx.coroutines.CoroutineScope
@@ -79,6 +80,66 @@ class GlobalRealtimeBackend(
 
     private val networkAvailable = MutableStateFlow(true)
     private var lastKnownClockOffsetMs = 0L
+    private var consecutiveFailures = 0
+
+    private fun updateServerClockFromResponse(resp: Response, sentAtMs: Long, rttMs: Long) {
+        val dateEpochMs = parseHttpDateToEpochMs(resp.headers["Date"]) ?: return
+        // HTTP Date has 1-second resolution, so add +500ms midpoint for unbiased comparison.
+        val serverEstimateMs = dateEpochMs + 500L
+        val localMidpoint = sentAtMs + (rttMs.coerceAtLeast(0L) / 2L)
+        val rawSkew = serverEstimateMs - localMidpoint
+        // Ignore sub-2.5s differences (normal HTTP Date quantization + network jitter); only compensate real clock skew.
+        lastKnownClockOffsetMs = if (kotlin.math.abs(rawSkew) > 2_500L) rawSkew else 0L
+    }
+
+    /** Parses IMF-fixdate HTTP `Date` headers (e.g. `Tue, 10 Nov 2026 18:41:20 GMT`) to epoch ms. */
+    private fun parseHttpDateToEpochMs(header: String?): Long? {
+        if (header.isNullOrBlank()) return null
+        val tokens = header.trim().replace(",", "").split(Regex("\\s+"))
+        // Expected: [DayName, dd, MMM, yyyy, HH:mm:ss, GMT]
+        if (tokens.size < 6) return null
+        val day = tokens[1].toIntOrNull() ?: return null
+        val month = when (tokens[2].lowercase()) {
+            "jan" -> 1; "feb" -> 2; "mar" -> 3; "apr" -> 4; "may" -> 5; "jun" -> 6
+            "jul" -> 7; "aug" -> 8; "sep" -> 9; "oct" -> 10; "nov" -> 11; "dec" -> 12
+            else -> return null
+        }
+        val year = tokens[3].toIntOrNull() ?: return null
+        val hms = tokens[4].split(":")
+        if (hms.size != 3) return null
+        val hour = hms[0].toIntOrNull() ?: return null
+        val min = hms[1].toIntOrNull() ?: return null
+        val sec = hms[2].toIntOrNull() ?: return null
+        if (day !in 1..31 || year < 1970 || hour !in 0..23 || min !in 0..59 || sec !in 0..60) return null
+        val y = if (month <= 2) year - 1 else year
+        val era = (if (y >= 0) y else y - 399) / 400
+        val yoe = y - era * 400
+        val m = month
+        val doy = (153 * (if (m > 2) m - 3 else m + 9) + 2) / 5 + day - 1
+        val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        val daysSinceEpoch = (era * 146097L + doe - 719468L)
+        return ((daysSinceEpoch * 86400L) + (hour * 3600L) + (min * 60L) + sec) * 1000L
+    }
+
+    private fun markSuccess() {
+        consecutiveFailures = 0
+        networkAvailable.value = true
+    }
+
+    private fun markTransientFailure(hard: Boolean = false) {
+        consecutiveFailures++
+        if (hard || consecutiveFailures >= 2) {
+            networkAvailable.value = false
+        }
+    }
+
+    private fun retryDelayMs(resp: Response?, attempt: Int): Long {
+        val retryAfterSec = resp?.headers?.get("Retry-After")?.trim()?.toLongOrNull()
+        if (retryAfterSec != null && retryAfterSec > 0L) {
+            return (retryAfterSec * 1000L).coerceIn(500L, MAX_RETRY_BACKOFF_MS)
+        }
+        return minOf(MAX_RETRY_BACKOFF_MS, BASE_POLL_INTERVAL_MS * (1L shl minOf(attempt, 3)))
+    }
 
     private fun topicForRoom(code: String): String = "prvn_music_room_${code.trim()}"
     private val publicDirectoryTopic = "prvn_music_public_rooms_v2"
@@ -115,60 +176,81 @@ class GlobalRealtimeBackend(
         val staleCutoffMs = 45 * 60_000L
 
         var networkOk = false
-        try {
-            val req = RequestBuilder()
-                .url("$relayUrl/$publicDirectoryTopic/json?poll=1&since=all")
-                .header("User-Agent", USER_AGENT)
-                .header("Cache-Control", "no-cache")
-                .get()
-                .build()
-            val resp = client.execute(req)
-            if (resp.isSuccessful) {
-                networkOk = true
-                networkAvailable.value = true
-                val body = resp.body.utf8String()
-                body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-                    val root = PlayTogetherJson.parseObjectOrNull(line) ?: return@forEach
-                    val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: return@forEach
-                    val code = msgObj.str("code")?.trim().orEmpty()
-                    if (!RoomSecurityPolicy.isValidRoomCode(code)) return@forEach
+        var lastHttpCode: Int? = null
+        for (attempt in 0..1) {
+            try {
+                val sentAt = Clock.System.now().toEpochMilliseconds()
+                val mark = TimeSource.Monotonic.markNow()
+                val req = RequestBuilder()
+                    .url("$relayUrl/$publicDirectoryTopic/json?poll=1&since=all")
+                    .header("User-Agent", USER_AGENT)
+                    .header("Cache-Control", "no-cache")
+                    .get()
+                    .build()
+                val retryAfterDelay = client.execute(req).use { resp ->
+                    val rtt = mark.elapsedNow().inWholeMilliseconds
+                    lastHttpCode = resp.code
+                    if (resp.isSuccessful) {
+                        networkOk = true
+                        markSuccess()
+                        updateServerClockFromResponse(resp, sentAt, rtt)
+                        val body = resp.body.utf8String()
+                        body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
+                            val root = PlayTogetherJson.parseObjectOrNull(line) ?: return@forEach
+                            val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: return@forEach
+                            val code = msgObj.str("code")?.trim().orEmpty()
+                            if (!RoomSecurityPolicy.isValidRoomCode(code)) return@forEach
 
-                    val closed = (msgObj.bool("closed") ?: false) || (msgObj.bool("isClosed") ?: false)
-                    val vis = runCatching {
-                        RoomVisibility.valueOf(msgObj.str("visibility").orEmpty().uppercase())
-                    }.getOrDefault(RoomVisibility.PUBLIC)
+                            val closed = (msgObj.bool("closed") ?: false) || (msgObj.bool("isClosed") ?: false)
+                            val vis = runCatching {
+                                RoomVisibility.valueOf(msgObj.str("visibility").orEmpty().uppercase())
+                            }.getOrDefault(RoomVisibility.PUBLIC)
 
-                    if (closed || vis != RoomVisibility.PUBLIC) {
-                        roomsByCode.remove(code)
-                        return@forEach
+                            if (closed || vis != RoomVisibility.PUBLIC) {
+                                roomsByCode.remove(code)
+                                return@forEach
+                            }
+
+                            val updatedUtc = msgObj.lng("updatedUtc") ?: ((root.lng("time") ?: 0L) * 1000L)
+                            if (now - updatedUtc > staleCutoffMs) return@forEach
+
+                            val existing = roomsByCode[code]?.second
+                            val parsedInfo = RoomInfo(
+                                id = msgObj.str("id")?.takeIf { it.isNotBlank() } ?: existing?.id ?: "room_$code",
+                                code = code,
+                                name = msgObj.str("name")?.takeIf { it.isNotBlank() } ?: existing?.name ?: "PRVN Music Lounge",
+                                hostName = msgObj.str("hostName")?.takeIf { it.isNotBlank() } ?: existing?.hostName ?: "PRVN Host",
+                                hostId = msgObj.str("hostId")?.takeIf { it.isNotBlank() } ?: existing?.hostId.orEmpty(),
+                                visibility = RoomVisibility.PUBLIC,
+                                controlMode = runCatching {
+                                    ControlMode.valueOf(msgObj.str("controlMode").orEmpty().uppercase())
+                                }.getOrDefault(existing?.controlMode ?: ControlMode.HOST_ONLY),
+                                memberCount = (msgObj.int("memberCount") ?: existing?.memberCount ?: 1).coerceAtLeast(1),
+                                currentTrack = PlayTogetherJson.decodeTrack(msgObj["currentTrack"] as? JsonObject)
+                                    ?: existing?.currentTrack,
+                                allowListenerRequests = msgObj.bool("allowListenerRequests") ?: existing?.allowListenerRequests ?: true,
+                                createdUtc = msgObj.lng("createdUtc") ?: existing?.createdUtc ?: updatedUtc,
+                            )
+                            roomsByCode[code] = updatedUtc to parsedInfo
+                        }
+                        null
+                    } else if (resp.code == 429 || resp.code >= 500) {
+                        retryDelayMs(resp, attempt)
+                    } else {
+                        null
                     }
-
-                    val updatedUtc = msgObj.lng("updatedUtc") ?: ((root.lng("time") ?: 0L) * 1000L)
-                    if (now - updatedUtc > staleCutoffMs) return@forEach
-
-                    val existing = roomsByCode[code]?.second
-                    val parsedInfo = RoomInfo(
-                        id = msgObj.str("id")?.takeIf { it.isNotBlank() } ?: existing?.id ?: "room_$code",
-                        code = code,
-                        name = msgObj.str("name")?.takeIf { it.isNotBlank() } ?: existing?.name ?: "PRVN Music Lounge",
-                        hostName = msgObj.str("hostName")?.takeIf { it.isNotBlank() } ?: existing?.hostName ?: "PRVN Host",
-                        hostId = msgObj.str("hostId")?.takeIf { it.isNotBlank() } ?: existing?.hostId.orEmpty(),
-                        visibility = RoomVisibility.PUBLIC,
-                        controlMode = runCatching {
-                            ControlMode.valueOf(msgObj.str("controlMode").orEmpty().uppercase())
-                        }.getOrDefault(existing?.controlMode ?: ControlMode.HOST_ONLY),
-                        memberCount = (msgObj.int("memberCount") ?: existing?.memberCount ?: 1).coerceAtLeast(1),
-                        currentTrack = PlayTogetherJson.decodeTrack(msgObj["currentTrack"] as? JsonObject)
-                            ?: existing?.currentTrack,
-                        allowListenerRequests = msgObj.bool("allowListenerRequests") ?: existing?.allowListenerRequests ?: true,
-                        createdUtc = msgObj.lng("createdUtc") ?: existing?.createdUtc ?: updatedUtc,
-                    )
-                    roomsByCode[code] = updatedUtc to parsedInfo
                 }
+                if (networkOk) break
+                if (retryAfterDelay != null && attempt == 0) {
+                    delay(minOf(retryAfterDelay, 1_500L))
+                } else {
+                    break
+                }
+            } catch (_: Exception) {
+                if (attempt == 0) delay(500L)
             }
-        } catch (_: Exception) {
-            if (!networkOk) networkAvailable.value = false
         }
+        if (!networkOk) markTransientFailure()
 
         // Include locally hosted active PUBLIC rooms if relay hasn't echoed them yet (never resurrect via listener cache)
         synchronized(localLock) {
@@ -189,7 +271,12 @@ class GlobalRealtimeBackend(
             .map { it.second }
 
         if (!networkOk && sorted.isEmpty()) {
-            Result.failure(Exception("Unable to reach Play Together server. Check your internet connection."))
+            val msg = when {
+                lastHttpCode == 429 -> "Play Together relay is rate-limited right now (HTTP 429). Tap Retry in a moment."
+                lastHttpCode != null -> "Play Together relay returned HTTP $lastHttpCode. Tap Retry to reconnect."
+                else -> "Unable to reach Play Together server. Check your internet connection and tap Retry."
+            }
+            Result.failure(Exception(msg))
         } else {
             Result.success(sorted)
         }
@@ -809,21 +896,27 @@ class GlobalRealtimeBackend(
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build()
-            val resp = client.execute(req)
-            val rttMs = mark.elapsedNow().inWholeMilliseconds.coerceAtLeast(1L)
-            val t1 = t0 + rttMs
-            if (resp.isSuccessful) {
-                networkAvailable.value = true
-                // Check if ntfy returned Date header or server time; compute midpoint offset
-                val midpoint = (t0 + t1) / 2L
-                // HTTP health check guarantees connectivity & RTT; relative drift also uses server event timestamp!
-                Result.success(SyncPingResult(serverTimestampUtc = midpoint, rttMs = rttMs, clockOffsetMs = lastKnownClockOffsetMs))
-            } else {
-                networkAvailable.value = false
-                Result.failure(Exception("Server ping failed (${resp.code})"))
+            client.execute(req).use { resp ->
+                val rttMs = mark.elapsedNow().inWholeMilliseconds.coerceAtLeast(1L)
+                val t1 = t0 + rttMs
+                if (resp.isSuccessful) {
+                    markSuccess()
+                    updateServerClockFromResponse(resp, t0, rttMs)
+                    val midpoint = (t0 + t1) / 2L
+                    Result.success(
+                        SyncPingResult(
+                            serverTimestampUtc = midpoint + lastKnownClockOffsetMs,
+                            rttMs = rttMs,
+                            clockOffsetMs = lastKnownClockOffsetMs,
+                        ),
+                    )
+                } else {
+                    markTransientFailure()
+                    Result.failure(Exception("Server ping failed (${resp.code})"))
+                }
             }
         } catch (e: Exception) {
-            networkAvailable.value = false
+            markTransientFailure()
             Result.failure(e)
         }
     }
@@ -837,41 +930,62 @@ class GlobalRealtimeBackend(
     // ---- Replay & Polling internals ----
 
     private suspend fun replayRoomTopic(topic: String, cleanCode: String): Result<CachedRoom> {
-        val req = RequestBuilder()
-            .url("$relayUrl/$topic/json?poll=1&since=all")
-            .header("User-Agent", USER_AGENT)
-            .header("Cache-Control", "no-cache")
-            .get()
-            .build()
-        val resp = try {
-            client.execute(req)
-        } catch (e: Exception) {
-            networkAvailable.value = false
-            return Result.failure(Exception("Network error contacting Play Together server: ${e.message ?: "offline"}"))
+        var body: String? = null
+        var failure: Exception? = null
+        for (attempt in 0..1) {
+            val sentAt = Clock.System.now().toEpochMilliseconds()
+            val mark = TimeSource.Monotonic.markNow()
+            val req = RequestBuilder()
+                .url("$relayUrl/$topic/json?poll=1&since=all")
+                .header("User-Agent", USER_AGENT)
+                .header("Cache-Control", "no-cache")
+                .get()
+                .build()
+            val retryWait = try {
+                client.execute(req).use { resp ->
+                    val rttMs = mark.elapsedNow().inWholeMilliseconds
+                    if (resp.isSuccessful) {
+                        markSuccess()
+                        updateServerClockFromResponse(resp, sentAt, rttMs)
+                        body = resp.body.utf8String()
+                        null
+                    } else if (resp.code == 429 || resp.code >= 500) {
+                        failure = Exception("Play Together server temporarily busy (${resp.code}). Please try again.")
+                        retryDelayMs(resp, attempt)
+                    } else {
+                        markTransientFailure()
+                        failure = Exception("Play Together server error (${resp.code}). Please try again.")
+                        -1L
+                    }
+                }
+            } catch (e: Exception) {
+                failure = Exception("Network error contacting Play Together server: ${e.message ?: "offline"}")
+                500L
+            }
+            if (body != null) break
+            if (retryWait != null && retryWait > 0L && attempt == 0) {
+                delay(minOf(retryWait, 1_500L))
+            } else {
+                break
+            }
+        }
+        val responseBody = body ?: run {
+            markTransientFailure()
+            return Result.failure(failure ?: Exception("Unable to reach Play Together server."))
         }
 
-        if (!resp.isSuccessful) {
-            networkAvailable.value = false
-            return Result.failure(Exception("Play Together server error (${resp.code}). Please try again."))
-        }
-        networkAvailable.value = true
-
-        val body = resp.body.utf8String()
-        val lines = body.lineSequence().filter { it.isNotBlank() }.toList()
+        val lines = responseBody.lineSequence().filter { it.isNotBlank() }.toList()
         if (lines.isEmpty()) {
             return Result.failure(Exception("Room code \"$cleanCode\" not found or expired."))
         }
 
         var state: CachedRoom? = null
         var lastNtfyId: String? = null
-        var lastNtfyServerMs = 0L
 
         for (line in lines) {
             val root = PlayTogetherJson.parseObjectOrNull(line) ?: continue
             val ntfyId = root.str("id")
             if (!ntfyId.isNullOrBlank()) lastNtfyId = ntfyId
-            val ntfySec = root.lng("time")
-            if (ntfySec != null && ntfySec > 0L) lastNtfyServerMs = ntfySec * 1000L
 
             val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: continue
             val ev = msgObj.str("event").orEmpty().uppercase()
@@ -1034,15 +1148,6 @@ class GlobalRealtimeBackend(
             ?: return Result.failure(Exception("Room code \"$cleanCode\" not found or expired."))
         finalState.lastMsgId = lastNtfyId
 
-        // Track coarse clock skew if server time differs by more than 3 seconds from local wall clock
-        if (lastNtfyServerMs > 0L) {
-            val localNow = Clock.System.now().toEpochMilliseconds()
-            val roughOffset = lastNtfyServerMs - localNow
-            if (kotlin.math.abs(roughOffset) > 2500L) {
-                lastKnownClockOffsetMs = roughOffset
-            }
-        }
-
         return Result.success(finalState)
     }
 
@@ -1056,38 +1161,50 @@ class GlobalRealtimeBackend(
             pollJobs.remove(roomId)?.cancel()
             val job = scope.launch(Dispatchers.IO) {
                 var sinceCursor = cached.lastMsgId?.takeIf { it.isNotBlank() } ?: "30s"
+                var pollFailures = 0
                 while (isActive) {
                     val shouldStop = synchronized(localLock) { localRooms[roomId]?.isClosed == true || !localRooms.containsKey(roomId) }
                     if (shouldStop) break
 
+                    var nextDelayMs = BASE_POLL_INTERVAL_MS
                     try {
+                        val sentAt = Clock.System.now().toEpochMilliseconds()
+                        val mark = TimeSource.Monotonic.markNow()
                         val req = RequestBuilder()
                             .url("$relayUrl/$topic/json?poll=1&since=$sinceCursor")
                             .header("User-Agent", USER_AGENT)
                             .header("Cache-Control", "no-cache")
                             .get()
                             .build()
-                        val resp = client.execute(req)
-                        if (resp.isSuccessful) {
-                            networkAvailable.value = true
-                            val body = resp.body.utf8String()
-                            body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
-                                val root = PlayTogetherJson.parseObjectOrNull(line) ?: return@forEach
-                                root.str("id")?.takeIf { it.isNotBlank() }?.let { msgId ->
-                                    sinceCursor = msgId
-                                    cached.lastMsgId = msgId
+                        client.execute(req).use { resp ->
+                            val rttMs = mark.elapsedNow().inWholeMilliseconds
+                            if (resp.isSuccessful) {
+                                pollFailures = 0
+                                markSuccess()
+                                updateServerClockFromResponse(resp, sentAt, rttMs)
+                                val body = resp.body.utf8String()
+                                body.lineSequence().filter { it.isNotBlank() }.forEach { line ->
+                                    val root = PlayTogetherJson.parseObjectOrNull(line) ?: return@forEach
+                                    root.str("id")?.takeIf { it.isNotBlank() }?.let { msgId ->
+                                        sinceCursor = msgId
+                                        cached.lastMsgId = msgId
+                                    }
+                                    val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: return@forEach
+                                    processIncomingMessage(cached, msgObj, eventFlow, presenceFlow)
                                 }
-                                val msgObj = PlayTogetherJson.parseObjectOrNull(root.str("message")) ?: return@forEach
-                                processIncomingMessage(cached, msgObj, eventFlow, presenceFlow)
+                                pruneTimedOutMembers(cached, presenceFlow, eventFlow)
+                            } else {
+                                pollFailures++
+                                markTransientFailure(hard = resp.code !in 429..599 && pollFailures >= 2)
+                                nextDelayMs = retryDelayMs(resp, pollFailures)
                             }
-                            pruneTimedOutMembers(cached, presenceFlow, eventFlow)
-                        } else {
-                            networkAvailable.value = false
                         }
                     } catch (_: Exception) {
-                        networkAvailable.value = false
+                        pollFailures++
+                        markTransientFailure(hard = pollFailures >= 2)
+                        nextDelayMs = retryDelayMs(null, pollFailures)
                     }
-                    delay(1200L)
+                    delay(nextDelayMs)
                 }
             }
             pollJobs[roomId] = job
@@ -1362,7 +1479,7 @@ class GlobalRealtimeBackend(
         eventFlow: MutableSharedFlow<RoomEvent>,
     ) {
         val now = Clock.System.now().toEpochMilliseconds()
-        val timeoutMs = 45_000L
+        val timeoutMs = 60_000L
         val pruned = synchronized(localLock) {
             val expiredIds = cached.members.values
                 .filter { !it.isHost && it.id != cached.selfMemberId && it.lastSeenUtc > 0L && (now - it.lastSeenUtc) > timeoutMs }
@@ -1380,19 +1497,32 @@ class GlobalRealtimeBackend(
     }
 
     private suspend fun publishRelayMessage(topic: String, title: String, message: String): Boolean {
-        return try {
-            val req = RequestBuilder()
-                .url("$relayUrl/$topic")
-                .header("Title", title)
-                .header("User-Agent", USER_AGENT)
-                .header("Content-Type", "text/plain; charset=utf-8")
-                .post(message.toRequestBody(null))
-                .build()
-            val resp = client.execute(req)
-            resp.isSuccessful
-        } catch (_: Exception) {
-            false
+        for (attempt in 0..1) {
+            try {
+                val req = RequestBuilder()
+                    .url("$relayUrl/$topic")
+                    .header("Title", title)
+                    .header("User-Agent", USER_AGENT)
+                    .header("Content-Type", "text/plain; charset=utf-8")
+                    .post(message.toRequestBody(null))
+                    .build()
+                val retryWait = client.execute(req).use { resp ->
+                    if (resp.isSuccessful) {
+                        markSuccess()
+                        return true
+                    }
+                    if ((resp.code == 429 || resp.code >= 500) && attempt == 0) {
+                        minOf(retryDelayMs(resp, attempt), 1_500L)
+                    } else {
+                        -1L
+                    }
+                }
+                if (retryWait > 0L) delay(retryWait) else return false
+            } catch (_: Exception) {
+                if (attempt == 0) delay(400L) else return false
+            }
         }
+        return false
     }
 
     private fun buildJoinResultFromCached(
@@ -1509,6 +1639,8 @@ class GlobalRealtimeBackend(
     }
 
     private companion object {
-        const val USER_AGENT = "PRVN-Music-App/0.11"
+        const val USER_AGENT = "PRVN-Music-App/0.12"
+        const val BASE_POLL_INTERVAL_MS = 2_500L
+        const val MAX_RETRY_BACKOFF_MS = 20_000L
     }
 }

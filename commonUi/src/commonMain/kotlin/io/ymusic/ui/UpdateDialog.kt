@@ -78,7 +78,6 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
         if (requested && download is UpdateDownload.Ready) dismissedVersion = null
     }
     if (!offer.forceUpdate && offer.versionCode == dismissedVersion) return
-    if (!requested && download is UpdateDownload.Running && recheck == 0) return
 
     val blocked = updates.blockedReason
     val inPlace = blocked == null && offer.installInApp
@@ -109,15 +108,18 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
                 download is UpdateDownload.Ready || download is UpdateDownload.InstallFailed -> TextButton(onClick = { updates.installAndRestart() }) {
                     Text("Install Now")
                 }
-                download is UpdateDownload.Installing || (requested && download is UpdateDownload.Running) -> TextButton(onClick = {}, enabled = false) {
+                download is UpdateDownload.Installing -> TextButton(onClick = {}, enabled = false) {
                     Text("Installing...")
+                }
+                download is UpdateDownload.Running -> TextButton(onClick = {}, enabled = false) {
+                    Text("Downloading...")
                 }
                 else -> TextButton(
                     onClick = {
                         requestedVersion = offer.versionCode
                         updates.download()
                     },
-                ) { Text("Update Now") }
+                ) { Text(if (download is UpdateDownload.Failed) "Retry" else "Update Now") }
             }
         },
     ) {
@@ -167,7 +169,7 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
             }
 
             // Download progress indicator
-            if (requested && download is UpdateDownload.Running) {
+            if (download is UpdateDownload.Running) {
                 Text(
                     if (download.total > 0) {
                         stringResource(Res.string.update_downloading, formatBytes(download.done), formatBytes(download.total))
@@ -201,7 +203,7 @@ fun UpdateDialog(graph: AppGraph, recheck: Int = 0) {
                 browserLink?.let { LinkText(stringResource(Res.string.update_download_in_browser), it) }
             }
 
-            if (requested && download is UpdateDownload.Failed) {
+            if (download is UpdateDownload.Failed) {
                 Text(updateFailureMessage(download.code), style = TextStyle(fontSize = 13.sp, color = DesignColors.InkSecondary))
                 openDownloadPage?.let { LinkText(stringResource(Res.string.update_official_site), it) }
             }

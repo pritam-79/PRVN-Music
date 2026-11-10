@@ -649,7 +649,6 @@ export function logSabrRequest(url: string, body?: unknown, status?: number): vo
   debug(function () {
     const q = (url.match(/[?&]pot=([^&]*)/) || [])[1] || "";
     let potB = 0;
-    let potB64 = "";
     let playerTimeMs = -1;
     let sinceSeekMs = -1;
     let bit40 = -1;
@@ -665,7 +664,6 @@ export function logSabrRequest(url: string, body?: unknown, status?: number): vo
         const pot = protoBytes(sc, 2);
         if (pot) {
           potB = pot.length;
-          potB64 = b64url(pot);
         }
       }
       const clientAbr = protoBytes(u, 1);
@@ -735,9 +733,7 @@ export function logSabrRequest(url: string, body?: unknown, status?: number): vo
       " potQ=" +
       q.length +
       " potBody=" +
-      potB +
-      " pot=" +
-      potB64
+      potB
     );
   });
   if (isAudioOnly()) dumpDrain("sabr-req");

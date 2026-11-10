@@ -361,7 +361,11 @@ class YMusicApplication : Application() {
                 bundles = runningBundles,
             )
         } ?: GitHubApiService(
-            client = http.engine.newBuilder().apply { defaultExecuteTimeout = null }.build(),
+            client = http.engine.newBuilder().apply {
+                defaultExecuteTimeout = null
+                cache = null
+                defaultRedirectOptions = RedirectOptions(followRedirects = true, followSslRedirects = true)
+            }.build(),
             repoOwner = "pritam-79",
             repoName = "PRVN-Music",
             now = { System.currentTimeMillis() },
@@ -403,7 +407,11 @@ class YMusicApplication : Application() {
         // The engine bundle: asset embed (no compiled-in constant) + file cache + the revision the
         // config service publishes, which the manager follows from start.
         val engineSource = DefaultJsSourceProvider(
-            client = http.engine.newBuilder().apply { defaultExecuteTimeout = null }.build(),
+            client = http.engine.newBuilder().apply {
+                defaultExecuteTimeout = null
+                cache = null
+                defaultRedirectOptions = RedirectOptions(followRedirects = true, followSslRedirects = true)
+            }.build(),
             config = remoteConfig.bundleConfig(remoteConfig.engineJs),
             name = ENGINE_BUNDLE,
             publicKey = BuildConfig.BUNDLE_PUBLIC_KEY,
@@ -481,7 +489,11 @@ class YMusicApplication : Application() {
         }
 
         val playerJs = playerJsSource(
-            client = http.engine.newBuilder().apply { defaultExecuteTimeout = null }.build(),
+            client = http.engine.newBuilder().apply {
+                defaultExecuteTimeout = null
+                cache = null
+                defaultRedirectOptions = RedirectOptions(followRedirects = true, followSslRedirects = true)
+            }.build(),
             config = remoteConfig.bundleConfig(remoteConfig.playerJs),
             publicKey = BuildConfig.BUNDLE_PUBLIC_KEY,
             fileSystem = FileSystem.SYSTEM,
@@ -493,7 +505,11 @@ class YMusicApplication : Application() {
         // In-app updates from the config's appUpdate.
         val updates = AndroidAppUpdates(
             context = this,
-            client = http.engine.newBuilder().apply { defaultExecuteTimeout = null }.build(),
+            client = http.engine.newBuilder().apply {
+                defaultExecuteTimeout = null
+                cache = null
+                defaultRedirectOptions = RedirectOptions(followRedirects = true, followSslRedirects = true)
+            }.build(),
             currentVersionCode = BuildConfig.VERSION_CODE,
             scope = scope,
             logger = rootLogger,
@@ -736,6 +752,9 @@ class YMusicApplication : Application() {
             mediaStore = shared.mediaStore,
             playHistory = PlayHistoryStore(playHistoryAndroidDriver(this)),
             playTogetherStore = PlayTogetherStore(playTogetherAndroidDriver(this)),
+            onPlayTogetherNotification = { title, body ->
+                AppNotificationHelper.notifyPlayTogether(this, title, body)
+            },
             sponsorBlockStore = SqliteSponsorBlockStore(sponsorBlockAndroidDriver(this)),
             scanLibraryFolder = { onProgress -> scanPickedFolder(shared.mediaStore, onProgress) },
             libraryFolderPicker = { pickAndRegisterFolder(shared.mediaStore) },

@@ -174,6 +174,9 @@ import kotlin.math.roundToInt
 
 /** App-level sections — the drawer's three groups (design/final/drawer.html). */
 /** [id] is persisted (the section a restart resumes): stable, never reused, independent of entry order. */
+/** Explicit canonical route for the PRVN Discover Home destination. */
+const val DISCOVER_ROUTE = "discover"
+
 enum class AppSection(val id: Int, val label: StringResource, val icon: ImageVector, val group: Int) {
     Discover(1, Res.string.section_discover, Icons.Outlined.OndemandVideo, 0),
     YtMusic(2, Res.string.section_yt_music, Icons.Default.PlayCircleOutline, 0),
@@ -186,6 +189,20 @@ enum class AppSection(val id: Int, val label: StringResource, val icon: ImageVec
     Donate(8, Res.string.section_donate, Icons.Outlined.FavoriteBorder, 2),
     Telegram(9, Res.string.section_telegram, TelegramIcon, 2),
     Feedback(10, Res.string.section_feedback, Icons.AutoMirrored.Outlined.Chat, 2),
+}
+
+fun AppSection.toRoute(): String = when (this) {
+    AppSection.Discover -> DISCOVER_ROUTE
+    AppSection.YtMusic -> "yt_music"
+    AppSection.Library -> "library"
+    AppSection.PlayTogether -> "play_together"
+    AppSection.PlayAgain -> "play_again"
+    AppSection.Downloads -> "downloads"
+    AppSection.Settings -> "settings"
+    AppSection.Catalogue -> "catalogue"
+    AppSection.Donate -> "donate"
+    AppSection.Telegram -> "telegram"
+    AppSection.Feedback -> "feedback"
 }
 
 /** Switch the top-level section from within a screen (e.g. Downloads → "Reveal in Library"); no-op
@@ -931,6 +948,7 @@ private fun AppRoot(
         )
         val premium by graph.premium.collectAsState()
         var updateRecheck by remember { mutableStateOf(0) }
+        val externalUpdatePrompt by graph.updatePromptRequests.collectAsState()
         // The system back gesture/button walks the same path as the in-app back arrows: overlays
         // close first (drawer, Now Playing); the search input steps back to its results; then one
         // layer of the CURRENT section's stack pops. A lateral section with nothing left to unwind
@@ -1279,7 +1297,7 @@ private fun AppRoot(
                                 } else {
                                     val inPlayTogether = (section == AppSection.PlayTogether)
                                     val miniVisible = !inPlayTogether && coordinator.player.queue.collectAsState().value.currentItem != null
-                                    val miniInset = (if (miniVisible) with(LocalDensity.current) { miniHeightPx.toDp() } else 0.dp) + 76.dp
+                                    val miniInset = (if (miniVisible) with(LocalDensity.current) { miniHeightPx.toDp() } else 0.dp) + 96.dp
                                     Box(Modifier.fillMaxSize()) {
                                         Column(Modifier.fillMaxSize().padding(padding)) {
                                             CompositionLocalProvider(LocalMiniPlayerInset provides miniInset) { screens() }
@@ -1321,7 +1339,7 @@ private fun AppRoot(
                         }
                     }
                 }
-                UpdateDialog(graph, recheck = updateRecheck)
+                UpdateDialog(graph, recheck = updateRecheck + externalUpdatePrompt)
                 UpgradeSnackbar(graph, snackbarHostState)
                 if (checkingUpdate) {
                     CheckUpdateDialog(graph) { found ->

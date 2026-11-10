@@ -79,6 +79,7 @@ class MainActivity : FragmentActivity() {
     /** A section requested by a platform surface (download notification tap), consumed by the
      *  composition once the graph is up — survives arriving before the app finishes booting. */
     private val pendingSection = mutableStateOf<AppSection?>(null)
+    private val pendingUpdatePrompt = mutableStateOf(false)
     private var appGraph: AppGraph? = null
     /** PiP just ended; [onResume] means expand-to-full, [onStop] means the user closed PiP. */
     private var pipExitPending = false
@@ -352,6 +353,7 @@ class MainActivity : FragmentActivity() {
         (application as YMusicApplication).documentOpener = openDocument
         (application as YMusicApplication).permissionRequester = requestPermission
         sectionFor(intent)?.let { pendingSection.value = it }
+        if (intent?.action == ACTION_OPEN_UPDATES) pendingUpdatePrompt.value = true
         // A recreation re-delivers the launching intent; its link was already opened.
         if (savedInstanceState == null) openLink(intent)
         setContent {
@@ -379,6 +381,13 @@ class MainActivity : FragmentActivity() {
                         }
                     }
                     val section = rememberStartSection(graph!!)
+                    LaunchedEffect(graph, pendingUpdatePrompt.value) {
+                        if (pendingUpdatePrompt.value) {
+                            pendingUpdatePrompt.value = false
+                            graph!!.requestUpdatePrompt()
+                            graph!!.updates?.checkNow()
+                        }
+                    }
                     LaunchedEffect(pendingSection.value) {
                         pendingSection.value?.let {
                             section.value = it
@@ -527,6 +536,7 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         sectionFor(intent)?.let { pendingSection.value = it }
+        if (intent?.action == ACTION_OPEN_UPDATES) pendingUpdatePrompt.value = true
         openLink(intent)
     }
 
@@ -583,12 +593,19 @@ class MainActivity : FragmentActivity() {
 
     private fun sectionFor(intent: Intent?): AppSection? = when (intent?.action) {
         ACTION_OPEN_DOWNLOADS -> AppSection.Downloads
+        ACTION_OPEN_PLAY_TOGETHER -> AppSection.PlayTogether
         else -> null
     }
 
     companion object {
         /** Launch intent action landing on the Download manager (the download notifications). */
         const val ACTION_OPEN_DOWNLOADS = "io.ymusic.android.action.OPEN_DOWNLOADS"
+
+        /** Launch intent action opening the Play Together screen from a song request notification. */
+        const val ACTION_OPEN_PLAY_TOGETHER = "io.ymusic.android.action.OPEN_PLAY_TOGETHER"
+
+        /** Launch intent action surfacing the in-app update dialog from an update notification. */
+        const val ACTION_OPEN_UPDATES = "io.ymusic.android.action.OPEN_UPDATES"
 
         /** A shared link ([ShareActivity]): the url as data, the [LinkAction] name in [EXTRA_LINK_ACTION]. */
         const val ACTION_OPEN_LINK = "io.ymusic.android.action.OPEN_LINK"

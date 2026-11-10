@@ -47,6 +47,7 @@ class PlayTogetherController(
     private val settings: SettingsStore,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
     private val backendProvider: () -> PlayTogetherBackend = { PlayTogetherBackendProvider.current },
+    private val onIncomingRequestNotify: ((title: String, body: String) -> Unit)? = null,
     private val logger: Logger? = null,
 ) {
     val backend: PlayTogetherBackend
@@ -57,11 +58,14 @@ class PlayTogetherController(
 
     private val joinRateLimiter = RateLimiter(maxRequests = 8, windowMs = 30_000L)
     private val playedHistory = ArrayDeque<PlayTogetherTrack>()
+    private val notifiedRequestIds = mutableSetOf<String>()
 
     private var activeRoomJob: Job? = null
     private var presenceJob: Job? = null
     private var tickerJob: Job? = null
     private var wasOfflineInRoom = false
+    private var consecutivePresenceFailures = 0
+    private var lastStreamErrorMessage: String? = null
 
     private inline fun updateInRoom(
         crossinline transform: (PlayTogetherState.InRoom) -> PlayTogetherState.InRoom,
@@ -96,18 +100,30 @@ class PlayTogetherController(
                         cur.currentTrack
                     }
                     val newConnState = when {
+                        !backend.isConnected() && consecutivePresenceFailures >= 3 -> PlaybackConnectionState.OFFLINE
                         !backend.isConnected() -> PlaybackConnectionState.RECONNECTING
                         else -> PlaybackConnectionState.CONNECTED
                     }
+                    val streamErr = telemetry.playerError
+                    val nextErrorMessage = when {
+                        streamErr != null -> {
+                            lastStreamErrorMessage = streamErr
+                            streamErr
+                        }
+                        cur.errorMessage != null && cur.errorMessage == lastStreamErrorMessage -> {
+                            lastStreamErrorMessage = null
+                            null
+                        }
+                        else -> cur.errorMessage
+                    }
+                    val myMemberState = if (newConnState != PlaybackConnectionState.CONNECTED) {
+                        MemberSyncState.RECONNECTING
+                    } else {
+                        telemetry.memberState
+                    }
                     val updatedMembers = cur.members.map { m ->
                         if (m.id == cur.currentMemberId) {
-                            val st = when {
-                                newConnState != PlaybackConnectionState.CONNECTED -> MemberSyncState.RECONNECTING
-                                telemetry.isBuffering -> MemberSyncState.BUFFERING
-                                telemetry.isActuallySynced -> MemberSyncState.SYNCED
-                                else -> MemberSyncState.SYNCING
-                            }
-                            m.copy(syncState = st, driftMs = telemetry.driftMs)
+                            m.copy(syncState = myMemberState, driftMs = telemetry.driftMs)
                         } else {
                             m
                         }
@@ -118,9 +134,11 @@ class PlayTogetherController(
                         syncOffsetMs = telemetry.driftMs,
                         isBuffering = telemetry.isBuffering,
                         isActuallySynced = telemetry.isActuallySynced && newConnState == PlaybackConnectionState.CONNECTED,
+                        syncQuality = telemetry.syncQuality,
+                        isPlaybackFailed = telemetry.isFailed,
                         connectionState = newConnState,
                         members = updatedMembers,
-                        errorMessage = telemetry.playerError ?: cur.errorMessage,
+                        errorMessage = nextErrorMessage,
                     )
                 }
             }
@@ -786,10 +804,27 @@ class PlayTogetherController(
             )?.getOrNull()
             if (fresh != null) {
                 applyRemoteSnapshotRecovery(fresh)
-            } else {
-                syncEngine.forceResyncToRoomHead()
             }
+            val ping = backend.measureServerClockOffset()?.getOrNull()
+            if (ping != null) {
+                consecutivePresenceFailures = 0
+                updateInRoom { latest ->
+                    latest.copy(
+                        networkRttMs = ping.rttMs,
+                        clockOffsetMs = ping.clockOffsetMs,
+                        serverTimestampUtc = ping.serverTimestampUtc,
+                        connectionState = PlaybackConnectionState.CONNECTED,
+                    )
+                }
+            }
+            syncEngine.forceResyncToRoomHead()
         }
+    }
+
+    fun retryCurrentStream() {
+        lastStreamErrorMessage = null
+        updateInRoom { it.copy(errorMessage = null, isPlaybackFailed = false) }
+        syncEngine.retryCurrentStream()
     }
 
     // ---- End-to-End Song Requests ----
@@ -1282,6 +1317,7 @@ class PlayTogetherController(
     ) {
         stopRoomJobs()
         wasOfflineInRoom = false
+        consecutivePresenceFailures = 0
 
         activeRoomJob = scope.launch {
             backend.observeRoomEvents(roomId).collect { event ->
@@ -1293,14 +1329,16 @@ class PlayTogetherController(
 
         presenceJob = scope.launch {
             while (isActive) {
-                delay(4000L)
+                delay(8000L)
                 val cur = _state.value as? PlayTogetherState.InRoom ?: break
                 if (cur.room.id != roomId) break
 
+                val selfMemberState = cur.members.firstOrNull { it.id == memberId }?.syncState
                 val mySyncState = when {
+                    cur.isPlaybackFailed -> selfMemberState ?: MemberSyncState.STREAM_UNAVAILABLE
                     cur.isBuffering -> MemberSyncState.BUFFERING
-                    cur.isActuallySynced -> MemberSyncState.SYNCED
-                    else -> MemberSyncState.SYNCING
+                    cur.isActuallySynced -> selfMemberState ?: MemberSyncState.SYNCED
+                    else -> selfMemberState ?: MemberSyncState.SYNCING
                 }
 
                 val res = backend.updatePresence(
@@ -1313,14 +1351,23 @@ class PlayTogetherController(
                 )
 
                 if (res.isFailure) {
+                    consecutivePresenceFailures++
                     wasOfflineInRoom = true
-                    updateInRoom { latest ->
-                        latest.copy(
-                            connectionState = PlaybackConnectionState.RECONNECTING,
-                            isActuallySynced = false,
-                        )
+                    if (consecutivePresenceFailures >= 2) {
+                        val nextConn = if (consecutivePresenceFailures >= 4) {
+                            PlaybackConnectionState.OFFLINE
+                        } else {
+                            PlaybackConnectionState.RECONNECTING
+                        }
+                        updateInRoom { latest ->
+                            latest.copy(
+                                connectionState = nextConn,
+                                isActuallySynced = false,
+                            )
+                        }
                     }
                 } else {
+                    consecutivePresenceFailures = 0
                     if (wasOfflineInRoom) {
                         wasOfflineInRoom = false
                         val snap = backend.fetchLatestRoomSnapshot(roomId, memberId, userName, isHost)?.getOrNull()
@@ -1449,6 +1496,7 @@ class PlayTogetherController(
                 } ?: return
                 next.songRequests.forEach { req -> store?.saveOrUpdateRequest(req.copy(roomId = next.room.id), syncedRemote = true) }
                 persistState(next)
+                notifyIncomingRequestsIfNew(next, next.songRequests)
             }
 
             is RoomEvent.MemberPresenceChanged -> {
@@ -1570,6 +1618,7 @@ class PlayTogetherController(
         )
         _state.value = updated
         persistState(updated)
+        notifyIncomingRequestsIfNew(updated, updated.songRequests)
         if (useRemotePlayback && nextTrack != null) {
             syncEngine.applyAuthoritativePlayback(nextTrack, nextPos, nextPlaying, forceSeek = true)
         }
@@ -1626,6 +1675,25 @@ class PlayTogetherController(
         }
     }
 
+    private fun notifyIncomingRequestsIfNew(
+        room: PlayTogetherState.InRoom,
+        requests: List<SongRequest>,
+    ) {
+        if (!room.isHost) return
+        val notify = onIncomingRequestNotify ?: return
+        requests.forEach { req ->
+            if (req.status == SongRequestStatus.PENDING &&
+                req.requesterId != room.currentMemberId &&
+                notifiedRequestIds.add(req.id)
+            ) {
+                notify(
+                    "Song request from ${req.requesterName}",
+                    "${req.track.title} · Room ${room.room.code}",
+                )
+            }
+        }
+    }
+
     private fun stopRoomJobs() {
         activeRoomJob?.cancel()
         activeRoomJob = null
@@ -1633,6 +1701,7 @@ class PlayTogetherController(
         presenceJob = null
         tickerJob?.cancel()
         tickerJob = null
+        notifiedRequestIds.clear()
     }
 
     private fun mergeRequestLists(primary: List<SongRequest>, secondary: List<SongRequest>): List<SongRequest> {
