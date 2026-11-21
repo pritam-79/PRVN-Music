@@ -1,10 +1,10 @@
 {
-  "versionName": "0.13.0",
-  "versionCode": 16,
+  "versionName": "0.14.0",
+  "versionCode": 17,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.13/PRVN-Music-0.13.0-arm64-v8a-release.apk",
-  "size": 9960736,
-  "sha256": "f3e0cff610dae916848c93f91ab5771814f4c11081bf18bfbd4643a2baea7141",
-  "releaseNotes": "PRVN Music v0.13.0 (Build 16): Fixed Play Together server unreachable false alarms by increasing failure tolerance to 5 and adding jittered retries; eliminated false 63,406ms sync drift display during stream loading; increased PO token retry limit from 1 to 3 with progressive backoff; fixed host reconnecting loop with active recovery snapshots; upgraded build to v0.13.0.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.14/PRVN-Music-0.14.0-arm64-v8a-release.apk",
+  "size": 29773426,
+  "sha256": "0987aa4e33920547bd45e63ee679635102d58bd9da2f67353383b64fca364812",
+  "releaseNotes": "PRVN Music v0.14.0 (Build 17): Complete Compose Multiplatform reimplementation based on official SimpMusic foundation; PRVN Dark (#0B0E14), Purple (#A855F7) and Cyan (#06B6D4) branding; full feature parity including Home, Browse, Mix for You, Charts, synchronized lyrics, 10-band equalizer, AutoEQ; robust Listen Together with MetroServer protocol and independent local stream resolution; Google Play Protect compliance.",
   "forceUpdate": false
 }
