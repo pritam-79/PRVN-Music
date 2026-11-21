@@ -1,3 +1,0 @@
-ALTER TABLE downloadTask ADD COLUMN audio_lmt INTEGER;
-ALTER TABLE downloadTask ADD COLUMN video_itag INTEGER;
-ALTER TABLE downloadTask ADD COLUMN video_lmt INTEGER;

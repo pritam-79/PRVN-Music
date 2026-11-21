@@ -1,669 +1,597 @@
+@file:Suppress("UnstableApiUsage")
+
+import org.apache.commons.io.FileUtils
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.nio.file.Files
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
-import java.util.zip.ZipOutputStream
+import java.net.URI
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
+// desktopApp — JVM application module for SimpMusic Desktop.
+//
+// Per JetBrains 2026 KMP guidance (AGP 9 + new default structure), the
+// platform-app entry points live in dedicated modules separate from the
+// shared KMP library. This module owns:
+//
+//   * the JVM main() entry
+//   * compose.desktop.application packaging (jpackage path, still used
+//     until Conveyor cutover lands in Task 14)
+//   * desktop packaging pipelines (Conveyor, AppImage wrapping)
+//   * desktop-only UI (CustomTitleBar, MiniPlayerWindow, CrashDialog, etc.)
+//
+// composeApp remains a pure KMP library — its src/jvmMain only carries the
+// expect/actual implementations the shared code needs on the JVM.
+//
+// Refs:
+//   https://blog.jetbrains.com/kotlin/2026/05/new-kmp-default-structure/
+//   https://github.com/HaroonBsf/kmp-conveyor-template
 plugins {
-    kotlin("multiplatform")
-    id("org.jetbrains.compose")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("app.cash.sqldelight")
+    // Order matters: per the Bifrost reference (a known-good Conveyor 2.0
+    // + KMP setup), `conveyor` must apply BEFORE `kotlin.multiplatform`.
+    // Conveyor's task creation runs at apply time and only succeeds when
+    // a `jar` task already exists — the compose plugin (applied first)
+    // provides that, while kotlin.multiplatform would override it later
+    // with `jvmJar` if applied before conveyor.
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.conveyor)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.compose.hotReload)
 }
 
-sqldelight {
-    databases {
-        create("AppDatabase") {
-            packageName.set("io.ymusic.desktop.db")
-            srcDirs.setFrom("src/jvmMain/sqldelight")
-        }
-    }
-}
+version =
+    libs.versions.version.name
+        .get()
+        .removeSuffix("-hf")
 
-compose.resources {
-    // Desktop-only assets (the dock tile); shared brand assets stay in :commonUi.
-    packageOfResClass = "io.ymusic.desktop.resources"
-}
+kotlin {
+    // 21 matches :media-jvm-ui (requires 21+).
+    jvmToolchain(21)
 
-val desktopVersion = appVersionName()
-// BUMP ON EVERY RELEASE. The update check compares this and nothing else — desktopVersion is a
-// display string. Every platform shares one versionCode (androidApp, iosApp's CFBundleVersion): bump them together.
-val desktopVersionCode = 22
-version = desktopVersion
-
-/** The first candidate JDK that carries jpackage — the marker for "full JDK, not a JBR/JRE". */
-val fullJdkHome: String? = run {
-    val candidates = listOfNotNull(
-        providers.gradleProperty("ymusic.jdkHome").orNull,
-        System.getenv("JAVA_HOME"),
-        System.getProperty("java.home"),
-        // macOS keeps its installs out of JAVA_HOME's reach; ask the OS for a 17+ one.
-        runCatching {
-            providers.exec { commandLine("/usr/libexec/java_home", "-v", "17+") }
-                .standardOutput.asText.get().trim()
-        }.getOrNull(),
-    )
-    candidates.firstOrNull { it.isNotBlank() && File(it, "bin/jpackage").exists() }
-}
-
-// The DSN is machine-local (see SentryProps in buildSrc), so it reaches the app as generated
-// source rather than a checked-in constant. The release carries the git commit — that's how an
-// event traces back to git history without a source-context upload.
-// The key app updates must be signed with, from the environment/local.properties so a fork builds
-// without ours. No key means no update is ever offered.
-val updatePublicKeyValue: String = providers.gradleProperty("ymusic.updatePublicKey").orNull
-    ?: updatePublicKey()
-
-// The key remote JS bundles must be signed with. Empty: only the shipped bundles ever run.
-val bundlePublicKeyValue: String = providers.gradleProperty("ymusic.bundlePublicKey").orNull
-    ?: bundleSigningPublicKey()
-
-// Base url of the remote config service. Empty leaves the app on its compiled-in defaults.
-val remoteConfigBaseUrl: String = localServerUrl()
-    ?: providers.gradleProperty("ymusic.remoteConfigUrl").orNull
-    ?: remoteConfigUrl()
-
-// local.server.ip with -PuseLocalServerIp, else "": a released build must not depend on
-// (or reveal) where it was built.
-val localIp: String = localServerIp()
-
-// Dev and test runs exec the ffmpeg staged from the sibling ffmpeg-build through
-// -Dio.ymusic.ffmpeg. A packaged build never sees this property: it uses the copy packed next to
-// the compose resources (see stagePackedFfmpeg). Set on the run and test TASKS, never on
-// compose.desktop.application.jvmArgs — those are baked into the packaged launcher.
-val ffmpegForDev: File? = FfmpegBuild.hostBinary(project)
-if (ffmpegForDev != null) {
-    val syncFfmpegHost = rootProject.tasks.named("syncFfmpegHost")
-    val ffmpegPath = ffmpegForDev.absolutePath
-    tasks.withType<Test>().configureEach {
-        dependsOn(syncFfmpegHost)
-        systemProperty("io.ymusic.ffmpeg", ffmpegPath)
-    }
-    tasks.withType<JavaExec>().matching { !it.name.contains("Distributable") && !it.name.contains("Release") }
-        .configureEach {
-            dependsOn(syncFfmpegHost)
-            systemProperty("io.ymusic.ffmpeg", ffmpegPath)
-        }
-}
-
-// Host ffmpeg pack (CLI + libav DSOs) plus the MSE JNI that links the same libav, into compose
-// app-resources — the one copy of each library a package carries (:mse's jar copy is stripped
-// below). Each library ships once, under the soname the CLI and libav itself link against: the
-// pack's other names are symlinks, which a copy would turn into full duplicates.
-val ffmpegPackedName = FfmpegBuild.hostCliName()
-val ffmpegAppResources = layout.buildDirectory.dir("ffmpegAppResources")
-val mseJniName: String = System.mapLibraryName("mseffmpegjni")
-val stagePackedFfmpeg by tasks.registering(Copy::class) {
-    dependsOn(rootProject.tasks.named("syncFfmpegHost"), ":mse:bundleMseJniLib")
-    val stagedDir = ffmpegAppResources.map { it.dir("common") }
-    val ffmpegSigningIdentity = macSigningIdentity()
-    inputs.property("ffmpegSigningIdentity", ffmpegSigningIdentity)
-    // A stale stage would keep names this one no longer produces.
-    doFirst { stagedDir.get().asFile.deleteRecursively() }
-    if (FfmpegBuild.hostSlug() != null) {
-        from(FfmpegBuild.hostDir(project)) {
-            eachFile {
-                if (Files.isSymbolicLink(file.toPath())) {
-                    exclude()
-                } else {
-                    // libavcodec.63.2.100.dylib → libavcodec.63.dylib; libavcodec.so.63.2.100 → libavcodec.so.63
-                    name = name.replace(Regex("""^(lib\w+)\.(\d+)\.\d+\.\d+\.dylib$"""), "$1.$2.dylib")
-                        .replace(Regex("""^(lib\w+\.so\.\d+)\.\d+\.\d+$"""), "$1")
+    // KMP jvm() target — Conveyor 2.0's writeConveyorConfig task looks up
+    // `jvmRuntimeClasspath` (KMP convention), so we use the KMP plugin here
+    // even though desktopApp only has a single JVM target. Pattern adapted
+    // from https://github.com/zacharee/Bifrost desktop module.
+    jvm {
+        compilations.all {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
                 }
             }
         }
-        from(project(":mse").layout.buildDirectory.dir("generated/mseJniResources/jni")) {
-            include("*/$mseJniName")
-            eachFile { path = name }
-        }
-        includeEmptyDirs = false
-        into(stagedDir)
-        doLast {
-            val dir = stagedDir.get().asFile
-            val cli = dir.resolve(ffmpegPackedName)
-            cli.setExecutable(true)
-            val jni = dir.resolve(mseJniName)
-            if (org.gradle.internal.os.OperatingSystem.current().isMacOsX && jni.isFile) relinkMacJni(jni)
-            // Compose signs the .dylib resources but not an extension-less executable, and notarization
-            // rejects an unsigned one: sign the CLI with the app's identity, hardened runtime + timestamp.
-            if (org.gradle.internal.os.OperatingSystem.current().isMacOsX && ffmpegSigningIdentity.isNotBlank()) {
-                val codesign = ProcessBuilder(
-                    "codesign", "--force", "--options", "runtime", "--timestamp",
-                    "--sign", ffmpegSigningIdentity, cli.absolutePath,
-                ).redirectErrorStream(true).start()
-                val output = codesign.inputStream.bufferedReader().readText()
-                check(codesign.waitFor() == 0) { "codesign $cli failed: $output" }
-            }
-        }
-    }
-}
-
-// jpackage copies app resources without their mode bits, so the bundled CLI arrives unexecutable and
-// the app falls back to whatever ffmpeg is on PATH.
-tasks.matching { it.name == "createDistributable" || it.name == "createReleaseDistributable" }.configureEach {
-    val imageDir = layout.buildDirectory.dir("compose/binaries")
-    doLast {
-        imageDir.get().asFile.walkTopDown()
-            .filter { it.isFile && it.name == ffmpegPackedName && it.parentFile.name == "resources" }
-            .forEach { check(it.setExecutable(true, false)) { "could not mark $it executable" } }
-    }
-}
-
-// The .deb task never runs the image task above, so the CLI's mode is restored inside the package.
-tasks.withType<AbstractJPackageTask>()
-    .matching { it.name == "packageDeb" || it.name == "packageReleaseDeb" }
-    .configureEach {
-        val debDir = destinationDir
-        val unpackDir = layout.buildDirectory.dir("tmp/$name/unpacked")
-        doLast {
-            fun dpkgDeb(vararg args: String) {
-                val process = ProcessBuilder("dpkg-deb", *args).redirectErrorStream(true).start()
-                val output = process.inputStream.readBytes().decodeToString()
-                check(process.waitFor() == 0) { "dpkg-deb ${args.joinToString(" ")} failed: $output" }
-            }
-            val deb = debDir.get().asFile.listFiles { file -> file.extension == "deb" }.orEmpty().single()
-            val root = unpackDir.get().asFile.apply {
-                deleteRecursively()
-                mkdirs()
-            }
-            dpkgDeb("--raw-extract", deb.path, root.path)
-            val cli = root.walkTopDown()
-                .single { it.isFile && it.name == ffmpegPackedName && it.parentFile.name == "resources" }
-            check(cli.setExecutable(true, false)) { "could not mark $cli executable" }
-            dpkgDeb("--root-owner-group", "--build", root.path, deb.path)
-            root.deleteRecursively()
-        }
-    }
-
-/**
- * Point the MSE JNI at the libav sonames staged beside it (it was linked against the full-version
- * names), and drop absolute rpaths the build machine leaked into it — only @loader_path is valid
- * in a package. Re-signed ad hoc after: arm64 refuses to load a dylib whose signature is broken.
- */
-fun relinkMacJni(jni: File) {
-    fun exec(vararg command: String): String {
-        val process = ProcessBuilder(*command).redirectErrorStream(true).start()
-        val output = process.inputStream.readBytes().decodeToString()
-        check(process.waitFor() == 0) { "${command.joinToString(" ")} failed: $output" }
-        return output
-    }
-    val fullVersion = Regex("""@rpath/(lib\w+)\.(\d+)\.\d+\.\d+\.dylib""")
-    val changes = fullVersion.findAll(exec("otool", "-L", jni.path))
-        .flatMap { listOf("-change", it.value, "@rpath/${it.groupValues[1]}.${it.groupValues[2]}.dylib") }
-    val absoluteRpaths = Regex("""(?m)^\s+path (/\S+) \(offset""").findAll(exec("otool", "-l", jni.path))
-        .flatMap { listOf("-delete_rpath", it.groupValues[1]) }
-    val args = (changes + absoluteRpaths).toList()
-    if (args.isNotEmpty()) exec("install_name_tool", *args.toTypedArray(), jni.path)
-    exec("codesign", "--force", "--sign", "-", jni.path)
-}
-
-val generateBuildConfig by tasks.registering {
-    val dsn = sentryDsn()
-    val release = "ymusic-desktop@$desktopVersion+${gitCommit()}"
-    val outDir = layout.buildDirectory.dir("generated/buildconfig/kotlin")
-    inputs.property("dsn", dsn)
-    inputs.property("release", release)
-    inputs.property("engineJsVersion", Versions.engineJsVersion)
-    inputs.property("versionCode", desktopVersionCode)
-    inputs.property("updatePublicKey", updatePublicKeyValue)
-    inputs.property("remoteConfigBaseUrl", remoteConfigBaseUrl)
-    inputs.property("localIp", localIp)
-    inputs.property("bundlePublicKey", bundlePublicKeyValue)
-    outputs.dir(outDir)
-    doLast {
-        val file = outDir.get().asFile.resolve("BuildConfig.kt")
-        file.parentFile.mkdirs()
-        file.writeText(
-            """
-            package io.ymusic.desktop
-
-            internal const val SENTRY_DSN = "$dsn"
-            internal const val SENTRY_RELEASE = "$release"
-
-            // The jar's engine_ymusic.js resource revision (Versions.engineJsVersion).
-            internal const val ENGINE_JS_VERSION: Long = ${Versions.engineJsVersion}L
-
-            // What the update check compares against the config's appUpdate.versionCode.
-            internal const val APP_VERSION_CODE: Int = $desktopVersionCode
-            internal const val APP_VERSION_NAME = "$desktopVersion"
-
-            // The P-256 key app updates must be signed with. Empty disables updates entirely —
-            // with nothing to verify against, trusting the network is worse than not updating.
-            internal const val UPDATE_PUBLIC_KEY = "$updatePublicKeyValue"
-
-            // Base url of the remote config service. Empty = no request, compiled-in defaults.
-            internal const val REMOTE_CONFIG_URL = "$remoteConfigBaseUrl"
-
-            // local.server.ip with -PuseLocalServerIp ("" otherwise).
-            internal const val LOCAL_IP = "$localIp"
-
-            // The key remote engine/player bundles must be signed with. Empty = shipped bundles only.
-            internal const val BUNDLE_PUBLIC_KEY = "$bundlePublicKeyValue"
-            """.trimIndent() + "\n",
-        )
-    }
-}
-
-// The engine bundle ships inside the jar — JsSourceProvider's embed copy (version = the
-// generated ENGINE_JS_EMBED_VERSION const),
-// no compiled-in constant.
-val engineJsBundle = configurations.create("engineJsBundle") {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-dependencies {
-    "engineJsBundle"(project(":engine-js", "engineJs"))
-}
-val stageEngineJs by tasks.registering(Copy::class) {
-    from(engineJsBundle) { rename { "engine_ymusic.js" } }
-    into(layout.buildDirectory.dir("engineJsResources"))
-}
-
-kotlin {
-    jvm {
-        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
 
     sourceSets {
-        // The resources accessor (Res) only generates when this dependency sits in commonMain —
-        // that is where the module's own composeResources (the dock tile) get their accessors.
-        commonMain.dependencies {
-            implementation(compose.components.resources)
-        }
-
-        /** The desktop (JVM) product shell: builds the AppGraph (MSE + ffmpeg, engines) and boots
-         *  the shared :commonUi App. `./gradlew :desktopApp:run`. */
         val jvmMain by getting {
-            kotlin.srcDir(generateBuildConfig)
             dependencies {
-                implementation(project(":commonUi"))
-                implementation(project(":media-scanner"))
-                implementation(compose.desktop.currentOs)
-                implementation(compose.material3)
-                implementation(compose.materialIconsExtended)
-                implementation(compose.components.resources)
-                implementation(Libs.Jna.core)
-                implementation(Libs.NavigationEvent.compose) // Esc as a back event, after popups'
-                implementation(Libs.SqlDelight.sqliteDriver) // AppStore
-                implementation(project(":telemetry")) // api: sentry-kotlin-multiplatform + SentryLogger
-                implementation(project(":log-store")) // the app log (logs.db)
-                implementation(project(":kmpHttp:core"))
-                implementation(project(":projectCommon"))
-                implementation(project(":quickjs")) // QuickJsRuntime.hostVersions
-                implementation(project(":remote-config"))
-                implementation(project(":yt-media"))
-                implementation(Libs.Kotlinx.coroutinesCore)
-            }
-        }
+                // Shared KMP library — pulls App.kt, expect/actual impls,
+                // view-models, MiniPlayer state object, etc.
+                implementation(project(":composeApp"))
 
-        // Headless snapshot renders of shared components (visual dev checks, not assertions).
-        jvmTest.dependencies {
-            implementation(kotlin("test"))
+                // Compose Desktop runtime for the current OS.
+                implementation(compose.desktop.currentOs)
+
+                // Swing dispatcher for kotlinx.coroutines on the JVM.
+                implementation(libs.kotlinx.coroutinesSwing)
+
+                // Sentry crash reporting (full builds only via BuildKonfig).
+                implementation(libs.sentry.jvm)
+
+                // System tray icon for desktop builds.
+                implementation(libs.native.tray)
+
+                // Media player JVM UI primitives consumed by jvmMain expect/actuals.
+                implementation(projects.mediaJvmUi)
+
+                // Commons-IO drives the custom AppImage packaging task below.
+                implementation(libs.commons.io)
+                // org.json is bundled in the Android SDK but missing on JVM desktop; PipePipeExtractor
+                // references org.json.* so it must be provided explicitly here.
+                implementation(libs.org.json)
+            }
         }
     }
 }
 
-// Publishing a release: package on each platform's machine (packageReleaseDmg / InnoSetup / Deb), then
-// sign each installer with the config service's scripts/sign-app-update.mjs.
+// Workaround the Gradle "Cannot mutate configuration after observation" error
+// hit when Conveyor 2.0's per-arch deps mix with Conveyor / compose plugins
+// that resolve runtimeClasspath at configuration time. Creating a sibling
+// `desktopRuntimeClasspath` configuration shifts Conveyor's resolution off
+// the primary jvmRuntimeClasspath, breaking the lock chain.
+// Source: https://github.com/zacharee/Bifrost/blob/main/desktop/build.gradle.kts
+project.configurations.create("desktopRuntimeClasspath") {
+    extendsFrom(project.configurations.getByName("jvmRuntimeClasspath"))
+}
 
-// Standalone UI-component catalogue (see CatalogueMain.kt): ./gradlew :desktopApp:catalogue
-tasks.register<JavaExec>("catalogue") {
-    group = "application"
-    description = "Open the UI-component catalogue window (no engines — fast design loop)."
-    val jvmMainCompilation = kotlin.jvm().compilations.getByName("main")
-    dependsOn(jvmMainCompilation.compileTaskProvider)
-    classpath(jvmMainCompilation.output.allOutputs, jvmMainCompilation.runtimeDependencyFiles)
-    mainClass.set("io.ymusic.desktop.CatalogueMainKt")
+// Conveyor per-arch artifacts. These configurations are created by the
+// Conveyor plugin's `apply()`; we just feed them the right native compose
+// binaries for cross-build from any host OS.
+dependencies {
+    linuxAarch64(libs.compose.linux.arm64)
+    linuxAmd64(libs.compose.linux.x64)
+    macAarch64(libs.compose.macos.arm64)
+    macAmd64(libs.compose.macos.x64)
+    windowsAarch64(libs.compose.windows.arm64)
+    windowsAmd64(libs.compose.windows.x64)
+}
+
+// Append SimpMusic-specific keys to Conveyor's generated config file and
+// — crucially — replace the auto-detected `app.inputs` classpath with
+// ProGuard's shrunk jar directory so the packaged AppImage carries
+// obfuscated + size-reduced bytecode instead of raw Gradle output.
+// `dependsOn(proguardReleaseJars)` builds the shrunk jars first.
+tasks.named<hydraulic.conveyor.gradle.WriteConveyorConfigTask>("writeConveyorConfig") {
+    dependsOn(tasks.named("proguardReleaseJars"))
+    val proguardJarsDir = layout.buildDirectory.dir("compose/tmp/main-release/proguard")
+    doLast {
+        destination.get().asFile.appendText(
+            """
+            |app.fsname = simpmusic
+            |app.display-name = SimpMusic
+            |app.rdns-name = com.maxrave.simpmusic
+            |
+            |// Override the Gradle-detected classpath with the ProGuard'd
+            |// jar directory. Conveyor expands a directory entry to every
+            |// file inside it — saves ~750 MB raw / ~100 MB compressed in
+            |// the resulting AppImage by replacing 221 raw jars with the
+            |// shrunk equivalents from compose.desktop's proguard task.
+            |app.inputs = [
+            |    "${proguardJarsDir.get().asFile.absolutePath}"
+            |]
+            """.trimMargin() + "\n",
+        )
+    }
 }
 
 compose.desktop {
     application {
-        mainClass = "io.ymusic.desktop.MainKt"
-        // A FULL JDK is needed both by jpackage/jlink and by ProGuard (it links against the
-        // platform classes — without them it can't even resolve java.lang.Object). The Gradle
-        // daemon often runs on a JBR that has neither, so find one; -Pymusic.jdkHome overrides.
-        fullJdkHome?.let { javaHome = it }
-        // Compose SwingPanel (MSE blit) needs AWT internals opened on the JBR/JDK.
-        // Heap: without these, packaged HotSpot picks ~1/4 RAM (16g here) and
-        // InitialHeapSize=Xmx. Live use was ~50–97m objects / ~38m JIT code.
-        // Skia GPU cache default is 256m.
-        jvmArgs(
-            "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
-            "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
-            "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-            "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED",
-            "-Xms96m",
-            "-Xmx256m",
-            "-XX:ReservedCodeCacheSize=64m",
-            "-Dskiko.gpu.resourceCacheLimit=64M",
-            // POSIX_SPAWN execs the runtime's jspawnhelper, which an update replaces under the running
-            // JVM; it then refuses every launch, the relaunch included. Windows ignores the property.
-            "-Djdk.lang.Process.launchMechanism=FORK",
-        )
-        // Release packaging (packageReleaseDmg etc.) runs ProGuard SHRINK-ONLY: no obfuscation, no
-        // optimization — dead-code removal is the point (material-icons-extended alone is 37MB of
-        // mostly-unused icon classes). Reflection/JNI/ServiceLoader keeps: proguard-rules.pro.
-        buildTypes.release.proguard {
-            version.set("7.7.0")
-            optimize.set(false)
-            obfuscate.set(false)
-            configurationFiles.from(project.file("proguard-rules.pro"))
-        }
+        mainClass = "com.maxrave.simpmusic.MainKt"
+        jvmArgs += "--add-opens=java.base/java.nio=ALL-UNNAMED"
+
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "YMusic"
-            packageVersion = desktopVersion.split('.').let { p ->
-                when (p.size) {
-                    1 -> "${p[0]}.0.0"
-                    2 -> "${p[0]}.${p[1]}.0"
-                    else -> p.take(3).joinToString(".")
-                }
+            appResourcesRootDir = rootDir.resolve("mpv-natives/")
+            val listTarget = mutableListOf<TargetFormat>()
+            if (org.gradle.internal.os.OperatingSystem
+                    .current()
+                    .isMacOsX
+            ) {
+                listTarget.addAll(
+                    listOf(TargetFormat.Dmg, TargetFormat.Msi),
+                )
+            } else {
+                listTarget.addAll(
+                    listOf(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.AppImage),
+                )
             }
-            description = "Music player"
-            vendor = "YMusic"
+            targetFormats(*listTarget.toTypedArray())
+            modules("jdk.unsupported")
+            packageName = "SimpMusic"
             macOS {
-                // Stable across releases: the updater and Gatekeeper both identify the app by it.
-                bundleID = "io.ymusic.desktop"
-                minimumSystemVersion = Versions.macosMin
-                // The rounded-square dock tile; the runtime Taskbar icon (dev runs) is the same
-                // artwork from src/jvmMain/resources/ymusic_dock.png. macOS 26+ draws the
-                // CFBundleIconName icon from macos/Assets.car instead (installMacIconAssets).
-                iconFile.set(project.file("ymusic.icns"))
-                // ymusic:// links open the app (Main.kt's open-URI handler takes them). Media files
-                // list it under Open With (its open-file handler); Alternate never claims a default.
-                infoPlist {
-                    extraKeysRawXml = """
-                        <key>CFBundleIconName</key>
-                        <string>YMusic</string>
-                        <key>CFBundleURLTypes</key>
-                        <array>
-                            <dict>
-                                <key>CFBundleURLName</key>
-                                <string>io.ymusic.desktop</string>
-                                <key>CFBundleURLSchemes</key>
-                                <array><string>ymusic</string></array>
-                            </dict>
-                        </array>
-                        <key>CFBundleDocumentTypes</key>
-                        <array>
-                            <dict>
-                                <key>CFBundleTypeName</key>
-                                <string>Media file</string>
-                                <key>CFBundleTypeRole</key>
-                                <string>Viewer</string>
-                                <key>LSHandlerRank</key>
-                                <string>Alternate</string>
-                                <key>LSItemContentTypes</key>
-                                <array>
-                                    <string>public.mp3</string>
-                                    <string>com.apple.m4a-audio</string>
-                                    <string>public.mpeg-4-audio</string>
-                                    <string>public.aac-audio</string>
-                                    <string>org.xiph.flac</string>
-                                    <string>com.microsoft.waveform-audio</string>
-                                    <string>public.mpeg-4</string>
-                                    <string>com.apple.m4v-video</string>
-                                    <string>com.apple.quicktime-movie</string>
-                                </array>
-                            </dict>
-                            <dict>
-                                <key>CFBundleTypeName</key>
-                                <string>Media file</string>
-                                <key>CFBundleTypeRole</key>
-                                <string>Viewer</string>
-                                <key>LSHandlerRank</key>
-                                <string>Alternate</string>
-                                <key>CFBundleTypeExtensions</key>
-                                <array><string>m4b</string><string>ogg</string><string>oga</string><string>opus</string><string>mka</string><string>webm</string><string>mkv</string></array>
-                            </dict>
-                        </array>
-                    """.trimIndent()
-                }
-                // Signing is opt-in so a checkout without the identity still builds. An unsigned
-                // build is fine to run locally and impossible to ship: Gatekeeper rejects it.
-                val signingIdentity = macSigningIdentity()
-                signing {
-                    sign.set(signingIdentity.isNotBlank())
-                    if (signingIdentity.isNotBlank()) identity.set(signingIdentity)
-                }
-                // The JVM needs executable memory a hardened runtime withholds; see
-                // entitlements.plist for why each is there.
-                entitlementsFile.set(project.file("entitlements.plist"))
-                runtimeEntitlementsFile.set(project.file("entitlements.plist"))
-                val appleId = macNotarizationAppleId()
-                if (appleId.isNotBlank()) {
-                    notarization {
-                        appleID.set(appleId)
-                        password.set(macNotarizationPassword())
-                        teamID.set(macTeamId())
+                val formatedDate =
+                    Instant.now().let {
+                        DateTimeFormatter
+                            .ofPattern("yyyy.MM.dd")
+                            .withZone(ZoneId.of("UTC"))
+                            .format(it)
                     }
+                includeAllModules = true
+                packageVersion = formatedDate
+                iconFile.set(rootDir.resolve("composeApp/icon/rounded_app_icon.icns"))
+                val macExtraPlistKeys =
+                    """
+                    <key>LSApplicationCategoryType</key>
+                    <string>public.app-category.music</string>
+                    <key>UIBackgroundModes</key>
+                    <array>
+                        <string>audio</string>
+                        <string>fetch</string>
+                        <string>processing</string>
+                    </array>
+                    <key>CFBundleURLTypes</key>
+                    <array>
+                        <dict>
+                            <key>CFBundleTypeRole</key>
+                            <string>Viewer</string>
+                            <key>CFBundleURLName</key>
+                            <string>com.maxrave.simpmusic.deeplink</string>
+                            <key>CFBundleURLSchemes</key>
+                            <array>
+                                <string>simpmusic</string>
+                            </array>
+                        </dict>
+                    </array>
+                    """.trimIndent()
+                infoPlist {
+                    extraKeysRawXml = macExtraPlistKeys
                 }
             }
             windows {
-                // Fixed for the app's lifetime: a new MSI with the same upgrade code replaces the
-                // installed one instead of installing beside it. Per-machine, under Program Files.
-                upgradeUuid = "6f3c2b9e-4d1a-4e8b-9a57-2c1f0d8e7b34"
-                perUserInstall = false
-                menu = true
-                shortcut = true
-                // Multi-res ICO (16–256 px): a one-off Skia render of ymusic_logo.xml's ring artwork
-                // clipped to a circle; without this jpackage falls back to its default Java/Compose
-                // icon on the installer dialog, Start-menu entry, and running window.
-                iconFile.set(project.file("ymusic.ico"))
+                includeAllModules = true
+                packageVersion =
+                    libs.versions.version.name
+                        .get()
+                        .removeSuffix("-hf")
+                iconFile.set(rootDir.resolve("composeApp/icon/circle_app_icon.ico"))
             }
             linux {
-                // :commonUi's ymusic_logo.xml rendered at 512 px, inset to 7/8 (Main.kt's runtime entry matches).
-                iconFile.set(project.file("ymusic.png"))
-                appCategory = "sound"
-                menuGroup = "AudioVideo;Audio;Player;"
+                includeAllModules = true
+                packageVersion =
+                    libs.versions.version.name
+                        .get()
+                        .removeSuffix("-hf")
+                iconFile.set(rootDir.resolve("composeApp/icon/circle_app_icon.png"))
             }
-            // jlink modules the default set misses but the runtime graph uses: java.sql
-            // (sqlite-jdbc), jdk.unsupported (Unsafe — JNA/coroutines/okio),
-            // java.management + java.logging (Sentry integrations, JNA), jdk.crypto.ec
-            // (TLS for update checks), jdk.accessibility (bundles AccessBridge so AWT
-            // doesn't abort at startup when a screen reader / Magnifier is active).
-            modules("java.sql", "java.management", "java.logging", "jdk.unsupported", "jdk.crypto.ec", "jdk.accessibility")
-            // Host ffmpeg next to compose resources (`compose.application.resources.dir` at runtime).
-            appResourcesRootDir.set(ffmpegAppResources)
+        }
+
+        buildTypes.release.proguard {
+            // ProGuard 7.7.0 (Compose's default) can't read Java 25 bytecode (class v69) now shipped
+            // by PipePipeExtractor, which broke :desktopApp:proguardReleaseJars. 7.8.x supports Java 25.
+            version.set("7.8.1")
+            optimize.set(true)
+            obfuscate.set(true)
+            configurationFiles.from(rootDir.resolve("composeApp/proguard-desktop-rules.pro"))
         }
     }
 }
 
-tasks.matching {
-    it.name.contains("AppResources") || it.name.startsWith("package") || it.name.contains("Distributable")
-}.configureEach {
-    dependsOn(stagePackedFfmpeg)
-}
+afterEvaluate {
+    tasks.withType<JavaExec> {
+        jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
+        jvmArgs("--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED")
+        jvmArgs("--add-opens", "java.base/java.nio=ALL-UNNAMED")
 
-// NOTE (byte-measured, 2026-08-14): jlink's --compress=2 (settable only reflectively — the
-// compose plugin's compressionLevel has no public DSL) shrinks the runtime dir 67→45MB on disk
-// but GROWS the DMG 72.2→76.1MiB: the DMG's zlib squeezes the raw jimage better than jlink's
-// per-resource zip, which is opaque to it. Download size is the goal → runtime stays uncompressed.
+        // A native crash (SIGSEGV) leaves no Kotlin stack trace; the hs_err file is the only thing
+        // that names the library that died. Without an explicit path the JVM writes it to whatever
+        // directory the daemon happened to start in, where it is effectively lost.
+        jvmArgs("-XX:ErrorFile=${rootProject.layout.buildDirectory.get().asFile}/hs_err_pid%p.log")
 
-// A package is built on, and for, one OS and CPU: the host's. sqlite-jdbc, JNA, skiko and our own
-// jni/ jars carry natives for others, which are dead weight there. They are dropped from the
-// ProGuard output — what jpackage consumes — in the same pass that normalizes entry timestamps.
-val hostOs = org.gradle.internal.os.OperatingSystem.current().let {
-    if (it.isMacOsX) "macos" else if (it.isWindows) "windows" else "linux"
-}
-val hostArm64 = System.getProperty("os.arch").lowercase() in setOf("aarch64", "arm64")
+        // Marks a dev run, so the app reads remote-config-dev.json instead of the one real users get.
+        systemProperty("simpmusic.dev", "true")
 
-/** What the .desktop entry offers to open; the demuxers the packed ffmpeg has. */
-val linuxMimeTypes = listOf(
-    "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/x-m4b", "audio/aac", "audio/flac", "audio/x-flac", "audio/wav",
-    "audio/x-wav", "audio/ogg", "audio/opus", "audio/webm", "audio/x-matroska", "video/mp4", "video/x-m4v",
-    "video/quicktime", "video/webm", "video/x-matroska",
-).joinToString(";", postfix = ";")
+        // Skiko's frame counter: prints "[timestamp] FPS avg (min-max)" to the console every 2 s.
+        // Temporary, to measure what liquid glass costs per frame on Desktop.
+        systemProperty("skiko.fps.enabled", "true")
 
-/** `macos-x64`, `windows-x64`, …: the update service's platform key, and the installer's suffix. */
-val hostPlatform = "$hostOs-${if (hostArm64) "arm64" else "x64"}"
-
-// macOS 26 re-renders a bundle that has only an .icns into a flat Liquid Glass tile, dropping
-// the rings. Assets.car is compiled from macos/YMusic.icon (macos/build-icon.sh, needs Xcode 26);
-// jpackage cannot place it in Contents/Resources, so it goes in after, and the outer seal it
-// breaks is re-signed with the same identity, entitlements and flags.
-val macIconAssets = project.file("macos/Assets.car")
-if (hostOs == "macos") {
-    tasks.withType<AbstractJPackageTask>().matching { it.name == "createDistributable" || it.name == "createReleaseDistributable" }.configureEach {
-        val signingIdentity = macSigningIdentity()
-        inputs.file(macIconAssets)
-        inputs.property("macIconSigningIdentity", signingIdentity)
-        doLast("installMacIconAssets") {
-            val app = destinationDir.get().asFile.listFiles().orEmpty().single { it.name.endsWith(".app") }
-            macIconAssets.copyTo(File(app, "Contents/Resources/Assets.car"), overwrite = true)
-            val identity = signingIdentity.ifBlank { "-" }
-            val command = listOf(
-                "codesign", "--force", "--sign", identity,
-                if (identity == "-") "--timestamp=none" else "--timestamp",
-                "--preserve-metadata=identifier,entitlements,requirements,flags,runtime",
-                app.path,
-            )
-            val process = ProcessBuilder(command).redirectErrorStream(true).start()
-            val output = process.inputStream.readBytes().decodeToString()
-            check(process.waitFor() == 0) { "re-signing ${app.name} failed: $output" }
-        }
-    }
-}
-
-// jpackage's .deb templates have no Homepage (App Center's "Developer website") and no StartupWMClass
-// (GNOME matches our windows to the menu entry by it), so the package is unpacked, both added, and rebuilt.
-if (hostOs == "linux") {
-    tasks.withType<AbstractJPackageTask>().matching { it.name == "packageDeb" || it.name == "packageReleaseDeb" }.configureEach {
-        val debName = "_${desktopVersion}_${if (hostArm64) "arm64" else "amd64"}.deb"
-        doLast("addDebMetadata") {
-            fun run(vararg command: String) {
-                val process = ProcessBuilder(*command).redirectErrorStream(true).start()
-                val output = process.inputStream.readBytes().decodeToString()
-                check(process.waitFor() == 0) { "${command.joinToString(" ")} failed: $output" }
-            }
-            val deb = destinationDir.get().asFile.listFiles().orEmpty().single { it.name.endsWith(debName) }
-            val root = File(temporaryDir, "deb").apply { deleteRecursively() }
-            run("dpkg-deb", "-R", deb.path, root.path)
-            val control = File(root, "DEBIAN/control")
-            control.writeText(control.readText().trimEnd() + "\nHomepage: https://ymusic.io\n")
-            root.walk().filter { it.isFile && it.name.endsWith(".desktop") }.forEach {
-                val lines = it.readLines().map { line -> if (line.startsWith("Exec=")) "$line %F" else line }
-                it.writeText((lines + "StartupWMClass=io-ymusic-desktop-MainKt" + "MimeType=$linuxMimeTypes").joinToString("\n", postfix = "\n"))
-            }
-            run("dpkg-deb", "--root-owner-group", "--build", root.path, deb.path)
-            root.deleteRecursively()
-        }
-    }
-}
-
-tasks.matching { it.name == "proguardReleaseJars" }.configureEach {
-    val proguardOut = layout.buildDirectory.dir("compose/tmp/main-release/proguard")
-    // The plugin never clears this dir, so a jar whose name changes (a dependency version bump)
-    // would leave its predecessor behind to be packaged alongside the new one.
-    doFirst { proguardOut.get().asFile.deleteRecursively() }
-    doLast {
-        val sqliteKeep = "org/sqlite/native/" +
-            mapOf("macos" to "Mac", "windows" to "Windows", "linux" to "Linux").getValue(hostOs) + "/" +
-            (if (hostArm64) "aarch64" else "x86_64") + "/"
-        val jnaKeep = "com/sun/jna/" + mapOf("macos" to "darwin", "windows" to "win32", "linux" to "linux").getValue(hostOs) +
-            "-" + (if (hostArm64) "aarch64" else "x86-64") + "/"
-        // Native dirs are `<os>-<arch>/`; com/sun/jna/win32/ (no dash) is a CLASS package.
-        val jnaNativeDir = Regex("^com/sun/jna/[a-z0-9]+-[a-z0-9-]+/")
-        val skikoKeep = "libskiko-$hostOs-" + (if (hostArm64) "arm64" else "x64")
-        val jniKeep = "jni/${hostOs}_" + (if (hostArm64) "aarch64" else "x64") + "/"
-        fun isForeignNative(jar: String, entry: String): Boolean = when {
-            // Its JNI and libav ship once, in app resources (stagePackedFfmpeg).
-            jar.startsWith("mse-jvm") -> entry.startsWith("jni/")
-            entry.startsWith("org/sqlite/native/") -> !entry.startsWith(sqliteKeep)
-            jnaNativeDir.containsMatchIn(entry) -> !entry.startsWith(jnaKeep)
-            entry.startsWith("libskiko-") -> !entry.startsWith(skikoKeep)
-            entry.startsWith("jni/") -> !entry.startsWith(jniKeep)
-            else -> false
-        }
-
-        // ProGuard stamps the CURRENT TIME into every entry it writes, so a jar with identical
-        // content would hash differently on each build. Normalize to a fixed instant, so an
-        // unchanged release builds byte-identical.
-        fun rewrite(jar: File) {
-            val tmp = File(jar.absolutePath + ".norm")
-            ZipFile(jar).use { zip ->
-                ZipOutputStream(tmp.outputStream().buffered()).use { out ->
-                    for (entry in zip.entries()) {
-                        if (entry.isDirectory || isForeignNative(jar.name, entry.name)) continue
-                        // 1980-01-01, the earliest a zip entry can express.
-                        out.putNextEntry(ZipEntry(entry.name).apply { time = 315_532_800_000L })
-                        zip.getInputStream(entry).use { it.copyTo(out) }
-                        out.closeEntry()
-                    }
+        // Pass the bundled natives path to the runtime for `./gradlew desktopApp:run`.
+        val osArch = System.getProperty("os.arch").lowercase()
+        val osSubDir =
+            when {
+                System.getProperty("os.name").contains("Mac") -> {
+                    if (osArch.contains("aarch64")) "macos-arm64" else "macos-x64"
+                }
+                System.getProperty("os.name").contains("Win") -> {
+                    if (osArch.contains("aarch64")) "windows-arm64" else "windows-x64"
+                }
+                else -> {
+                    "linux-x64"
                 }
             }
-            check(jar.delete() && tmp.renameTo(jar)) { "could not replace ${jar.name} with its rewritten copy" }
+        // libmpv is staged by `./gradlew :composeApp:mpvSetupAll`.
+        // MpvLibrary reads this property and feeds it to jna.library.path.
+        //
+        // Without it, JNA cannot find a system libmpv on macOS either: its
+        // default search list is /usr/lib + /lib, and dyld's leaf-name
+        // fallback is /usr/local/lib + /usr/lib, so a Homebrew install under
+        // /opt/homebrew/lib is invisible to both. The bundled path avoids the
+        // question entirely; `brew install mpv` is only a fallback for a
+        // checkout that hasn't run mpvSetup yet.
+        val mpvNativesPath = rootDir.resolve("mpv-natives/$osSubDir")
+        if (mpvNativesPath.isDirectory) {
+            systemProperty("mpv.bundled.path", mpvNativesPath.absolutePath)
+        } else {
+            logger.info(
+                "[mpv] ${mpvNativesPath.name} not staged yet — run " +
+                    "`./gradlew :composeApp:mpvSetupAll`. Falling back to a system libmpv.",
+            )
         }
 
-        proguardOut.get().asFile.listFiles().orEmpty()
-            .filter { it.isFile && it.extension == "jar" }
-            .forEach(::rewrite)
+        if (System.getProperty("os.name").contains("Mac")) {
+            jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
+            jvmArgs("--add-opens", "java.desktop/sun.lwawt=ALL-UNNAMED")
+            jvmArgs("--add-opens", "java.desktop/sun.lwawt.macosx=ALL-UNNAMED")
+        }
+
+        // forceLinuxWmClass() in Main.kt needs this to rename the window "SimpMusic"; without it
+        // the dock falls back to the class name. Packaged builds get it from conveyor.conf.
+        if (System.getProperty("os.name").contains("Linux")) {
+            jvmArgs("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
+        }
     }
 }
 
-// The host's installer under a name that says what it is for, ready for sign-app-update.mjs:
-//   ./gradlew :desktopApp:releaseInstaller   →   build/release/YMusic-<version>-<platform>.<dmg|exe|deb>
-tasks.register<Copy>("releaseInstaller") {
-    group = "distribution"
-    description = "Package the release installer for this OS/arch and name it YMusic-<version>-<platform>."
-    val (task, dir, ext) = when (hostOs) {
-        "macos" -> Triple("packageReleaseDmg", "dmg", "dmg")
-        "windows" -> Triple("packageReleaseInnoSetup", "innosetup", "exe")
-        else -> Triple("packageReleaseDeb", "deb", "deb")
-    }
-    dependsOn(task)
-    from(layout.buildDirectory.dir("compose/binaries/main-release/$dir"))
-    include("*.$ext")
-    rename { "YMusic-$desktopVersion-$hostPlatform.$ext" }
-    into(layout.buildDirectory.dir("release"))
-}
-
-kotlin.sourceSets.getByName("jvmMain").resources.srcDir(files(layout.buildDirectory.dir("engineJsResources")).builtBy(stageEngineJs))
-
-// ---------------------------------------------------------------------------------------------
-// Windows: Inno Setup installer. Wraps the jlinked app directory produced by
-// createReleaseDistributable in an LZMA2-compressed single-exe installer with a nicer upgrade
-// flow than jpackage's canned MSI. Compiler lookup: see buildSrc InnoSetup.kt.
-// ---------------------------------------------------------------------------------------------
-val isccPath: Provider<File> = providers.provider {
-    innoSetupCompiler() ?: error(INNO_SETUP_MISSING)
-}
-
-val innoSetupOutDir = layout.buildDirectory.dir("compose/binaries/main-release/innosetup")
-
-val packageReleaseInnoSetup by tasks.registering(Exec::class) {
-    group = "compose desktop"
-    description = "Wrap the release distributable in an Inno Setup installer (Windows only)."
-    onlyIf { hostOs == "windows" }
-    dependsOn("createReleaseDistributable")
-
-    val script = project.file("installer/windows/ymusic.iss")
-    val iconFile = project.file("ymusic.ico")
-    val appDir = layout.buildDirectory.dir("compose/binaries/main-release/app/YMusic")
-
-    inputs.file(script)
-    inputs.file(iconFile)
-    inputs.dir(appDir)
-    inputs.property("version", desktopVersion)
-    inputs.property("platform", hostPlatform)
-    outputs.dir(innoSetupOutDir)
-
-    doFirst {
-        val out = innoSetupOutDir.get().asFile.apply { mkdirs() }
+// ---------------------------------------------------------------------------
+// packageConveyorAppImage — wraps Conveyor's `linux-app` directory tree
+// (project root /output) into a single-file .AppImage. Conveyor 2.0 dropped
+// native AppImage support (only .deb + .tar.gz remain), so we keep the
+// "one-for-all-distros" .AppImage by piping its output through appimagetool
+// — identical to the previous jpackage-based pipeline, just sourced from
+// Conveyor instead.
+//
+// Usage: run AFTER `conveyor -Kapp.machines=linux.amd64.glibc make linux-app`
+//        then `./gradlew :desktopApp:packageConveyorAppImage`
+// ---------------------------------------------------------------------------
+// Step 1 of the AppImage chain — invoke the external `conveyor` CLI to
+// produce ./output (the relocatable linux-app directory tree).
+// Conveyor 2.0 prompts once for a root-key passphrase on first run; press
+// Enter to use no passphrase. Subsequent runs are fully non-interactive.
+val conveyorMakeLinuxApp =
+    tasks.register<Exec>("conveyorMakeLinuxApp") {
+        group = "distribution"
+        description = "Run `conveyor make linux-app` for Linux x86_64 (glibc)."
+        dependsOn(":composeApp:mpvSetupAll")
+        workingDir = rootDir
         commandLine(
-            isccPath.get().absolutePath,
-            "/Qp",
-            "/DAppVersion=$desktopVersion",
-            "/DAppPublisher=YMusic",
-            "/DAppURL=https://ymusic.io",
-            "/DAppSourceDir=${appDir.get().asFile.absolutePath}",
-            "/DIconFile=${iconFile.absolutePath}",
-            "/DOutputDir=${out.absolutePath}",
-            "/DArch=${if (hostArm64) "arm64" else "x64compatible"}",
-            "/DOutputBaseName=YMusic-Setup-$desktopVersion-$hostPlatform",
-            script.absolutePath,
+            "conveyor",
+            "--agree-to-license=1",
+            "-Kapp.machines=linux.amd64.glibc",
+            "make",
+            "linux-app",
         )
+        standardInput = System.`in`
     }
+
+tasks.register("packageConveyorAppImage") {
+    group = "distribution"
+    description = "Wrap Conveyor's linux-app output (./output) into a portable .AppImage."
+    // Captures project references (rootDir, layout, libs catalog) inside
+    // doLast — necessary for the per-build paths, incompatible with the
+    // Gradle 9 configuration cache. This is a manual one-shot packaging
+    // task invoked after `conveyor make linux-app`, not part of the
+    // critical CI path, so opting out is acceptable.
+    notCompatibleWithConfigurationCache(
+        "Reads project/layout/libs from within doLast to compute appimage paths.",
+    )
+
+    doLast {
+        val appName = "SimpMusic"
+        val conveyorOutput = rootDir.resolve("output")
+        if (!conveyorOutput.exists()) {
+            throw GradleException(
+                "Conveyor output (./output) not found. Run `conveyor " +
+                    "-Kapp.machines=linux.amd64.glibc make linux-app` first.",
+            )
+        }
+
+        val appimagetool =
+            layout.buildDirectory
+                .dir("tmp")
+                .get()
+                .asFile
+                .resolve("appimagetool-x86_64.AppImage")
+        if (!appimagetool.exists()) {
+            downloadFile(
+                "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage",
+                appimagetool,
+            )
+        }
+        if (!appimagetool.canExecute()) {
+            appimagetool.setExecutable(true)
+        }
+
+        val appDir =
+            layout.buildDirectory
+                .dir("appimage/conveyor/$appName.AppDir")
+                .get()
+                .asFile
+        if (appDir.exists()) {
+            appDir.deleteRecursively()
+        }
+
+        // Stage scaffold (icon source) + Conveyor binary tree.
+        val appDirSrc = rootDir.resolve("composeApp/appimage")
+        if (appDirSrc.exists()) {
+            FileUtils.copyDirectory(appDirSrc, appDir)
+        } else {
+            appDir.mkdirs()
+        }
+        FileUtils.copyDirectory(conveyorOutput, appDir)
+
+        // Ensure top-level PNG icon expected by appimagetool exists.
+        val iconSrc = rootDir.resolve("composeApp/icon/circle_app_icon.png")
+        val iconDst = appDir.resolve("simpmusic.png")
+        if (!iconDst.exists() && iconSrc.exists()) {
+            FileUtils.copyFile(iconSrc, iconDst)
+        }
+
+        val versionName =
+            libs.versions.version.name
+                .get()
+        val desktopFile = appDir.resolve("simpmusic.desktop")
+        // This file, not Conveyor's, is what actually reaches the user: AppRun installs it into
+        // ~/.local/share/applications and runs update-desktop-database. So every scheme listed in
+        // `app.url-schemes` in conveyor.conf has to be repeated here as an x-scheme-handler MIME
+        // type, or xdg-open finds no handler for it and the redirect dies in the browser.
+        // "wordbyword" is the Last.fm auth callback and was missing, which is why Last.fm login
+        // could never come back to the app on Linux.
+        desktopFile.writeText(
+            """[Desktop Entry]
+            |Type=Application
+            |Version=1.0
+            |Name=SimpMusic
+            |Comment=SimpMusic v$versionName - FOSS YouTube Music Client
+            |Exec=bin/simpmusic %u
+            |Icon=simpmusic
+            |Terminal=false
+            |Categories=Audio;AudioVideo;
+            |StartupWMClass=SimpMusic
+            |MimeType=x-scheme-handler/simpmusic;x-scheme-handler/wordbyword;
+            |
+            """.trimMargin(),
+        )
+
+        val appRun = appDir.resolve("AppRun")
+        appRun.writeText(
+            """#!/bin/sh
+            |
+            |SELF=${'$'}(readlink -f "${'$'}0")
+            |HERE=${'$'}{SELF%/*}
+            |
+            |# Install icon into XDG dirs so GNOME/KDE pick it up the first time.
+            |ICON_DIR="${'$'}HOME/.local/share/icons/hicolor/256x256/apps"
+            |if [ ! -f "${'$'}ICON_DIR/simpmusic.png" ] || [ "${'$'}HERE/simpmusic.png" -nt "${'$'}ICON_DIR/simpmusic.png" ]; then
+            |    mkdir -p "${'$'}ICON_DIR"
+            |    cp "${'$'}HERE/simpmusic.png" "${'$'}ICON_DIR/simpmusic.png"
+            |    gtk-update-icon-cache -f -t "${'$'}HOME/.local/share/icons/hicolor" 2>/dev/null || true
+            |fi
+            |
+            |# Install .desktop file with absolute Exec path to the AppImage.
+            |DESKTOP_DIR="${'$'}HOME/.local/share/applications"
+            |mkdir -p "${'$'}DESKTOP_DIR"
+            |APPIMAGE_PATH="${'$'}{APPIMAGE:-${'$'}SELF}"
+            |sed "s|Exec=bin/simpmusic|Exec=${'$'}APPIMAGE_PATH|" "${'$'}HERE/simpmusic.desktop" > "${'$'}DESKTOP_DIR/com-maxrave-simpmusic-MainKt.desktop"
+            |update-desktop-database "${'$'}DESKTOP_DIR" 2>/dev/null || true
+            |
+            |# Cap glibc's per-thread malloc arenas.
+            |#
+            |# glibc spawns a fresh 64 MB-aligned arena whenever it sees mutex contention, up to
+            |# 8 x nproc of them, and never gives an arena back to the OS. Measured on a 20-core
+            |# box: 161 arenas holding 1.45 GB of a 1.9 GB RSS, while the JVM heap was using only
+            |# 121 MB of its 512 MB cap. Pinning the count to 2 took that to ~5 arenas. The cost is
+            |# more allocator lock contention, which this workload does not notice - the audio path
+            |# is native and its buffers are long-lived.
+            |#
+            |# Linux-only by construction: this file only exists inside the AppImage. macOS and
+            |# Windows tune their allocators elsewhere, and MemoryTrimmer covers all three at runtime.
+            |export MALLOC_ARENA_MAX=2
+            |
+            |cd "${'$'}HERE"
+            |exec bin/simpmusic "${'$'}@"
+            |
+            """.trimMargin(),
+        )
+        appRun.setExecutable(true, false)
+
+        // Conveyor's launcher lives at output/bin/simpmusic (lowercase).
+        val appExecutable = appDir.resolve("bin/simpmusic")
+        if (appExecutable.exists() && !appExecutable.canExecute()) {
+            appExecutable.setExecutable(true)
+        }
+
+        val outputAppImage = appDir.parentFile.resolve("$appName-x86_64.AppImage")
+        val process =
+            ProcessBuilder(
+                appimagetool.canonicalPath,
+                "$appName.AppDir",
+                outputAppImage.name,
+            ).directory(appDir.parentFile)
+                .apply { environment()["ARCH"] = "x86_64" }
+                .inheritIO()
+                .start()
+
+        val exitCode = process.waitFor()
+        if (exitCode != 0) {
+            throw GradleException("appimagetool failed with exit code $exitCode")
+        }
+        println("[AppImage] Built: ${outputAppImage.absolutePath}")
+    }
+}
+
+// End-to-end: mpvSetupAll → conveyor make linux-app → wrap as .AppImage.
+// Single command for users: `./gradlew :desktopApp:buildLinuxAppImage --no-configuration-cache`
+tasks.register("buildLinuxAppImage") {
+    group = "distribution"
+    description = "Full SimpMusic Desktop Linux AppImage build pipeline (mpvSetupAll → conveyor → AppImage)."
+    dependsOn(conveyorMakeLinuxApp)
+    finalizedBy("packageConveyorAppImage")
+}
+
+// macOS — Conveyor 2.0 ships .zip wrapping the .app bundle (no native
+// .dmg target). Run on a macOS host for proper code signing; cross-build
+// from Linux works but the app won't be signed.
+//
+// Run via: `./gradlew :desktopApp:buildMacZipAmd64 --no-configuration-cache`
+val conveyorMakeMacZipAmd64 =
+    tasks.register<Exec>("conveyorMakeMacZipAmd64") {
+        group = "distribution"
+        description = "Run `conveyor make unnotarized-mac-zip` for macOS Intel."
+        dependsOn(":composeApp:mpvSetupAll")
+        workingDir = rootDir
+        commandLine(
+            "conveyor",
+            "--agree-to-license=1",
+            "-Kapp.machines=mac.amd64",
+            "make",
+            "unnotarized-mac-zip",
+        )
+        standardInput = System.`in`
+    }
+
+val conveyorMakeMacZipAarch64 =
+    tasks.register<Exec>("conveyorMakeMacZipAarch64") {
+        group = "distribution"
+        description = "Run `conveyor make unnotarized-mac-zip` for macOS Apple Silicon."
+        dependsOn(":composeApp:mpvSetupAll")
+        workingDir = rootDir
+        commandLine(
+            "conveyor",
+            "--agree-to-license=1",
+            "-Kapp.machines=mac.aarch64",
+            "make",
+            "unnotarized-mac-zip",
+        )
+        standardInput = System.`in`
+    }
+
+tasks.register("buildMacZipAmd64") {
+    group = "distribution"
+    description = "Full SimpMusic Desktop macOS Intel .zip pipeline (mpvSetupAll → conveyor)."
+    dependsOn(conveyorMakeMacZipAmd64)
+}
+
+tasks.register("buildMacZipAarch64") {
+    group = "distribution"
+    description = "Full SimpMusic Desktop macOS Apple Silicon .zip pipeline (mpvSetupAll → conveyor)."
+    dependsOn(conveyorMakeMacZipAarch64)
+}
+
+// Windows — Conveyor 2.0 ships .msix (modern Windows 10+ app package).
+// NOTE: Unsigned .msix has rough UX (users must enable sideloading +
+// install certificate). Recommended path long-term: code-sign with an
+// EV cert OR switch to Inno Setup `.exe` wrap if signing budget unavailable.
+val conveyorMakeWindowsMsix =
+    tasks.register<Exec>("conveyorMakeWindowsMsix") {
+        group = "distribution"
+        description = "Run `conveyor make windows-msix` for Windows x86_64."
+        dependsOn(":composeApp:mpvSetupAll")
+        workingDir = rootDir
+        commandLine(
+            "conveyor",
+            "--agree-to-license=1",
+            "-Kapp.machines=windows.amd64",
+            "make",
+            "windows-msix",
+        )
+        standardInput = System.`in`
+    }
+
+tasks.register("buildWindowsMsix") {
+    group = "distribution"
+    description = "Full SimpMusic Desktop Windows .msix pipeline (mpvSetupAll → conveyor)."
+    dependsOn(conveyorMakeWindowsMsix)
+}
+
+tasks.withType<AbstractJPackageTask>().configureEach {
+    notCompatibleWithConfigurationCache("Compose Desktop JPackage tasks are not yet compatible with configuration cache")
+}
+
+private fun downloadFile(
+    url: String,
+    destFile: java.io.File,
+) {
+    val destParent = destFile.parentFile
+    destParent.mkdirs()
+
+    if (destFile.exists()) {
+        destFile.delete()
+    }
+
+    println("Download $url")
+    URI(url).toURL().openStream().use { input ->
+        destFile.outputStream().use { output ->
+            input.copyTo(output)
+        }
+    }
+    println("Download finish")
 }

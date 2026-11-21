@@ -1,1 +1,0 @@
-ALTER TABLE mediaItem ADD COLUMN genre TEXT;

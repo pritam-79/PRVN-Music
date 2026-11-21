@@ -1,1 +1,0 @@
-ALTER TABLE downloadTask ADD COLUMN error_code TEXT;

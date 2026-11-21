@@ -1,112 +1,71 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
 plugins {
-    // AGP + core Kotlin plugins - versions resolved from the buildSrc classpath (see
-    // buildSrc/build.gradle.kts), so they're applied without a version here.
-    id("com.android.application") apply false
-    id("com.android.library") apply false
-    kotlin("android") apply false
-    kotlin("multiplatform") apply false
-    // Kotlin compiler plugins - need explicit version (not bundled in kotlin-gradle-plugin)
-    kotlin("plugin.compose") version Versions.kotlin apply false
-    kotlin("plugin.serialization") version Versions.kotlin apply false
-    kotlin("plugin.allopen") version Versions.kotlin apply false
-    id("org.jetbrains.compose") version Versions.composeMultiplatform apply false
-    id("org.jetbrains.kotlinx.benchmark") version Versions.kotlinxBenchmark apply false
-    id("com.diffplug.spotless") version "8.8.0"
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.compose.compiler) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.kotlin.parcelize) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.aboutlibraries) apply false
+    alias(libs.plugins.aboutlibraries.multiplatform) apply false
+    alias(libs.plugins.room) apply false
+    alias(libs.plugins.sentry.gradle) apply false
+    alias(libs.plugins.android.lint) apply false
+    alias(libs.plugins.compose.multiplatform) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.android.kotlin.multiplatform.library) apply false
+    alias(libs.plugins.jetbrains.kotlin.jvm) apply false
+    alias(libs.plugins.build.config) apply false
+    alias(libs.plugins.osdetector) apply false
+    alias(libs.plugins.conveyor) apply false
+    alias(libs.plugins.compose.hotReload) apply false
 }
 
-val ciSkippedTests: List<String> =
-    if (providers.gradleProperty("ci").orNull == "true") {
-        rootDir.resolve(".github/ci-skip-tests.txt").readLines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-    } else {
-        emptyList()
-    }
-
-subprojects {
-    installDebugBuildFlag()
-    // No test runs longer than 30 s: JUnit Platform aborts it (runTest's own clock agrees).
-    tasks.withType<org.jetbrains.kotlin.gradle.targets.jvm.tasks.KotlinJvmTest>().configureEach {
-        useJUnitPlatform()
-        systemProperty("junit.jupiter.execution.timeout.default", "30 s")
-        systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD")
-        systemProperty("kotlinx.coroutines.test.default_timeout", "30s")
-        filter {
-            isFailOnNoMatchingTests = false
-            ciSkippedTests.forEach { excludeTestsMatching("*.$it") }
-        }
-    }
-}
-
-spotless {
-    kotlin {
-        target("**/src/**/*.kt")
-        // vendored / generated / foreign trees stay untouched
-        targetExclude("**/build/**", "YMusicLegacy/**", "temp/**", "**/publicsuffix/PslDafsa.kt")
-        // Spotless does not discover .editorconfig on its own — without the explicit path ktlint
-        // runs on ktlint_official defaults and restructures code the config deliberately protects.
-        ktlint("1.5.0").setEditorConfigPath("$rootDir/.editorconfig")
-    }
-    kotlinGradle {
-        target("*.gradle.kts", "*/*.gradle.kts", "buildSrc/*.gradle.kts")
-        ktlint("1.5.0").setEditorConfigPath("$rootDir/.editorconfig")
-    }
-}
-
-// ---- ffmpeg packs from the sibling ffmpeg-build (see buildSrc/FfmpegBuild.kt) -----------------
-// Registered here rather than per module so the two staging directories have exactly one producer
-// each. Consumers depend on the one they need: :androidApp and :kmpFfmpeg's device tests on the
-// android ABI packs, :desktopApp's run and tests on the host pack (CLI + the same libav DSOs).
-fun Project.registerFfmpegSync(name: String, packs: Map<String, String>, dir: File, what: String) =
-    tasks.register<SyncFfmpeg>(name) {
-        group = "build setup"
-        description = "Stage $what from ../ffmpeg-build/out."
-        this.packs.set(packs)
-        ffmpegBuildRoot.set(FfmpegBuild.root(project).absolutePath)
-        packFiles.from(packs.values.map { FfmpegBuild.pack(project, it) })
-        outputDir.set(dir)
-    }
-
-registerFfmpegSync(
-    "syncFfmpegHost",
-    listOfNotNull(FfmpegBuild.hostSlug()).associateBy { "" },
-    FfmpegBuild.hostDir(project),
-    "the host ffmpeg pack (CLI + libav) the desktop app ships and the tests exec",
-)
-
-registerFfmpegSync(
-    "syncFfmpegAndroid",
-    FfmpegBuild.ANDROID_ABIS.associateWith(FfmpegBuild::androidSlug),
-    FfmpegBuild.androidDir(project),
-    "the per-ABI ffmpeg pack the apk ships as lib/<abi>/{libffmpeg.so,libav*.so}",
-)
-
-tasks.register("syncFfmpeg") {
-    group = "build setup"
-    description = "Stage every ffmpeg pack this host can use."
-    dependsOn("syncFfmpegHost", "syncFfmpegAndroid")
-}
-
-tasks.register("cleanBuildDir", Delete::class) {
+tasks.register<Delete>("Clean") {
     delete(rootProject.layout.buildDirectory)
 }
 
-// Make lifecycle clean task depend on our custom clean
-tasks.matching { it.name == "clean" }.configureEach {
-    dependsOn("cleanBuildDir")
-}
+subprojects {
+    tasks.matching { it.name.contains("lint", ignoreCase = true) }.configureEach {
+        enabled = false
+    }
 
-// ONE command refreshes everything derived from the engine-js bundle after a source edit or a
-// engineJsVersion / playerJsVersion bump: build the bundles, restage the Android asset + desktop jar
-// resource, and regenerate the embedded consts + their versions. (Consumers also pull all of this on
-// their own builds — this exists so `./gradlew syncEngineJs` refreshes every copy in one go.)
-tasks.register("syncEngineJs") {
-    dependsOn(
-        ":engine-js:closureJs",
-        ":engine-js:closurePlayerJs",
-        ":androidApp:copyEngineJs",
-        ":desktopApp:stageEngineJs",
-        ":dynamic-engine:generateEngineJsBundleKt",
-        ":dynamic-engine:generateEnginePlayerJsBundleKt",
-    )
+    tasks.withType<KotlinCompile>().configureEach {
+        compilerOptions {
+            if (project.findProperty("enableComposeCompilerReports") == "true") {
+                arrayOf("reports", "metrics").forEach {
+                    freeCompilerArgs.addAll(
+                        listOf(
+                            "-P",
+                            "plugin:androidx.compose.compiler.plugins.kotlin:${it}Destination=${layout.buildDirectory.asFile.get().absolutePath}/compose_metrics",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    // PipePipe and Brave both depend on com.github.TeamNewPipe:nanojson with different commit
+    // hashes. Gradle's default resolver picks PipePipe's older 1d9e1aea... commit which lacks
+    // JsonArray.streamAsJsonObjects(), causing NoSuchMethodError when Brave's fallback runs at
+    // runtime. Force the latest upstream commit (newer than both libs ship) across every module
+    // so the merged APK/JAR carries a nanojson with the API both extractors expect.
+    configurations.all {
+        resolutionStrategy {
+            force("com.github.TeamNewPipe:nanojson:c7a6c1c08d16b6d5ecded34758e6415e07be2166")
+
+            // Kotaml retains Kaml's com.charleskorn.kaml package. Different Maven coordinates
+            // otherwise let both copies reach DEX. Align root and platform-specific modules.
+            eachDependency {
+                if (requested.group == "com.charleskorn.kaml" &&
+                    (requested.name == "kaml" || requested.name.startsWith("kaml-"))
+                ) {
+                    useTarget("io.heapy.kotaml:${requested.name.replaceFirst("kaml", "kotaml")}:${libs.versions.kotaml.get()}")
+                    because("Kotaml and Kaml provide the same classes; use one YAML implementation")
+                }
+            }
+        }
+    }
 }

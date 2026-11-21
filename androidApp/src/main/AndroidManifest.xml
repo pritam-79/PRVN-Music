@@ -1,285 +1,269 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Only Android 9 and older need this: there MediaStore still writes through shared
+         storage. From Android 10 an app writing its own new image needs no permission, and
+         SaveImagePermission grants without asking — so the declaration stops at 28 to match. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="androidx.car.app.MEDIA_TEMPLATES" />
+    <!-- Login sync: scanning the QR shown by SimpMusic Desktop. -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Import from device: reads the playlists other music apps registered in MediaStore. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <!-- In-app updates: the downloaded APK is handed to PackageInstaller. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Login sync reaches the computer by its LAN address. Only enforced for apps targeting
+         Android 17 (API 37) and up, where it is a runtime permission; LoginSync.android.kt asks
+         for it then. Declared now so a targetSdk bump cannot make the connection silently time out. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <!-- Song recognition in Search: a few seconds of microphone audio, fingerprinted for Shazam. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Android 11+ package visibility: premium is "the Support Development app is installed", and
-         Donate starts its donation screen. The folder picker tells a disabled system Files app from a missing one. -->
+    <uses-feature
+        android:name="android.hardware.type.automotive"
+        android:required="false" />
+    <!-- Requesting CAMERA implies a required camera, which would hide the app from TVs and cars. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <!-- Likewise RECORD_AUDIO implies a required microphone. -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.screen.landscape"
+        android:required="false" />
+    <uses-feature
+        android:name="android.software.car.templates_host.media"
+        android:required="false" />
+
     <queries>
-        <package android:name="com.kdev.ymusic.support" />
-        <package android:name="com.google.android.documentsui" />
-        <package android:name="com.android.documentsui" />
         <intent>
-            <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+            <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
+        </intent>
+    </queries>
+    <queries>
+        <package android:name="com.maxrave.simpmusic" />
+    </queries>
+    <queries>
+        <intent>
+            <action android:name="androidx.media3.session.MediaSessionService" />
         </intent>
     </queries>
 
     <application
-        android:name=".YMusicApplication"
+        android:name=".SimpMusicApplication"
         android:allowBackup="true"
-        android:largeHeap="true"
-        android:usesCleartextTraffic="${usesCleartextTraffic}"
+        android:appCategory="audio"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:localeConfig="@xml/locale_config"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
-        android:theme="@style/Theme.YMusicV4">
+        android:theme="@style/Theme.SimpMusic"
+        android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true"
+        tools:replace="android:name"
+        tools:targetApi="tiramisu">
+
         <activity
             android:name=".MainActivity"
+            android:configChanges="keyboardHidden|screenSize|screenLayout|smallestScreenSize"
             android:exported="true"
-            android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|uiMode"
-            android:theme="@style/Theme.YMusicV4">
-
-            <!-- Outside links: opened at the matching page (commonUi IncomingLinks; the engine resolves them). -->
+            android:enableOnBackInvokedCallback="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.SimpMusic"
+            tools:ignore="DiscouragedApi,LockedOrientationActivity">
             <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.MUSIC_PLAYER" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="ymusic" />
-                <data android:scheme="prvn" />
             </intent-filter>
 
+            <!-- Car App Library: host asks to surface the media playback screen
+                 (minimized control panel tap, system media surfaces) -->
             <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
+                <action android:name="androidx.car.app.media.action.SHOW_MEDIA_PLAYBACK" />
+
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:host="prvn.music" />
             </intent-filter>
 
-            <intent-filter>
+            <!-- Youtube filter -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+
                 <data android:scheme="http" />
                 <data android:scheme="https" />
                 <data android:host="youtube.com" />
-                <data android:host="*.youtube.com" />
-                <data android:host="youtu.be" />
-            </intent-filter>
-
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:host="ymusic.io" />
-                <data android:host="www.ymusic.io" />
+                <data android:host="m.youtube.com" />
+                <data android:host="www.youtube.com" />
+                <data android:host="music.youtube.com" />
+                <!-- video prefix -->
+                <data android:pathPrefix="/v/" />
+                <data android:pathPrefix="/embed/" />
                 <data android:pathPrefix="/watch" />
-                <data android:pathPrefix="/shorts/" />
-                <data android:pathPrefix="/live/" />
-                <data android:pathPrefix="/playlist" />
-                <data android:pathPrefix="/channel" />
-                <data android:pathPrefix="/c/" />
+                <!-- channel prefix -->
+                <data android:pathPrefix="/channel/" />
                 <data android:pathPrefix="/user/" />
-                <data android:pathPrefix="/@" />
-                <data android:pathPrefix="/results" />
-                <data android:pathPrefix="/search" />
+                <data android:pathPrefix="/c/" />
+                <!-- playlist prefix -->
+                <data android:pathPrefix="/playlist" />
             </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="content" />
-                <data android:mimeType="audio/*" />
-                <data android:mimeType="video/*" />
-            </intent-filter>
-
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+
                 <data android:scheme="http" />
                 <data android:scheme="https" />
-                <data android:host="ymusicapp.com" />
-                <data android:host="www.ymusicapp.com" />
+                <data android:host="youtu.be" />
+                <data android:pathPrefix="/" />
             </intent-filter>
-        </activity>
-        <!-- Launcher Icon Activity Aliases: allow dynamic app icon switching -->
-        <activity-alias
-            android:name=".MainActivityOriginal"
-            android:targetActivity=".MainActivity"
-            android:enabled="true"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_original"
-            android:roundIcon="@mipmap/ic_launcher_original_round"
-            android:label="@string/app_name">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".MainActivityPurple"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_purple"
-            android:roundIcon="@mipmap/ic_launcher_purple_round"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".MainActivityNeon"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_neon"
-            android:roundIcon="@mipmap/ic_launcher_neon_round"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".MainActivityMinimal"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_minimal"
-            android:roundIcon="@mipmap/ic_launcher_minimal_round"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".MainActivityDj"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_dj"
-            android:roundIcon="@mipmap/ic_launcher_dj_round"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <!-- Gemini / Assistant "play X on YMusic" on the phone; see VoiceSearchActivity. -->
-        <activity
-            android:name=".VoiceSearchActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:taskAffinity=""
-            android:theme="@style/Theme.YMusicV4.Share">
-            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="vnd.youtube" />
+                <data android:scheme="vnd.youtube.launch" />
             </intent-filter>
+
+            <!-- SimpMusic deep link filter (https) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="https" />
+                <data android:host="simpmusic.org" />
+                <data android:pathPrefix="/app/" />
+            </intent-filter>
+
+            <!-- SimpMusic deep link filter (custom scheme) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="simpmusic" />
+            </intent-filter>
+
+            <!-- Last.fm auth callback. The scheme is fixed by the callback URL registered on the
+                 Last.fm API account, so it is not "simpmusic". -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="lastfm-auth"
+                    android:scheme="wordbyword" />
+            </intent-filter>
+
+            <!-- Share filter -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
-        <!-- Share targets (a link shared from YouTube): one per action, like legacy; see ShareActivity. Its own
-             empty affinity: never part of (or the root of) YMusic's task, or a repeat share only raises it. -->
-        <activity
-            android:name=".ShareActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:noHistory="true"
-            android:taskAffinity=""
-            android:theme="@style/Theme.YMusicV4.Share" />
 
-        <activity-alias
-            android:name=".SharePlay"
-            android:exported="true"
-            android:label="@string/share_play"
-            android:targetActivity=".ShareActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/*" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".ShareDownloadMp3"
-            android:exported="true"
-            android:label="@string/share_download_mp3"
-            android:targetActivity=".ShareActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/*" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".ShareDownloadM4a"
-            android:exported="true"
-            android:label="@string/share_download_m4a"
-            android:targetActivity=".ShareActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/*" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".ShareDownload"
-            android:exported="true"
-            android:label="@string/share_download"
-            android:targetActivity=".ShareActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/*" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity
-            android:name=".QrScanActivity"
-            android:exported="false"
-            android:theme="@style/Theme.YMusicV4" />
-
-        <!-- Queue/browse artwork for Android Auto & co: exported because the car host holds no
-             permission of ours; openFile validates every target (see ArtworkProvider). -->
         <provider
-            android:name=".ArtworkProvider"
-            android:authorities="${applicationId}.artwork"
-            android:exported="true" />
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.FileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
+
+        <meta-data
+            android:name="androidx.car.app.TintableAttributionIcon"
+            android:resource="@drawable/monochrome" />
 
         <service
-            android:name=".PlaybackService"
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data
+                android:name="autoStoreLocales"
+                android:value="true" />
+        </service>
+        <service
+            android:name="com.maxrave.media3.service.SimpleMediaService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="false"
+            tools:ignore="ExportedService">
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="androidx.media3.session.MediaSessionService" />
-                <!-- Legacy interface Android Auto binds to; media3 serves it from the same session. -->
+                <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
+        <service
+            android:name="com.maxrave.media3.service.download.MusicDownloadService"
+            android:exported="true"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
+
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
 
-        <!-- media3 registers this as the session's media-button receiver (API 31+ routes headset
-             keys through it); it forwards to PlaybackService, starting it when needed. -->
         <receiver
             android:name="androidx.media3.session.MediaButtonReceiver"
             android:exported="true">
@@ -288,68 +272,75 @@
             </intent-filter>
         </receiver>
 
-        <!-- Foreground standing while the download queue runs; exits when the queue drains. -->
-        <service
-            android:name=".DownloadForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <!-- Home-screen player widgets; see PlayerWidgets. -->
-        <receiver
-            android:name=".SmallPlayerWidget"
-            android:exported="false"
-            android:label="@string/widget_small_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_small_info" />
-        </receiver>
-
-        <receiver
-            android:name=".CompactPlayerWidget"
-            android:exported="false"
-            android:label="@string/widget_compact_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_compact_info" />
-        </receiver>
-
-        <receiver
-            android:name=".LargePlayerWidget"
-            android:exported="false"
-            android:label="@string/widget_large_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_large_info" />
-        </receiver>
-
-        <receiver
-            android:name=".SquarePlayerWidget"
-            android:exported="false"
-            android:label="@string/widget_square_name">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_square_info" />
-        </receiver>
-
-        <!-- Declares the app to the Android Auto host as a media app. -->
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
-        <receiver
-            android:name=".UpdateInstallReceiver"
-            android:exported="false" />
+
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="8" />
+
+        <service
+            android:name="com.maxrave.media3.carapp.SimpMusicCarAppService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <action android:name="androidx.car.app.media.action.SHOW_MEDIA_PLAYBACK" />
+                <category android:name="androidx.car.app.category.MEDIA" />
+            </intent-filter>
+        </service>
+
+
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
+
+        <!-- Quick Settings tile: a shortcut to the song recognition sheet (simpmusic://recognize). -->
+        <service
+            android:name=".service.RecognitionTileService"
+            android:exported="true"
+            android:icon="@drawable/rounded_graphic_eq_24"
+            android:label="@string/qs_tile_recognize_song"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+
+        <receiver android:name=".ui.widget.TurntableWidgetReceiver"
+            android:label="@string/widget_turntable_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/turntable_widget_info" />
+        </receiver>
+
+        <receiver android:name=".ui.widget.PlaylistsWidgetReceiver"
+            android:label="@string/widget_playlists_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/playlists_widget_info" />
+        </receiver>
+
+        <receiver android:name=".ui.widget.ListeningInsightsWidgetReceiver"
+            android:label="@string/widget_insights_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/insights_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

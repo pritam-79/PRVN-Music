@@ -1,4 +1,0 @@
-package = io.ymusic.mse.cinterop
-headers = mse_native.h
-headerFilter = mse_native.h
-staticLibraries = libmsehost.a
