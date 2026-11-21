@@ -1,60 +1,47 @@
-# PRVN Music v0.01 — Dependencies
+# PRVN Music v0.14 — Software Bill of Materials & Dependencies (SBOM)
 
-This document provides the complete list of build tools, SDKs, native compilers, runtimes, and libraries required to build PRVN Music v0.01.
-
----
-
-## 1. Toolchains & Environment
-
-| Component | Version | Location / Source | Purpose |
-| :--- | :--- | :--- | :--- |
-| **JDK** | OpenJDK 21.0.6 LTS (Temurin) | `C:\Users\prita\.tools\jdk21` | Kotlin & Gradle JVM runtime |
-| **Android SDK** | API 36 (Vanilla Ice Cream) | `C:\Users\prita\.tools\android-sdk` | Android framework platform |
-| **Android Build-Tools** | 36.0.0 & 35.0.0 | `android-sdk/build-tools` | `aapt2`, `d8`, `zipalign`, `apksigner` |
-| **Android NDK** | 28.2.13676358 (r28c) | `android-sdk/ndk/28.2.13676358` | Clang/LLVM C11 cross-compiler for ARM64 |
-| **CMake** | 4.5.0 | `C:\Program Files\CMake\bin` | Native build configuration generator |
-| **Ninja** | 1.12.1 | WinGet Ninja-build package | Native compilation execution engine |
-| **Node.js** | v20.18.0 LTS | `C:\Users\prita\.tools\node` | esbuild & Google Closure Compiler runner |
-| **Gradle** | 9.4.1 | Gradle Wrapper (`gradlew.bat`) | Multi-project build orchestration |
+**Release:** PRVN Music v0.14.0  
+**Target SDK:** 35 / 36  
+**Min SDK:** 26 (Android 8.0 Oreo)  
 
 ---
 
-## 2. Core Frameworks & Plugins
+## Direct Multiplatform & Android Dependencies
 
-- **Android Gradle Plugin (AGP)**: `8.9.1`
-- **Kotlin Multiplatform (KMP)**: `2.2.0`
-- **Compose Multiplatform**: `1.8.0-alpha03`
-- **Kotlin Serialization**: `2.2.0`
-- **Sentry Android Gradle Plugin**: `6.18.0`
+### Core & Framework
+| Dependency | Version | Purpose | License |
+|---|---|---|---|
+| `org.jetbrains.compose` | 1.12.2 | Compose Multiplatform framework | Apache 2.0 |
+| `androidx.compose.material3:material3` | 1.5.0-alpha22 | Material Design 3 Expressive UI | Apache 2.0 |
+| `androidx.media3:media3-exoplayer` | 1.11.1 | Android audio playback engine | Apache 2.0 |
+| `androidx.media3:media3-session` | 1.11.1 | Background MediaSession & Notifications | Apache 2.0 |
+| `androidx.room:room-runtime` | 2.8.5 | Local persistent database | Apache 2.0 |
+| `androidx.datastore:datastore-preferences` | 1.3.0 | Key-value settings storage | Apache 2.0 |
+| `io.insert-koin:koin-core` | 4.2.2 | Dependency injection | Apache 2.0 |
+| `io.ktor:ktor-client-core` | 3.6.0 | Asynchronous HTTP client | Apache 2.0 |
+| `io.github.dokar3:quickjs-kt` | 1.0.15 | Embedded QuickJS engine for YouTube player logic | Apache 2.0 |
+
+### Audio & Lyrics
+| Dependency | Version | Purpose | License |
+|---|---|---|---|
+| `AutoEq Headphone Index` | v1.0.0 | Frequency response correction curves | MIT |
+| `com.github.TeamNewPipe:nanojson` | c7a6c1c | Fast JSON parser for stream extractors | Apache 2.0 |
+| `com.atilika.kuromoji:kuromoji-ipadic` | 0.9.0 | Japanese lyrics romanization | Apache 2.0 |
+| `com.belerweb:pinyin4j` | 2.5.1 | Chinese lyrics pinyin romanization | GPL 2.0 / LGPL |
+| `dev.chrisbanes.haze:haze` | 2.0.1 | Frosted glass backdrop blur | Apache 2.0 |
+| `com.github.kyant0:liquid-glass` | 2.0.1 | Liquid Glass UI visual elements | MIT |
+
+### Desktop Platform
+| Dependency | Version | Purpose | License |
+|---|---|---|---|
+| `net.java.dev.jna:jna` | 5.19.1 | Java Native Access for libmpv | Apache 2.0 / LGPL |
+| `libmpv` | C-API | Desktop audio & video decoding engine | GPL 2.0+ / LGPL 2.1+ |
+| `Conveyor` | 2.0 | Desktop native package distribution | Commercial / Open |
 
 ---
 
-## 3. Native Libraries & Multimedia Engine
+## Security Audit Summary for Google Play Protect
 
-- **FFmpeg Engine**: `7.1` (LGPL/GPL v3 build from `ymusic-io/ffmpeg-build`)
-  - `libavcodec` — Audio/video decoders & encoders
-  - `libavformat` — Container format demuxers/muxers
-  - `libavutil` — Core math, memory, and utility functions
-  - `libavfilter` — Audio effect and DSP filter graphs
-  - `libswresample` — Audio resampling and channel mixing
-  - `libswscale` — Video scaling and color matrix conversion
-  - `libffmpeg.so` — Executable multimedia scanner & CLI utility
-- **QuickJS Engine**: Bellard QuickJS (VERSION 2026-06-04, commit `04be2460`)
-  - Lightweight embedded JavaScript runtime executing YouTube cipher / streaming decoders
-- **MSE (MediaSource Engine) Bridge**:
-  - High-performance native audio/video frame processor connecting ExoPlayer/Media3 with FFmpeg
-
----
-
-## 4. Key AndroidX & Multiplatform Libraries
-
-- **AndroidX Core KTX**: `1.15.0`
-- **AndroidX Activity Compose**: `1.10.1`
-- **AndroidX Media / Media3 Session**: `1.5.1` / `1.7.0`
-- **AndroidX Biometric**: `1.2.0-alpha05`
-- **AndroidX Palette**: `1.0.0`
-- **AndroidX Camera (Core, Camera2, Lifecycle, View)**: `1.4.1`
-- **Kotlinx Coroutines**: `1.10.1`
-- **Zxing Core**: `3.5.3` (QR code sharing & importing)
-- **OkHttp / KmpHttp**: Pure KMP networking core
-- **Desugar JDK Libs**: Java 8+ API desugaring on Android API < 26
+1. **No Untyped Dynamic Code Loading:** All native binaries (`libmpv`, `quickjs`) are compiled and packaged at build time. No arbitrary DEX or APK loading is permitted.
+2. **Minimal Permissions:** Scoped strictly to media playback, background audio, and optional local storage.
+3. **No Hidden Telemetry:** FOSS compilation path strips proprietary analytics.
