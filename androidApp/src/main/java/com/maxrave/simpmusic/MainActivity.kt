@@ -51,6 +51,9 @@ import org.koin.core.context.loadKoinModules
 import org.koin.core.context.unloadKoinModules
 import org.koin.dsl.module
 import org.simpmusic.crashlytics.pushPlayerError
+import android.net.Uri
+import android.provider.Settings
+import com.maxrave.simpmusic.service.test.notification.NotificationHandler
 import pub.devrel.easypermissions.EasyPermissions
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -59,7 +62,7 @@ import java.util.concurrent.TimeUnit
 private var lastLibrarySyncAt = 0L
 
 @Suppress("DEPRECATION")
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), EasyPermissions.PermissionCallbacks {
     val viewModel: SharedViewModel by inject()
     val mediaPlayerHandler by inject<MediaPlayerHandler>()
     val dataStoreManager: DataStoreManager by inject()
@@ -247,6 +250,23 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Ensure all application notification channels exist
+        NotificationHandler.createNotificationChannel(this)
+        NotificationHandler.createUpdateNotificationChannel(this)
+        NotificationHandler.createBlogNotificationChannel(this)
+
+        lifecycleScope.launch {
+            viewModel.updateResponse.collect { updateData ->
+                if (updateData != null && VersionManager.isBehind(updateData.tagName)) {
+                    NotificationHandler.createUpdateNotification(
+                        this@MainActivity,
+                        updateData.tagName,
+                        updateData.body,
+                    )
+                }
+            }
+        }
+
         if (!EasyPermissions.hasPermissions(this, Manifest.permission.POST_NOTIFICATIONS)) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val doNotAsk = getString("notification_permission_do_not_ask")
@@ -272,7 +292,51 @@ class MainActivity : AppCompatActivity() {
 
         if (!BuildConfig.DEBUG) viewModel.checkOfficialBuild(packageName, signingCertSha256())
         setContent {
-            App(viewModel)
+            App(
+                viewModel = viewModel,
+                onOpenNotificationSettings = { doNotShowAgain ->
+                    viewModel.dismissNotificationPermissionDialog(doNotShowAgain)
+                    openNotificationSettings()
+                },
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        EasyPermissions.onRequestPermissionsResult(requestCode, permissions, grantResults, this)
+    }
+
+    override fun onPermissionsGranted(requestCode: Int, perms: List<String>) {
+        Logger.d("MainActivity", "Permissions granted: $perms")
+    }
+
+    override fun onPermissionsDenied(requestCode: Int, perms: List<String>) {
+        Logger.d("MainActivity", "Permissions denied: $perms")
+    }
+
+    private fun openNotificationSettings() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                }
+                startActivity(intent)
+            } else {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+                startActivity(intent)
+            }
+        } catch (_: Exception) {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+            }
+            startActivity(intent)
         }
     }
 

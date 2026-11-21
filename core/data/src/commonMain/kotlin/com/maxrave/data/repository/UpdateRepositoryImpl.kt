@@ -14,21 +14,35 @@ internal class UpdateRepositoryImpl(
 ) : UpdateRepository {
     override fun checkForGithubReleaseUpdate(): Flow<Resource<UpdateData>> =
         flow {
-            youTube
-                .checkForGithubReleaseUpdate()
-                .onSuccess { response ->
+            val githubResult = youTube.checkForGithubReleaseUpdate()
+            if (githubResult.isSuccess) {
+                val response = githubResult.getOrThrow()
+                emit(
+                    Resource.Success(
+                        UpdateData(
+                            tagName = response.tagName ?: "",
+                            releaseTime = response.publishedAt ?: "",
+                            body = response.body ?: "",
+                        ),
+                    ),
+                )
+            } else {
+                val rawResult = youTube.checkForRawUpdateJson()
+                if (rawResult.isSuccess) {
+                    val raw = rawResult.getOrThrow()
                     emit(
                         Resource.Success(
                             UpdateData(
-                                tagName = response.tagName ?: "",
-                                releaseTime = response.publishedAt ?: "",
-                                body = response.body ?: "",
+                                tagName = raw.versionName,
+                                releaseTime = null,
+                                body = raw.releaseNotes,
                             ),
                         ),
                     )
-                }.onFailure {
-                    emit(Resource.Error<UpdateData>(it.localizedMessage ?: "Unknown error"))
+                } else {
+                    emit(Resource.Error(githubResult.exceptionOrNull()?.localizedMessage ?: "Unknown error"))
                 }
+            }
         }.flowOn(Dispatchers.IO)
 
     override fun checkForFdroidUpdate(): Flow<Resource<UpdateData>> =

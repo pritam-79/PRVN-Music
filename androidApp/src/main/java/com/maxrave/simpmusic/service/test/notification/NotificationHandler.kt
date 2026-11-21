@@ -189,4 +189,67 @@ object NotificationHandler {
             notify(url.hashCode(), builder.build())
         }
     }
+
+    const val UPDATE_CHANNEL_ID = "prvn_music_updates_channel"
+    private const val UPDATE_NOTIFICATION_ID = 2001
+
+    fun createUpdateNotificationChannel(context: Context) {
+        val notificationManager: NotificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (notificationManager.getNotificationChannel(UPDATE_CHANNEL_ID) == null) {
+            val name = "App Updates"
+            val descriptionText = "Notifies when a new version of PRVN Music is available"
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel(UPDATE_CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    fun createUpdateNotification(
+        context: Context,
+        versionName: String,
+        body: String?,
+    ) {
+        createUpdateNotificationChannel(context)
+        val tag = if (versionName.startsWith("v")) versionName else "v$versionName"
+        val releaseUrl = "https://github.com/pritam-79/PRVN-Music/releases/tag/$tag"
+        val action = Intent(Intent.ACTION_VIEW, releaseUrl.toUri()).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            UPDATE_NOTIFICATION_ID,
+            action,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val title = if (versionName.isNotBlank()) "PRVN Music $versionName available" else "PRVN Music update available"
+        val summary = body
+            ?.lineSequence()
+            ?.map { it.trim().trimStart('#', '-', '*', ' ') }
+            ?.firstOrNull { it.isNotBlank() }
+            ?: "Tap to view release details and update."
+
+        val builder = NotificationCompat.Builder(context, UPDATE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.mono)
+            .setContentTitle(title)
+            .setContentText(summary)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body ?: summary))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+
+        with(NotificationManagerCompat.from(context)) {
+            if (ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+            notify(UPDATE_NOTIFICATION_ID, builder.build())
+        }
+    }
 }

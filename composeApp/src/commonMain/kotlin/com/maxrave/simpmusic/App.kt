@@ -150,6 +150,7 @@ fun App(
     showDesktopNotificationPermissionDialog: Boolean = false,
     onDismissDesktopNotificationPermissionDialog: (doNotShowAgain: Boolean) -> Unit = {},
     onOpenDesktopNotificationSettings: (doNotShowAgain: Boolean) -> Unit = {},
+    onOpenNotificationSettings: (doNotShowAgain: Boolean) -> Unit = {},
 ) {
     val windowSize = currentWindowAdaptiveInfo().windowSizeClass
     val navController = rememberNavController()
@@ -923,7 +924,8 @@ fun App(
                                 onClick = {
                                     shouldShowUpdateDialog = false
                                     viewModel.showedUpdateDialog = false
-                                    openUrl("https://simpmusic.org/download")
+                                    val tag = response.tagName.let { if (it.startsWith("v")) it else "v$it" }
+                                    openUrl("https://github.com/pritam-79/PRVN-Music/releases/tag/$tag")
                                 },
                             ) {
                                 Text(
@@ -1049,7 +1051,7 @@ fun App(
                                     if (showDesktopNotificationPermissionDialog) {
                                         onOpenDesktopNotificationSettings(doNotShowAgain)
                                     } else {
-                                        viewModel.dismissNotificationPermissionDialog(doNotShowAgain)
+                                        onOpenNotificationSettings(doNotShowAgain)
                                     }
                                 },
                             ) {

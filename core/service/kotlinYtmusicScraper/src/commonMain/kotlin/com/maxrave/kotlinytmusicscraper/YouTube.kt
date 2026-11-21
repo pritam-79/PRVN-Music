@@ -908,6 +908,11 @@ class YouTube {
             ytMusic.checkForGithubReleaseUpdate().body<GithubResponse>()
         }
 
+    suspend fun checkForRawUpdateJson(): Result<com.maxrave.kotlinytmusicscraper.models.simpmusic.RawUpdateResponse> =
+        runCatching {
+            ytMusic.checkForRawUpdateJson().body<com.maxrave.kotlinytmusicscraper.models.simpmusic.RawUpdateResponse>()
+        }
+
     suspend fun checkForFdroidUpdate(): Result<FdroidResponse> =
         runCatching {
             ytMusic.checkForFdroidUpdate().body<FdroidResponse>()

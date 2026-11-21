@@ -3,8 +3,8 @@
   "versionCode": 17,
   "minimumVersionCode": 1,
   "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.14/PRVN-Music-0.14.0-arm64-v8a-release.apk",
-  "size": 29773426,
-  "sha256": "0987aa4e33920547bd45e63ee679635102d58bd9da2f67353383b64fca364812",
-  "releaseNotes": "PRVN Music v0.14.0 (Build 17): Complete Compose Multiplatform reimplementation based on official SimpMusic foundation; PRVN Dark (#0B0E14), Purple (#A855F7) and Cyan (#06B6D4) branding; full feature parity including Home, Browse, Mix for You, Charts, synchronized lyrics, 10-band equalizer, AutoEQ; robust Listen Together with MetroServer protocol and independent local stream resolution; Google Play Protect compliance.",
+  "size": 30491318,
+  "sha256": "c97982b7c557a837fc4b8045a39496920e7a12850f8f61dc3eb05368717756a9",
+  "releaseNotes": "PRVN Music v0.14.0 (Build 17): Complete Compose Multiplatform reimplementation based on official SimpMusic foundation; fixed GitHub in-app update checks & User-Agent filtering with raw manifest fallback; fixed Android 13+ system notification permissions & added dedicated App Updates notification channel; PRVN Dark (#0B0E14), Purple (#A855F7) and Cyan (#06B6D4) branding; robust Listen Together with MetroServer protocol and independent local stream resolution; Google Play Protect compliance.",
   "forceUpdate": false
 }

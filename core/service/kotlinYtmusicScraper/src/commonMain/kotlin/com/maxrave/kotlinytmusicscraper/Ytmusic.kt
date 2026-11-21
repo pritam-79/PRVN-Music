@@ -719,6 +719,14 @@ class Ytmusic {
 
     suspend fun checkForGithubReleaseUpdate() =
         httpClient.get("https://api.github.com/repos/pritam-79/PRVN-Music/releases/latest") {
+            header("User-Agent", "PRVN-Music")
+            header("Accept", "application/vnd.github.v3+json")
+            contentType(ContentType.Application.Json)
+        }
+
+    suspend fun checkForRawUpdateJson() =
+        httpClient.get("https://raw.githubusercontent.com/pritam-79/PRVN-Music/main/update.json") {
+            header("User-Agent", "PRVN-Music")
             contentType(ContentType.Application.Json)
         }
 
