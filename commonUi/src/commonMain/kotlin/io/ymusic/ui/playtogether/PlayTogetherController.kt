@@ -100,7 +100,7 @@ class PlayTogetherController(
                         cur.currentTrack
                     }
                     val newConnState = when {
-                        !backend.isConnected() && consecutivePresenceFailures >= 3 -> PlaybackConnectionState.OFFLINE
+                        !backend.isConnected() && consecutivePresenceFailures >= 6 -> PlaybackConnectionState.OFFLINE
                         !backend.isConnected() -> PlaybackConnectionState.RECONNECTING
                         else -> PlaybackConnectionState.CONNECTED
                     }
@@ -121,9 +121,11 @@ class PlayTogetherController(
                     } else {
                         telemetry.memberState
                     }
+                    val shouldZeroDrift = telemetry.isBuffering || !telemetry.isPrepared || telemetry.memberState == MemberSyncState.RESOLVING
+                    val effectiveDrift = if (shouldZeroDrift) 0L else telemetry.driftMs
                     val updatedMembers = cur.members.map { m ->
                         if (m.id == cur.currentMemberId) {
-                            m.copy(syncState = myMemberState, driftMs = telemetry.driftMs)
+                            m.copy(syncState = myMemberState, driftMs = effectiveDrift)
                         } else {
                             m
                         }
@@ -131,7 +133,7 @@ class PlayTogetherController(
                     cur.copy(
                         currentTrack = updatedTrack,
                         positionMs = effectivePos,
-                        syncOffsetMs = telemetry.driftMs,
+                        syncOffsetMs = effectiveDrift,
                         isBuffering = telemetry.isBuffering,
                         isActuallySynced = telemetry.isActuallySynced && newConnState == PlaybackConnectionState.CONNECTED,
                         syncQuality = telemetry.syncQuality,
@@ -1354,7 +1356,7 @@ class PlayTogetherController(
                     consecutivePresenceFailures++
                     wasOfflineInRoom = true
                     if (consecutivePresenceFailures >= 2) {
-                        val nextConn = if (consecutivePresenceFailures >= 4) {
+                        val nextConn = if (consecutivePresenceFailures >= 6) {
                             PlaybackConnectionState.OFFLINE
                         } else {
                             PlaybackConnectionState.RECONNECTING
@@ -1368,23 +1370,39 @@ class PlayTogetherController(
                     }
                 } else {
                     consecutivePresenceFailures = 0
+                    updateInRoom { latest -> latest.copy(connectionState = PlaybackConnectionState.CONNECTED) }
                     if (wasOfflineInRoom) {
                         wasOfflineInRoom = false
                         val snap = backend.fetchLatestRoomSnapshot(roomId, memberId, userName, isHost)?.getOrNull()
                         if (snap != null) applyRemoteSnapshotRecovery(snap)
                         flushUnsyncedRequests(roomId)
-                    } else if (cur.connectionState != PlaybackConnectionState.CONNECTED) {
-                        updateInRoom { latest -> latest.copy(connectionState = PlaybackConnectionState.CONNECTED) }
                     }
                 }
             }
         }
 
         tickerJob = scope.launch {
+            var tickerRecoveryTicks = 0
             while (isActive) {
                 delay(1000L)
                 val cur = _state.value as? PlayTogetherState.InRoom ?: break
                 if (cur.room.id != roomId) break
+
+                if (cur.connectionState == PlaybackConnectionState.RECONNECTING || cur.connectionState == PlaybackConnectionState.OFFLINE) {
+                    tickerRecoveryTicks++
+                    if (tickerRecoveryTicks % 4 == 0) {
+                        val snap = backend.fetchLatestRoomSnapshot(roomId, memberId, userName, isHost)?.getOrNull()
+                        if (snap != null) {
+                            consecutivePresenceFailures = 0
+                            updateInRoom { latest -> latest.copy(connectionState = PlaybackConnectionState.CONNECTED) }
+                            applyRemoteSnapshotRecovery(snap)
+                            syncEngine.attachRoom(snap.room.id, snap.currentTrack, snap.positionMs, snap.isPlaying)
+                        }
+                    }
+                } else {
+                    tickerRecoveryTicks = 0
+                }
+
                 val track = cur.currentTrack ?: continue
                 if (cur.isPlaying && !syncEngine.isPlayerBuffering()) {
                     val livePlayerPos = syncEngine.currentPlayerPositionMs()

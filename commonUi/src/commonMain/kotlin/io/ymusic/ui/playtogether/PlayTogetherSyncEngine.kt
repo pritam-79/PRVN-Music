@@ -80,7 +80,7 @@ class PlayTogetherSyncEngine(
     private var lastProgressSamplePosMs: Long = 0L
     private var lastProgressSampleAtMs: Long = 0L
     private var streamRetryTrackId: String? = null
-    private var streamRetryAttempted = false
+    private var streamRetryCount: Int = 0
 
     // Monotonic clock anchor for rock-solid drift estimation independent of timezone/wall-clock skew
     private var anchorTrackId: String? = null
@@ -137,7 +137,7 @@ class PlayTogetherSyncEngine(
         lastObservedVideoId = null
         anchorTrackId = null
         streamRetryTrackId = null
-        streamRetryAttempted = false
+        streamRetryCount = 0
     }
 
     /** Update expected room timeline anchor whenever authoritative state changes. */
@@ -190,7 +190,7 @@ class PlayTogetherSyncEngine(
             roomStreamRetryJob?.cancel()
             roomStreamRetryJob = null
             streamRetryTrackId = track.id
-            streamRetryAttempted = false
+            streamRetryCount = 0
             lastReportedEndedKey = null
             lastObservedVideoId = track.id
             lastObservedPlayWhenReady = playWhenReady
@@ -233,7 +233,7 @@ class PlayTogetherSyncEngine(
         val expected = expectedPositionMs(track.durationMs)
         val curErr = (player.status.value.state as? PlaybackState.Error)?.error
         if (curErr != null) {
-            streamRetryAttempted = false
+            streamRetryCount = 0
             player.play()
         }
         applyAuthoritativePlayback(
@@ -250,7 +250,7 @@ class PlayTogetherSyncEngine(
         roomStreamRetryJob?.cancel()
         roomStreamRetryJob = null
         streamRetryTrackId = track.id
-        streamRetryAttempted = false
+        streamRetryCount = 0
         val expected = expectedPositionMs(track.durationMs)
         updateMonotonicAnchor(track.id, expected, room.isPlaying)
         player.reload()
@@ -297,17 +297,17 @@ class PlayTogetherSyncEngine(
                     val trackIdNow = room.currentTrack?.id
                     if (state is PlaybackState.Prepared && !state.buffering) {
                         if (trackIdNow != null && streamRetryTrackId == trackIdNow) {
-                            streamRetryAttempted = false
+                            streamRetryCount = 0
                         }
                         roomStreamRetryJob?.cancel()
                         roomStreamRetryJob = null
                     } else if (state is PlaybackState.Error && state.error.canRetry && trackIdNow != null) {
                         if (streamRetryTrackId != trackIdNow) {
                             streamRetryTrackId = trackIdNow
-                            streamRetryAttempted = false
+                            streamRetryCount = 0
                         }
-                        if (!streamRetryAttempted && roomStreamRetryJob?.isActive != true) {
-                            streamRetryAttempted = true
+                        if (streamRetryCount < 3 && roomStreamRetryJob?.isActive != true) {
+                            streamRetryCount++
                             val retryTargetId = trackIdNow
                             roomStreamRetryJob = scope.launch {
                                 delay(2_500L)
@@ -437,6 +437,8 @@ class PlayTogetherSyncEngine(
     }
 
     private fun friendlyStreamError(error: PlayerError): String = when {
+        streamRetryCount >= 3 ->
+            "Stream recovery failed after 3 attempts. Tap Retry to refresh or pick another song."
         error.code == PlayerError.PO_TOKEN_REJECTED ->
             "Audio stream protection token rejected (E60065). Tap Retry to refresh stream."
         error.code == PlayerError.PLAYBACK_UNAVAILABLE ->

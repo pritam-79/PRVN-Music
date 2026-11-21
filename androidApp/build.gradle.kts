@@ -56,8 +56,8 @@ android {
         applicationId = "com.prvn.music"
         minSdk = Versions.minSdk
         targetSdk = Versions.targetSdk
-        versionCode = 15
-        versionName = appVersionName
+        versionCode = 16
+        versionName = "0.13.0"
         buildConfigField("String", "SENTRY_DSN", "\"${sentryDsn()}\"")
         buildConfigField("String", "GIT_COMMIT", "\"${gitCommit()}\"")
         // Base url of the remote config service. Empty = no request, compiled-in defaults.

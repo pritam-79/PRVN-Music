@@ -128,7 +128,7 @@ class GlobalRealtimeBackend(
 
     private fun markTransientFailure(hard: Boolean = false) {
         consecutiveFailures++
-        if (hard || consecutiveFailures >= 2) {
+        if (hard || consecutiveFailures >= 5) {
             networkAvailable.value = false
         }
     }
@@ -177,7 +177,8 @@ class GlobalRealtimeBackend(
 
         var networkOk = false
         var lastHttpCode: Int? = null
-        for (attempt in 0..1) {
+        val progressiveDelaysMs = listOf(500L, 1500L, 3000L, 5000L)
+        for (attempt in 0..3) {
             try {
                 val sentAt = Clock.System.now().toEpochMilliseconds()
                 val mark = TimeSource.Monotonic.markNow()
@@ -241,13 +242,18 @@ class GlobalRealtimeBackend(
                     }
                 }
                 if (networkOk) break
-                if (retryAfterDelay != null && attempt == 0) {
-                    delay(minOf(retryAfterDelay, 1_500L))
+                if (retryAfterDelay != null && attempt < 3) {
+                    val baseDelay = progressiveDelaysMs.getOrElse(attempt) { 5000L }
+                    val jittered = (baseDelay * Random.nextDouble(0.8, 1.2)).toLong()
+                    delay(minOf(retryAfterDelay.coerceAtLeast(jittered), 8_000L))
                 } else {
                     break
                 }
             } catch (_: Exception) {
-                if (attempt == 0) delay(500L)
+                if (attempt < 3) {
+                    val baseDelay = progressiveDelaysMs.getOrElse(attempt) { 5000L }
+                    delay((baseDelay * Random.nextDouble(0.8, 1.2)).toLong())
+                }
             }
         }
         if (!networkOk) markTransientFailure()
@@ -1162,11 +1168,12 @@ class GlobalRealtimeBackend(
             val job = scope.launch(Dispatchers.IO) {
                 var sinceCursor = cached.lastMsgId?.takeIf { it.isNotBlank() } ?: "30s"
                 var pollFailures = 0
+                var pollBackoffMs = BASE_POLL_INTERVAL_MS
                 while (isActive) {
                     val shouldStop = synchronized(localLock) { localRooms[roomId]?.isClosed == true || !localRooms.containsKey(roomId) }
                     if (shouldStop) break
 
-                    var nextDelayMs = BASE_POLL_INTERVAL_MS
+                    val prevPollFailures = pollFailures
                     try {
                         val sentAt = Clock.System.now().toEpochMilliseconds()
                         val mark = TimeSource.Monotonic.markNow()
@@ -1179,7 +1186,9 @@ class GlobalRealtimeBackend(
                         client.execute(req).use { resp ->
                             val rttMs = mark.elapsedNow().inWholeMilliseconds
                             if (resp.isSuccessful) {
+                                val wasInFailure = pollFailures > 0
                                 pollFailures = 0
+                                pollBackoffMs = BASE_POLL_INTERVAL_MS
                                 markSuccess()
                                 updateServerClockFromResponse(resp, sentAt, rttMs)
                                 val body = resp.body.utf8String()
@@ -1193,18 +1202,35 @@ class GlobalRealtimeBackend(
                                     processIncomingMessage(cached, msgObj, eventFlow, presenceFlow)
                                 }
                                 pruneTimedOutMembers(cached, presenceFlow, eventFlow)
+                                // After recovering from failures, re-replay ROOM_STATE so listeners catch up
+                                if (wasInFailure) {
+                                    val statePayload = synchronized(localLock) {
+                                        localRooms[roomId]?.let { buildRoomStatePayload(it) }
+                                    }
+                                    if (statePayload != null) {
+                                        val stateObj = PlayTogetherJson.parseObjectOrNull(statePayload)
+                                        if (stateObj != null) {
+                                            processIncomingMessage(cached, stateObj, eventFlow, presenceFlow)
+                                        }
+                                    }
+                                }
                             } else {
                                 pollFailures++
-                                markTransientFailure(hard = resp.code !in 429..599 && pollFailures >= 2)
-                                nextDelayMs = retryDelayMs(resp, pollFailures)
+                                markTransientFailure(hard = resp.code !in 429..599 && pollFailures >= 5)
+                                pollBackoffMs = minOf(pollBackoffMs * 2, 30_000L)
                             }
                         }
                     } catch (_: Exception) {
                         pollFailures++
-                        markTransientFailure(hard = pollFailures >= 2)
-                        nextDelayMs = retryDelayMs(null, pollFailures)
+                        markTransientFailure(hard = pollFailures >= 5)
+                        pollBackoffMs = minOf(pollBackoffMs * 2, 30_000L)
                     }
-                    delay(nextDelayMs)
+                    val jitteredDelay = if (pollFailures > 0) {
+                        (pollBackoffMs * Random.nextDouble(0.8, 1.2)).toLong()
+                    } else {
+                        BASE_POLL_INTERVAL_MS
+                    }
+                    delay(jitteredDelay)
                 }
             }
             pollJobs[roomId] = job
@@ -1639,7 +1665,7 @@ class GlobalRealtimeBackend(
     }
 
     private companion object {
-        const val USER_AGENT = "PRVN-Music-App/0.12"
+        const val USER_AGENT = "PRVN-Music-App/0.13.0"
         const val BASE_POLL_INTERVAL_MS = 2_500L
         const val MAX_RETRY_BACKOFF_MS = 20_000L
     }
