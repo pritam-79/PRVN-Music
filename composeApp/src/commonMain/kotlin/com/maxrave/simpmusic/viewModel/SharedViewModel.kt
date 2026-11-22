@@ -2304,14 +2304,37 @@ class SharedViewModel(
         }
     }
 
-    val appIcon: StateFlow<String> = dataStoreManager.getString("selected_app_icon")
-        .map { it ?: com.maxrave.simpmusic.expect.getActiveLauncherIcon() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.maxrave.simpmusic.expect.getActiveLauncherIcon())
+    val appIcon: StateFlow<String> = combine(
+        dataStoreManager.getString("selected_app_icon"),
+        dataStoreManager.getString("app_icon_version"),
+    ) { saved, version ->
+        when {
+            version == null && saved == "prvn_logo_13" -> {
+                // Migrate v0.15 default (which was Minimal Neon under old id prvn_logo_13) to v0.16 prvn_logo_01
+                com.maxrave.simpmusic.model.AppLogos.DEFAULT_LOGO_ID
+            }
+            saved != null -> saved
+            else -> com.maxrave.simpmusic.expect.getActiveLauncherIcon()
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.maxrave.simpmusic.model.AppLogos.DEFAULT_LOGO_ID)
 
-    fun setAppIcon(logoId: String) {
+    private var isSwitchingIcon = false
+
+    fun setAppIcon(logoId: String, onResult: (Boolean) -> Unit = {}) {
+        if (isSwitchingIcon) return
+        isSwitchingIcon = true
         viewModelScope.launch {
-            com.maxrave.simpmusic.expect.setLauncherIcon(logoId)
-            dataStoreManager.putString("selected_app_icon", logoId)
+            try {
+                val success = com.maxrave.simpmusic.expect.setLauncherIcon(logoId)
+                if (success) {
+                    dataStoreManager.putString("selected_app_icon", logoId)
+                    dataStoreManager.putString("app_icon_version", "2")
+                }
+                onResult(success)
+            } finally {
+                kotlinx.coroutines.delay(250)
+                isSwitchingIcon = false
+            }
         }
     }
 

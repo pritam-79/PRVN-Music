@@ -213,6 +213,7 @@ compose.desktop {
                     libs.versions.version.name
                         .get()
                         .removeSuffix("-hf")
+                        .let { v -> if (v.count { it == '.' } == 1) "$v.0" else v }
                 iconFile.set(rootDir.resolve("composeApp/icon/circle_app_icon.ico"))
             }
             linux {
@@ -221,6 +222,7 @@ compose.desktop {
                     libs.versions.version.name
                         .get()
                         .removeSuffix("-hf")
+                        .let { v -> if (v.count { it == '.' } == 1) "$v.0" else v }
                 iconFile.set(rootDir.resolve("composeApp/icon/circle_app_icon.png"))
             }
         }

@@ -1,5 +1,8 @@
 package com.maxrave.simpmusic.ui.screen.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,6 +40,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +66,8 @@ import com.maxrave.simpmusic.ui.icon.Check
 import com.maxrave.simpmusic.ui.icon.SimpIcons
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.SharedViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -75,6 +84,21 @@ fun AppIconScreen(
 ) {
     val activeLogoId by sharedViewModel.appIcon.collectAsStateWithLifecycle(AppLogos.DEFAULT_LOGO_ID)
     val currentLogo = AppLogos.find(activeLogoId)
+
+    var feedbackMessage by remember { mutableStateOf<String?>(null) }
+    var isFeedbackError by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun showFeedback(msg: String, isError: Boolean = false) {
+        feedbackMessage = msg
+        isFeedbackError = isError
+        scope.launch {
+            delay(4000)
+            if (feedbackMessage == msg) {
+                feedbackMessage = null
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -119,111 +143,172 @@ fun AppIconScreen(
                     colors = CardDefaults.cardColors(containerColor = CardBg),
                     border = BorderStroke(1.dp, BrandPurple.copy(alpha = 0.4f)),
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Image(
-                            painter = painterResource(currentLogo.drawable),
-                            contentDescription = currentLogo.name,
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(14.dp)),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Active Launcher Icon",
-                                style = typo().labelSmall,
-                                color = BrandCyan,
-                                fontWeight = FontWeight.SemiBold,
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            Image(
+                                painter = painterResource(currentLogo.drawable),
+                                contentDescription = currentLogo.name,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(14.dp)),
+                                contentScale = ContentScale.Crop,
                             )
-                            Text(
-                                text = currentLogo.name,
-                                style = typo().titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = currentLogo.id,
-                                style = typo().bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (currentLogo.id != AppLogos.DEFAULT_LOGO_ID) {
-                            Button(
-                                onClick = { sharedViewModel.setAppIcon(AppLogos.DEFAULT_LOGO_ID) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = BrandPurple,
-                                    contentColor = Color.White,
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            ) {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Reset",
-                                    style = typo().labelMedium,
-                                    fontWeight = FontWeight.Bold,
+                                    text = "Active Launcher Icon",
+                                    style = typo().labelSmall,
+                                    color = BrandCyan,
+                                    fontWeight = FontWeight.SemiBold,
                                 )
+                                Text(
+                                    text = currentLogo.name,
+                                    style = typo().titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = currentLogo.sheet,
+                                    style = typo().bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (currentLogo.id != AppLogos.DEFAULT_LOGO_ID) {
+                                Button(
+                                    onClick = {
+                                        sharedViewModel.setAppIcon(AppLogos.DEFAULT_LOGO_ID) { ok ->
+                                            if (ok) {
+                                                showFeedback("Restored default Minimal Neon icon.")
+                                            } else {
+                                                showFeedback("Failed to restore icon. Please check permissions.", true)
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = BrandPurple,
+                                        contentColor = Color.White,
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = "Reset",
+                                        style = typo().labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                        }
+
+                        // Feedback Banner
+                        AnimatedVisibility(
+                            visible = feedbackMessage != null,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                        ) {
+                            feedbackMessage?.let { msg ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 12.dp)
+                                        .background(
+                                            if (isFeedbackError) Color(0xFFEF4444).copy(alpha = 0.15f)
+                                            else BrandCyan.copy(alpha = 0.15f),
+                                            RoundedCornerShape(8.dp),
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isFeedbackError) Color(0xFFEF4444).copy(alpha = 0.4f)
+                                            else BrandCyan.copy(alpha = 0.4f),
+                                            RoundedCornerShape(8.dp),
+                                        )
+                                        .padding(10.dp),
+                                ) {
+                                    Text(
+                                        text = msg,
+                                        style = typo().bodySmall,
+                                        color = if (isFeedbackError) Color(0xFFFCA5A5) else BrandCyan,
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Section 1 Header: Reference Sheet 2 (Neon Series)
+            // Section 1 Header: Sheet 1 — Original Concepts
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)) {
                     Text(
-                        text = "Sheet 2 — Neon & Audio Series",
+                        text = "Sheet 1 — Original Concepts (6 Logos)",
                         style = typo().titleSmall,
                         color = BrandPurple,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "Minimal neon default and acoustic identity designs",
+                        text = "Minimal neon default, acoustic wave, vinyl, crown and special liquid glass",
                         style = typo().bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            val sheet2Logos = AppLogos.ALL.filter { it.id.startsWith("prvn_logo_1") }
-            items(sheet2Logos, key = { it.id }) { logo ->
+            val sheet1Logos = AppLogos.ALL.filter { it.sheet.startsWith("Sheet 1") }
+            items(sheet1Logos, key = { it.id }) { logo ->
                 LogoGridCard(
                     logo = logo,
                     isSelected = logo.id == activeLogoId,
-                    onClick = { sharedViewModel.setAppIcon(logo.id) },
+                    onClick = {
+                        sharedViewModel.setAppIcon(logo.id) { success ->
+                            if (success) {
+                                showFeedback("Applied ${logo.name}! Note: OEM launchers (Samsung, Xiaomi) may take a few moments to refresh home screen cache.")
+                            } else {
+                                showFeedback("Failed to update launcher icon. Please check permissions.", true)
+                            }
+                        }
+                    },
                 )
             }
 
-            // Section 2 Header: Reference Sheet 1 (Classic & Special Series)
+            // Section 2 Header: Sheet 2 — Recent Concepts
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(modifier = Modifier.padding(top = 20.dp, bottom = 4.dp)) {
                     Text(
-                        text = "Sheet 1 — Classic & Special Series",
+                        text = "Sheet 2 — Recent Concepts (12 Logos)",
                         style = typo().titleSmall,
                         color = BrandCyan,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "Aurora, vinyl, waveform, infinity sound & special liquid glass",
+                        text = "Aurora, headphone, waveform, infinity sound, cosmic, metal and special glass",
                         style = typo().bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            val sheet1Logos = AppLogos.ALL.filter { !it.id.startsWith("prvn_logo_1") || it.id == "prvn_logo_10" || it.id == "prvn_logo_11" || it.id == "prvn_logo_12" }
-            items(sheet1Logos, key = { it.id }) { logo ->
+            val sheet2Logos = AppLogos.ALL.filter { it.sheet.startsWith("Sheet 2") }
+            items(sheet2Logos, key = { it.id }) { logo ->
                 LogoGridCard(
                     logo = logo,
                     isSelected = logo.id == activeLogoId,
-                    onClick = { sharedViewModel.setAppIcon(logo.id) },
+                    onClick = {
+                        sharedViewModel.setAppIcon(logo.id) { success ->
+                            if (success) {
+                                showFeedback("Applied ${logo.name}! Note: OEM launchers (Samsung, Xiaomi) may take a few moments to refresh home screen cache.")
+                            } else {
+                                showFeedback("Failed to update launcher icon. Please check permissions.", true)
+                            }
+                        }
+                    },
                 )
             }
 

@@ -29,6 +29,7 @@ import com.maxrave.simpmusic.utils.NetworkFirstInterceptor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import multiplatform.network.cmptoast.AppContext
 import okhttp3.OkHttpClient
@@ -96,6 +97,17 @@ class SimpMusicApplication :
         val librarySyncScheduler = LibrarySyncScheduler(this, get<LibrarySyncPhoneRepository>())
         applicationScope.launch {
             librarySyncScheduler.observeAndSchedule()
+        }
+
+        // Verify and synchronize active launcher icon alias state with persisted preference
+        applicationScope.launch {
+            try {
+                val savedIconFlow = dataStoreManager.getString("selected_app_icon")
+                val iconId = savedIconFlow.firstOrNull() ?: com.maxrave.simpmusic.model.AppLogos.DEFAULT_LOGO_ID
+                com.maxrave.simpmusic.expect.setLauncherIcon(iconId)
+            } catch (e: Exception) {
+                Logger.w("SimpMusicApplication", "Launcher icon synchronization check: ${e.message}")
+            }
         }
 
         CaocConfig.Builder

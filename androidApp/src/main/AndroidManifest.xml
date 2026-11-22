@@ -93,12 +93,9 @@
             android:theme="@style/Theme.SimpMusic"
             tools:ignore="DiscouragedApi,LockedOrientationActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.MUSIC_PLAYER" />
 
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.APP_MUSIC" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
@@ -211,14 +208,15 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- Dynamic Launcher Icon Aliases for PRVN Music 17 Official Logo Collection -->
+        <!-- Dynamic Launcher Icon Aliases for PRVN Music 18 Official Logo Collection -->
+        <!-- Default Launcher Icon: V1 — Minimal Neon (enabled="true") -->
         <activity-alias
-            android:name=".MainActivityAliasLogo01"
+            android:name="${applicationId}.MainActivityAliasLogo01"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_01"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_01"
             android:label="@string/app_name"
-            android:enabled="false"
+            android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -229,7 +227,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo02"
+            android:name="${applicationId}.MainActivityAliasLogo02"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_02"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_02"
@@ -245,7 +243,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo03"
+            android:name="${applicationId}.MainActivityAliasLogo03"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_03"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_03"
@@ -261,7 +259,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo04"
+            android:name="${applicationId}.MainActivityAliasLogo04"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_04"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_04"
@@ -277,7 +275,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo05"
+            android:name="${applicationId}.MainActivityAliasLogo05"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_05"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_05"
@@ -293,7 +291,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo06"
+            android:name="${applicationId}.MainActivityAliasLogo06"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_06"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_06"
@@ -309,7 +307,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo07"
+            android:name="${applicationId}.MainActivityAliasLogo07"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_07"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_07"
@@ -325,7 +323,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo08"
+            android:name="${applicationId}.MainActivityAliasLogo08"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_08"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_08"
@@ -341,7 +339,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo09"
+            android:name="${applicationId}.MainActivityAliasLogo09"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_09"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_09"
@@ -357,7 +355,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo10"
+            android:name="${applicationId}.MainActivityAliasLogo10"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_10"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_10"
@@ -373,7 +371,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo11"
+            android:name="${applicationId}.MainActivityAliasLogo11"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_11"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_11"
@@ -389,7 +387,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo12"
+            android:name="${applicationId}.MainActivityAliasLogo12"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_12"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_12"
@@ -405,7 +403,23 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo14"
+            android:name="${applicationId}.MainActivityAliasLogo13"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_13"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_13"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name="${applicationId}.MainActivityAliasLogo14"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_14"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_14"
@@ -421,7 +435,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo15"
+            android:name="${applicationId}.MainActivityAliasLogo15"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_15"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_15"
@@ -437,7 +451,7 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo16"
+            android:name="${applicationId}.MainActivityAliasLogo16"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_16"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_16"
@@ -453,10 +467,26 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityAliasLogo17"
+            android:name="${applicationId}.MainActivityAliasLogo17"
             android:targetActivity=".MainActivity"
             android:icon="@mipmap/ic_launcher_prvn_logo_17"
             android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_17"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name="${applicationId}.MainActivityAliasLogo18"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_18"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_18"
             android:label="@string/app_name"
             android:enabled="false"
             android:exported="true">

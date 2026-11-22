@@ -1,13 +1,13 @@
 # PRVN Music
 
 <div align="center">
-  <img src="assets/branding/logos/logo_01_512.png" width="140" height="140" alt="PRVN Music Logo (Minimal Neon)" />
-  <h2>PRVN Music v0.15</h2>
-  <p><strong>A Next-Generation Music Experience — High-Fidelity Streaming, Dynamic Player Styles, Synchronized Lyrics, Community Group Listening & Universal In-App Updates</strong></p>
+  <img src="assets/branding/prvn_music_logo.png" width="140" height="140" alt="PRVN Music Logo (Minimal Neon)" />
+  <h2>PRVN Music v0.16</h2>
+  <p><strong>A Next-Generation Music Experience — High-Fidelity Streaming, Dynamic Player Styles, Synchronized Lyrics, Community Group Listening & Native In-App Updates</strong></p>
 
   <p>
-    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.15.0"><img src="https://img.shields.io/badge/Release-v0.15.0-A855F7?style=for-the-badge&logo=android&logoColor=white" alt="Release v0.15.0" /></a>
-    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.15.0"><img src="https://img.shields.io/badge/Build-19-06B6D4?style=for-the-badge" alt="Build 19" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.16.0"><img src="https://img.shields.io/badge/Release-v0.16.0-A855F7?style=for-the-badge&logo=android&logoColor=white" alt="Release v0.16.0" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.16.0"><img src="https://img.shields.io/badge/Build-20-06B6D4?style=for-the-badge" alt="Build 20" /></a>
     <a href="https://github.com/pritam-79/PRVN-Music/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge" alt="License GPL-3.0" /></a>
     <a href="https://github.com/pritam-79/PRVN-Music"><img src="https://img.shields.io/badge/Platform-Android%20%7C%20Desktop-purple?style=for-the-badge" alt="Multiplatform" /></a>
   </p>
@@ -15,15 +15,16 @@
 
 ---
 
-## What's New in v0.15
+## What's New in v0.16
 
-PRVN Music v0.15 brings a complete architectural release upgrade:
-- 🚀 **Universal Native In-App Updater:** Check, download, verify, and initiate installation directly within PRVN Music. No external browser redirects. Features real-time byte counters, speed meter, ETA, pause/resume, and SHA-256 integrity verification.
-- 🎨 **17 Official Reference Logos & Dynamic Launcher Switching:** Choose from 17 extracted reference logos (including default **Minimal Neon** and special **Liquid Glass**) directly inside **Settings → User Interface → App Icon**.
-- 🛡️ **Google Play Protect & Security Hardening:** Multi-scheme APK signature support (v1, v2, v3, v4) and production keystore pipeline eliminating untrusted debug warnings.
-- ⚡ **Zero Tidal HTTP 429 Errors:** High-performance LRU cache, concurrent request deduplication, and circuit-breaker backoff for track audio transition metadata.
-- 🎵 **Authentic Listening Receipts:** Generate printable, shareable listening receipts with custom privacy controls (show/hide listener name and listening duration) and zero upstream branding leaks.
-- 👥 **Listen Together Community Voting:** Synchronized group listening with room queue upvoting, song requests, and host controls.
+PRVN Music v0.16 brings a major repair and enhancement release focusing on Android launcher icon dynamics, adaptive icon safe-zone protection, official GitHub branding, and complete multi-device compatibility:
+
+- 📱 **Real Android Launcher Icon Switching:** Fixed dynamic launcher icon switching across all Android devices (Samsung OneUI, Xiaomi MIUI/HyperOS, OnePlus OxygenOS, Google Pixel, Realme, OPPO, Vivo, Motorola, Nothing). Uses native Android `Activity-Alias` components managed via `PackageManager` with safe-state transitions, preventing launcher icon removal or app crashes.
+- 🎯 **18 Official Reference Logos Preserved:** Complete preservation of the 18 official logos from Concept Sheets 1 and 2 without distortion, stretching, or cropping. Includes the official default **V1 — Minimal Neon** and dual special editions (**V6 & V10 — Liquid Glass**).
+- 🛡️ **Android Adaptive Icon Safe-Zone Compliance:** All adaptive launcher icons are engineered to maintain complete visibility within the 66dp Android safe zone. Lettering (`PRVN MUSIC`) and glowing symbols remain unclipped under circular, squircle, pebble, and rounded-square OEM launcher masks.
+- 🔄 **Multi-Density Resource Pipeline:** Full density mipmaps generated for `mdpi`, `hdpi`, `xhdpi`, `xxhdpi`, `xxxhdpi`, and API 26+ `mipmap-anydpi-v26` adaptive layers.
+- 🧹 **Complete Project Brand Cleansing:** Eradicated all inherited legacy YMusic icon files and XML drawables, aligning repository branding with the official PRVN Music identity.
+- 🚀 **Universal Native In-App Updater:** Direct HTTPS background downloads, real-time byte counters (`XX.X MB / YY.Y MB`), transfer speed meter, ETA, pause/resume, cancel/retry, and SHA-256 APK integrity verification.
 
 ---
 
@@ -57,14 +58,13 @@ PRVN Music v0.15 brings a complete architectural release upgrade:
 
 | Package | Target Platform | Architecture | Status |
 | :--- | :--- | :--- | :--- |
-| `PRVN-Music-v0.15-arm64.apk` | Android 8.0+ (API 26+) | `arm64-v8a` | **Recommended** |
-| `PRVN-Music-v0.15-universal.apk` | Android 8.0+ (API 26+) | Universal (All ABIs) | Available |
+| `PRVN-Music-v0.16-arm64.apk` | Android 8.0+ (API 26+) | `arm64-v8a` | **Recommended** |
+| `PRVN-Music-v0.16-universal.apk` | Android 8.0+ (API 26+) | Universal (All ABIs) | Available |
 | Desktop JAR / Native | Windows / Linux / macOS | x86_64 / aarch64 | JVM Target Available |
 
-### Installation Note
-When installing the APK update:
-- If updating from an earlier debug test build, Android requires uninstalling the previous debug build due to signature continuity protection (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
-- The in-app updater detects signature matching automatically before installation.
+### Installation & Launcher Icon Notes
+- **Launcher Caching:** When switching the app icon in **Settings → User Interface → App Icon**, Android updates the system `PackageManager` immediately. On certain OEM launchers (such as Samsung OneUI or Xiaomi HyperOS), the launcher may take a few moments to refresh its disk cache.
+- **Upgrade Continuity:** Upgrading from v0.14 or v0.15 preserves all existing playlists, downloads, favorite tracks, and user settings seamlessly.
 
 ---
 
