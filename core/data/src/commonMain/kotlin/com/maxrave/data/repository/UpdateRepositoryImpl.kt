@@ -17,12 +17,24 @@ internal class UpdateRepositoryImpl(
             val githubResult = youTube.checkForGithubReleaseUpdate()
             if (githubResult.isSuccess) {
                 val response = githubResult.getOrThrow()
+                val apkAsset = response.assets?.filterNotNull()?.firstOrNull { asset ->
+                    val name = asset.name?.lowercase() ?: ""
+                    name.endsWith(".apk") && (name.contains("universal") || name.contains("arm64"))
+                } ?: response.assets?.filterNotNull()?.firstOrNull {
+                    it.name?.endsWith(".apk", ignoreCase = true) == true
+                }
+                val tagName = response.tagName ?: ""
+                val cleanTag = if (tagName.startsWith("v")) tagName else "v$tagName"
+                val fallbackDownloadUrl = "https://github.com/pritam-79/PRVN-Music/releases/download/$cleanTag/PRVN-Music-${cleanTag.removePrefix("v")}-universal-release.apk"
+
                 emit(
                     Resource.Success(
                         UpdateData(
-                            tagName = response.tagName ?: "",
+                            tagName = tagName,
                             releaseTime = response.publishedAt ?: "",
                             body = response.body ?: "",
+                            downloadUrl = apkAsset?.browserDownloadUrl ?: fallbackDownloadUrl,
+                            size = apkAsset?.size?.toLong(),
                         ),
                     ),
                 )
@@ -36,6 +48,8 @@ internal class UpdateRepositoryImpl(
                                 tagName = raw.versionName,
                                 releaseTime = null,
                                 body = raw.releaseNotes,
+                                downloadUrl = raw.downloadUrl,
+                                size = null,
                             ),
                         ),
                     )

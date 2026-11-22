@@ -2856,7 +2856,7 @@ fun SettingScreen(
                     title = stringResource(Res.string.check_for_update),
                     subtitle = checkForUpdateSubtitle,
                     onClick = {
-                        sharedViewModel.checkForUpdate()
+                        sharedViewModel.checkForUpdate(isManual = true)
                     },
                 )
                 SettingItem(

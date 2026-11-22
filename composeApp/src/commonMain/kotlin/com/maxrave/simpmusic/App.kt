@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import com.maxrave.simpmusic.ui.component.InAppUpdateDialog
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -907,126 +908,25 @@ fun App(
                     )
                 }
 
-                if (shouldShowUpdateDialog) {
-                    val response = updateData ?: return@Scaffold
-                    AlertDialog(
-                        properties =
-                            DialogProperties(
-                                dismissOnBackPress = false,
-                                dismissOnClickOutside = false,
-                            ),
-                        onDismissRequest = {
+                val inAppUpdateState by viewModel.inAppUpdateState.collectAsStateWithLifecycle()
+                if (inAppUpdateState !is SharedViewModel.InAppUpdateState.Idle) {
+                    InAppUpdateDialog(
+                        state = inAppUpdateState,
+                        onDownload = { data -> viewModel.startInAppUpdate(data) },
+                        onInstall = { filePath -> viewModel.installApkNow(filePath) },
+                        onOpenBrowser = { tag ->
+                            val cleanTag = if (tag.startsWith("v")) tag else "v$tag"
+                            openUrl("https://github.com/pritam-79/PRVN-Music/releases/tag/$cleanTag")
+                            viewModel.resetInAppUpdateState()
+                        },
+                        onDismiss = {
+                            viewModel.resetInAppUpdateState()
                             shouldShowUpdateDialog = false
                             viewModel.showedUpdateDialog = false
                         },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    shouldShowUpdateDialog = false
-                                    viewModel.showedUpdateDialog = false
-                                    val tag = response.tagName.let { if (it.startsWith("v")) it else "v$it" }
-                                    openUrl("https://github.com/pritam-79/PRVN-Music/releases/tag/$tag")
-                                },
-                            ) {
-                                Text(
-                                    stringResource(Res.string.download),
-                                    style = typo().bodySmall,
-                                )
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(
-                                onClick = {
-                                    shouldShowUpdateDialog = false
-                                    viewModel.showedUpdateDialog = false
-                                },
-                            ) {
-                                Text(
-                                    stringResource(Res.string.cancel),
-                                    style = typo().bodySmall,
-                                )
-                            }
-                        },
-                        title = {
-                            Text(
-                                stringResource(Res.string.update_available),
-                                style = typo().labelSmall,
-                            )
-                        },
-                        text = {
-                            val formatted =
-                                response.releaseTime?.let { input ->
-                                    try {
-                                        val instant = kotlin.time.Instant.parse(input)
-                                        val dateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
-                                        dateTime.format(
-                                            LocalDateTime.Format {
-                                                day()
-                                                char(' ')
-                                                monthName(MonthNames.ENGLISH_ABBREVIATED)
-                                                char(' ')
-                                                year()
-                                                char(' ')
-                                                hour()
-                                                char(':')
-                                                minute()
-                                                char(':')
-                                                second()
-                                            },
-                                        )
-                                    } catch (e: Exception) {
-                                        stringResource(Res.string.unknown)
-                                    }
-                                } ?: stringResource(Res.string.unknown)
-
-                            val updateMessage =
-                                runBlocking {
-                                    getString(
-                                        Res.string.update_message,
-                                        response.tagName,
-                                        formatted,
-                                        // values-iw/values-in still carry an old %3$s; Compose Resources indexes
-                                        // args without a bounds check, so omitting it crashes the dialog
-                                        "",
-                                    )
-                                }
-                            Column(
-                                Modifier
-                                    .heightIn(
-                                        max = 400.dp,
-                                    ).verticalScroll(
-                                        rememberScrollState(),
-                                    ),
-                            ) {
-                                Text(
-                                    text = updateMessage,
-                                    style = typo().labelMedium,
-                                    modifier =
-                                        Modifier.padding(
-                                            vertical = 8.dp,
-                                        ),
-                                )
-                                Markdown(
-                                    response.body,
-                                    typography =
-                                        markdownTypography(
-                                            h1 = typo().labelLarge,
-                                            h2 = typo().labelMedium,
-                                            h3 = typo().labelSmall,
-                                            text = typo().bodySmall,
-                                            bullet = typo().bodySmall,
-                                            paragraph = typo().bodySmall,
-                                            textLink =
-                                                TextLinkStyles(
-                                                    SpanStyle(
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Normal,
-                                                        fontFamily = fontFamily(),
-                                                        textDecoration = TextDecoration.Underline,
-                                                    ),
-                                                ),
-                                        ),
-                                )
+                        onRetry = {
+                            (inAppUpdateState as? SharedViewModel.InAppUpdateState.Error)?.let {
+                                updateData?.let { data -> viewModel.startInAppUpdate(data) }
                             }
                         },
                     )

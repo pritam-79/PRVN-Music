@@ -211,6 +211,13 @@
     <string name="check_for_update">Check for update</string>
     <string name="last_checked_at">Last checked at %1$s</string>
     <string name="checking">Checking</string>
+    <string name="download_and_install">Download &amp; Install</string>
+    <string name="downloading_update">Downloading PRVN Music…</string>
+    <string name="install_now">Install Now</string>
+    <string name="open_in_browser">Open in Browser</string>
+    <string name="download_failed">Download failed. Please check your internet connection.</string>
+    <string name="up_to_date_title">You\'re Up to Date</string>
+    <string name="up_to_date_message">PRVN Music v%1$s is the latest version.</string>
     <string name="sponsorblock_skip_segment">SponsorBlock: Skip %1$s segment</string>
     <string name="sponsor">Sponsor</string>
     <string name="self_promotion">Self Promotion</string>

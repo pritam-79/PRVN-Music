@@ -72,7 +72,11 @@ import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.LogLevel
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.Platform
+import com.maxrave.simpmusic.expect.downloadFileWithProgress
+import com.maxrave.simpmusic.expect.getAppCacheDir
 import com.maxrave.simpmusic.expect.getDownloadFolderPath
+import com.maxrave.simpmusic.expect.installDownloadedApk
+import kotlinx.coroutines.IO
 import com.maxrave.simpmusic.expect.isOnUnmeteredNetwork
 import com.maxrave.simpmusic.expect.ui.toByteArray
 import com.maxrave.simpmusic.getPlatform
@@ -1242,10 +1246,24 @@ class SharedViewModel(
             }
     }
 
+    sealed class InAppUpdateState {
+        data object Idle : InAppUpdateState()
+        data class UpdateAvailable(val updateData: UpdateData) : InAppUpdateState()
+        data class UpToDate(val versionName: String) : InAppUpdateState()
+        data class Downloading(val bytesDownloaded: Long, val totalBytes: Long, val progress: Float) : InAppUpdateState()
+        data class ReadyToInstall(val filePath: String) : InAppUpdateState()
+        data class Error(val message: String) : InAppUpdateState()
+    }
+
     private var _updateResponse = MutableStateFlow<UpdateData?>(null)
     val updateResponse: StateFlow<UpdateData?> = _updateResponse
 
-    fun checkForUpdate() {
+    private val _inAppUpdateState = MutableStateFlow<InAppUpdateState>(InAppUpdateState.Idle)
+    val inAppUpdateState: StateFlow<InAppUpdateState> = _inAppUpdateState
+
+    private var updateDownloadJob: Job? = null
+
+    fun checkForUpdate(isManual: Boolean = false) {
         // Raised before the coroutine starts, so Home's launch banner, which reads it right after
         // startup, can never miss a check that is already under way but not yet marked.
         _isCheckingUpdate.value = true
@@ -1255,42 +1273,74 @@ class SharedViewModel(
                 "CheckForUpdateAt",
                 System.currentTimeMillis().toString(),
             )
+
+            val collector: suspend (Resource<UpdateData>) -> Unit = { response ->
+                val data = response.data
+                when (response) {
+                    is Resource.Success if (data != null) -> {
+                        _updateResponse.value = data
+                        showedUpdateDialog = true
+                        if (VersionManager.isBehind(data.tagName)) {
+                            _inAppUpdateState.value = InAppUpdateState.UpdateAvailable(data)
+                        } else if (isManual) {
+                            _inAppUpdateState.value = InAppUpdateState.UpToDate(VersionManager.getVersionName())
+                        }
+                    }
+                    else -> {
+                        log("Check for update error: ${response.message}", LogLevel.WARN)
+                        if (isManual) {
+                            _inAppUpdateState.value = InAppUpdateState.Error(response.message ?: "Could not check for update")
+                        }
+                    }
+                }
+                _isCheckingUpdate.value = false
+            }
+
             if (updateChannel == DataStoreManager.GITHUB) {
-                updateRepository.checkForGithubReleaseUpdate().collectLatest { response ->
-                    val data = response.data
-                    when (response) {
-                        is Resource.Success if (data != null) -> {
-                            _updateResponse.value = data
-                            showedUpdateDialog = true
-                        }
-
-                        else -> {
-                            log("Check for update error: ${response.message}", LogLevel.WARN)
-                        }
-                    }
-                    _isCheckingUpdate.value = false
-                }
+                updateRepository.checkForGithubReleaseUpdate().collectLatest(collector)
             } else if (updateChannel == DataStoreManager.FDROID) {
-                updateRepository.checkForFdroidUpdate().collectLatest { response ->
-                    val data = response.data
-                    when (response) {
-                        is Resource.Success if (data != null) -> {
-                            _updateResponse.value = data
-                            showedUpdateDialog = true
-                        }
-
-                        else -> {
-                            log("Check for update error: ${response.message}", LogLevel.WARN)
-                        }
-                    }
-                    _isCheckingUpdate.value = false
-                }
+                updateRepository.checkForFdroidUpdate().collectLatest(collector)
             }
         }.invokeOnCompletion {
-            // Also for a channel neither branch handles, and for a check that throws: the launch
-            // banner waits for this flag, so it must never stay raised.
             _isCheckingUpdate.value = false
         }
+    }
+
+    fun startInAppUpdate(updateData: UpdateData) {
+        val downloadUrl = updateData.downloadUrl ?: run {
+            val tag = if (updateData.tagName.startsWith("v")) updateData.tagName else "v${updateData.tagName}"
+            "https://github.com/pritam-79/PRVN-Music/releases/download/$tag/PRVN-Music-${tag.removePrefix("v")}-universal-release.apk"
+        }
+        val targetPath = "${getAppCacheDir()}/PRVN-Music-${updateData.tagName}.apk"
+
+        updateDownloadJob?.cancel()
+        updateDownloadJob = viewModelScope.launch(Dispatchers.IO) {
+            _inAppUpdateState.value = InAppUpdateState.Downloading(0L, updateData.size ?: -1L, 0f)
+            val success = downloadFileWithProgress(
+                url = downloadUrl,
+                targetPath = targetPath,
+                onProgress = { downloaded, total ->
+                    val progress = if (total > 0) downloaded.toFloat() / total.toFloat() else 0f
+                    _inAppUpdateState.value = InAppUpdateState.Downloading(downloaded, total, progress)
+                },
+            )
+
+            if (success) {
+                _inAppUpdateState.value = InAppUpdateState.ReadyToInstall(targetPath)
+                installDownloadedApk(targetPath)
+            } else {
+                _inAppUpdateState.value = InAppUpdateState.Error("Download failed. Tap to retry or open in browser.")
+            }
+        }
+    }
+
+    fun installApkNow(filePath: String) {
+        installDownloadedApk(filePath)
+    }
+
+    fun resetInAppUpdateState() {
+        updateDownloadJob?.cancel()
+        _inAppUpdateState.value = InAppUpdateState.Idle
     }
 
     /**
