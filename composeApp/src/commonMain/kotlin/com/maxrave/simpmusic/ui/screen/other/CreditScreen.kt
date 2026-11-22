@@ -84,8 +84,8 @@ fun CreditScreen(
 
         // App icon
         Image(
-            painter = painterResource(Res.drawable.app_icon),
-            contentDescription = "App Icon",
+            painter = painterResource(Res.drawable.prvn_logo_01),
+            contentDescription = "PRVN Music Logo",
             modifier =
                 Modifier
                     .size(150.dp)

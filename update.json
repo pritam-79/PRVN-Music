@@ -1,10 +1,10 @@
 {
-  "versionName": "0.16",
-  "versionCode": 20,
+  "versionName": "0.16.1",
+  "versionCode": 21,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.16.0/PRVN-Music-v0.16-arm64.apk",
-  "size": 41770097,
-  "sha256": "8390ca20609fcb9a31acd158ecdc89a37f27cb12a9ec6fa5f1807ed8b318566b",
-  "releaseNotes": "PRVN Music v0.16 (Build 20):\n- Complete native Android launcher icon switching with proper Activity-Alias lifecycle.\n- Full preservation of 18 official PRVN Music reference logos from Concept Sheets 1 & 2.\n- V1 — Minimal Neon set as the official default application icon.\n- Android adaptive icon safe zone compliance (no symbol or lettering cropping under circle, squircle, or pebble masks).\n- Density mipmap generation for mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi, and mipmap-anydpi-v26.\n- Elimination of inherited YMusic icons and assets from project.\n- Official PRVN Music GitHub branding, documentation, and preview alignment.\n- Reliable icon persistence across device reboots, app updates, and background restoration.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.16.1/PRVN-Music-v0.16.1-arm64.apk",
+  "size": 41744131,
+  "sha256": "c0a84b92d4cfc56efd017f528da3e1b741ec9dd6114d74385af23609f58c3373",
+  "releaseNotes": "PRVN Music v0.16.1 (Build 21):\n- Repaired Listen Together real-time playback synchronization when host changes songs.\n- Fixed listener auto-pause issue on track transitions.\n- Fixed song resume starting from 0:00 instead of syncing to host's current position.\n- Enhanced buffer barrier with adaptive polling for smooth group listening.\n- Refreshed About Us -> Version screen with official PRVN Music Minimal Neon logo and PRVN attribution.\n- Updated legal disclaimer and terms of use in-app and in repository documentation.",
   "forceUpdate": false
 }

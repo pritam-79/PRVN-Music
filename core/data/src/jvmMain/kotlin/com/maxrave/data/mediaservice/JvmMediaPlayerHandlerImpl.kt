@@ -1459,10 +1459,14 @@ class JvmMediaPlayerHandlerImpl(
         mediaItem: GenericMediaItem,
         playWhenReady: Boolean,
     ) {
+        player.playWhenReady = playWhenReady
         player.clearMediaItems()
         player.setMediaItem(mediaItem)
         player.prepare()
         player.playWhenReady = playWhenReady
+        if (playWhenReady) {
+            player.play()
+        }
     }
 
     override fun clearMediaItems() {

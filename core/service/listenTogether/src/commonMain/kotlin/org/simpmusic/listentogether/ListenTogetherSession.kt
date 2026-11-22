@@ -457,6 +457,7 @@ class ListenTogetherSession(
                         // Only replace the queue when the server actually sent one — sync_state
                         // with an empty queue means "nothing to say", not "the queue is empty".
                         queue = p.queue.ifEmpty { it.queue },
+                        lastActionServerTime = if (p.lastUpdate > 0L) p.lastUpdate else it.lastActionServerTime,
                     )
                 }
             }

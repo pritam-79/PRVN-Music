@@ -313,9 +313,9 @@
     <string name="older_first">Older First</string>
     <string name="newer_first">Newer First</string>
     <string name="added_date">Added date</string>
-    <string name="credit_app">A modern music app powered by YouTube Music\n\nPRVN Music is an open source project to stream music from YouTube and YouTube Music ad-free with full background playback. Features include:\n\n - 3 Player Styles (Classic, Material 3, Apple Music)\n - 10-Band Equalizer &amp; AutoEq\n - Word-by-word Synced Lyrics\n - Listen Together Synchronization\n - SponsorBlock &amp; Last.fm\n\nPRVN Music is built on PRVN Music (maxrave-dev) under GPL-3.0</string>
+    <string name="credit_app">A next-generation music app powered by YouTube Music\n\nPRVN Music is an open-source project to stream music from YouTube and YouTube Music ad-free with full background playback. Features include:\n\n - 3 Player Styles (Classic, Material 3, Apple Music)\n - 10-Band Equalizer &amp; AutoEq\n - Word-by-word Synced Lyrics\n - Listen Together Synchronization\n - SponsorBlock &amp; Last.fm\n - Dynamic Launcher Icon Customization\n\nDeveloped with ❤️ by PRVN (pritam-79)</string>
     <string name="issue_tracker">Issue Tracker</string>
-    <string name="copyright" translatable="false">©2023-%1$s Tuan Minh Nguyen Duc (maxrave-dev)</string>
+    <string name="copyright" translatable="false">©2024-%1$s PRVN Music (pritam-79)</string>
     <string name="featured_playlists">Featured Playlists</string>
     <string name="podcasts" translatable="false">Podcasts</string>
     <string name="featured_inArtist">Featured on</string>

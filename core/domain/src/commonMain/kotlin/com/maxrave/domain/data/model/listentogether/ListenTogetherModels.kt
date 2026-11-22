@@ -65,6 +65,8 @@ data class ListenTogetherRoom(
     val queue: List<RoomTrack> = emptyList(),
     val isPlaying: Boolean = false,
     val position: Long = 0L,
+    /** Server time the last transport command was captured at; 0 when unknown. */
+    val lastActionServerTime: Long = 0L,
     /** Non-empty while the room is held at the buffer barrier. */
     val waitingFor: List<String> = emptyList(),
     /** The code we asked to join and have not heard back about. */

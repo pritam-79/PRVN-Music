@@ -123,6 +123,7 @@ private fun ListenTogetherState.toDomain() =
         queue = queue.map { it.toDomain() },
         isPlaying = isPlaying,
         position = position,
+        lastActionServerTime = lastActionServerTime,
         waitingFor = waitingFor,
         pendingJoinCode = pendingJoinCode,
         error = error,
