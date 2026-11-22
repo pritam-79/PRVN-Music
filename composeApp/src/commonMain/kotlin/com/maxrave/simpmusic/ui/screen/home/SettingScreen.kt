@@ -646,6 +646,13 @@ fun SettingScreen(
             }
         }
     }
+    val displayName by viewModel.displayName.collectAsStateWithLifecycle()
+    var showDisplayNameDialog by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var displayNameInput by rememberSaveable {
+        mutableStateOf("")
+    }
     var showYouTubeAccountDialog by rememberSaveable {
         mutableStateOf(false)
     }
@@ -1005,6 +1012,14 @@ fun SettingScreen(
         }
         item(key = "content") {
             SettingGroup(title = stringResource(Res.string.content)) {
+                SettingItem(
+                    title = "Display Name",
+                    subtitle = displayName.ifBlank { "Music Listener" },
+                    onClick = {
+                        displayNameInput = displayName.ifBlank { "Music Listener" }
+                        showDisplayNameDialog = true
+                    },
+                )
                 SettingItem(
                     title = stringResource(Res.string.youtube_account),
                     subtitle = stringResource(Res.string.manage_your_youtube_accounts),
@@ -2846,37 +2861,16 @@ fun SettingScreen(
                 )
                 SettingItem(
                     title = stringResource(Res.string.author),
-                    subtitle = stringResource(Res.string.maxrave_dev),
+                    subtitle = "PRVN",
                     onClick = {
-                        uriHandler.openUri("https://github.com/maxrave-dev")
+                        uriHandler.openUri("https://github.com/pritam-79/PRVN-Music")
                     },
                 )
                 SettingItem(
-                    title = stringResource(Res.string.follow_me_on_x),
-                    subtitle = "@maxrave_dev",
+                    title = "GitHub",
+                    subtitle = "pritam-79/PRVN-Music",
                     onClick = {
-                        uriHandler.openUri("https://x.com/maxrave_dev")
-                    },
-                )
-                SettingItem(
-                    title = stringResource(Res.string.developer_blog),
-                    subtitle = stringResource(Res.string.developer_blog_tagline),
-                    onClick = {
-                        uriHandler.openUri("https://www.simpmusic.org/blogs")
-                    },
-                )
-                if (getPlatform() == Platform.Android) {
-                    SettingItem(
-                        title = stringResource(Res.string.blog_notification_title),
-                        subtitle = stringResource(Res.string.blog_notification_description),
-                        switch = (blogNotificationEnabled to { viewModel.setBlogNotificationEnabled(it) }),
-                    )
-                }
-                SettingItem(
-                    title = stringResource(Res.string.buy_me_a_coffee),
-                    subtitle = stringResource(Res.string.donation),
-                    onClick = {
-                        uriHandler.openUri("https://github.com/sponsors/maxrave-dev")
+                        uriHandler.openUri("https://github.com/pritam-79/PRVN-Music")
                     },
                 )
                 SettingItem(
@@ -3059,6 +3053,45 @@ fun SettingScreen(
     }
     if (showLibrarySyncDialog) {
         LibrarySyncDialog(onDismiss = { showLibrarySyncDialog = false })
+    }
+    if (showDisplayNameDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDisplayNameDialog = false },
+            title = { Text("Display Name", style = typo().titleMedium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Enter your preferred display name for your listening receipts and profile.",
+                        style = typo().bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = displayNameInput,
+                        onValueChange = { displayNameInput = it },
+                        singleLine = true,
+                        placeholder = { Text("Music Listener") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.setDisplayName(displayNameInput.ifBlank { "Music Listener" })
+                        showDisplayNameDialog = false
+                    },
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showDisplayNameDialog = false },
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
     if (showYouTubeAccountDialog) {
         BasicAlertDialog(

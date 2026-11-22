@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.lastOrNull
 import kotlinx.coroutines.flow.map
@@ -52,14 +53,20 @@ class AnalyticsViewModel(
     val analyticsUIState: StateFlow<AnalyticsUiState> get() = _analyticsUIState.asStateFlow()
 
     /**
-     * The signed-in YouTube account's name, printed on the listening receipt; null when signed out.
-     * The same key Home reads its account name from — sign-in, account switch and sign-out keep it.
+     * The listener display name printed on the listening receipt.
+     * Uses custom Display Name preference, falling back to YouTube account name, then "Music Listener".
      */
     val accountName: StateFlow<String?> =
-        dataStoreManager
-            .getString("AccountName")
-            .map { name -> name?.takeIf { it.isNotBlank() } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        combine(
+            dataStoreManager.getString("DisplayName"),
+            dataStoreManager.getString("AccountName"),
+        ) { displayName, accName ->
+            when {
+                !displayName.isNullOrBlank() -> displayName.trim()
+                !accName.isNullOrBlank() -> accName.trim()
+                else -> "Music Listener"
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "Music Listener")
 
     // One job per top list, cancelled before its replacement starts. Each loader collects a flow
     // inside its own launch, and nothing used to stop the previous one: step back two periods

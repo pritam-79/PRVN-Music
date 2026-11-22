@@ -99,6 +99,15 @@ class ListenTogetherViewModel(
         repository.rejectSuggestion(id)
     }
 
+    fun voteSuggestion(id: String) {
+        val selfId = state.value.selfUserId
+        repository.voteSuggestion(id, selfId)
+    }
+
+    fun suggestTrack(track: com.maxrave.domain.data.model.listentogether.RoomTrack) {
+        repository.suggestTrack(track)
+    }
+
     fun kickUser(userId: String) {
         repository.kickUser(userId)
     }

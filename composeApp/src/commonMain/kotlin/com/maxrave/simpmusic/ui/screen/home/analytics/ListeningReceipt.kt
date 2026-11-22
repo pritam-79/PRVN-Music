@@ -16,9 +16,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -84,19 +88,19 @@ internal data class ReceiptLine(
 /** Everything the listening receipt prints, worked out from what the Analytics screen shows. */
 internal data class ListeningReceipt(
     val period: String,
-    val orderNumber: Long,
     val name: String?,
     val printedOn: LocalDate,
     val lines: List<ReceiptLine>,
-    /** Seeds the barcode and the auth code, so the same ten songs always print the same marks. */
+    val topSong: String?,
+    val topArtist: String?,
     val seed: Int,
+    val showName: Boolean = true,
+    val showListeningTime: Boolean = true,
 ) {
     val itemCount: Int get() = lines.sumOf { it.plays }
 
     /** Receiptify's arithmetic: each line costs QTY × AMT, and the total is their sum. */
     val totalSeconds: Long get() = lines.sumOf { it.plays.toLong() * it.durationSeconds.coerceAtLeast(0) }
-
-    val authCode: String get() = (seed.toUInt() % 1_000_000u).toString().padStart(6, '0')
 }
 
 /**
@@ -110,12 +114,60 @@ internal fun ShareReceiptSheet(
     seedColor: Color,
     onDismiss: () -> Unit,
 ) {
-    val receipt = listeningReceipt(uiState, accountName)
+    var showName by remember { mutableStateOf(true) }
+    var showListeningTime by remember { mutableStateOf(true) }
+    val receipt =
+        listeningReceipt(
+            uiState = uiState,
+            accountName = accountName,
+            showName = showName,
+            showListeningTime = showListeningTime,
+        )
     ShareImageSheet(
         title = stringResource(Res.string.receipt_share_title),
         seedColor = seedColor,
-        fileNamePrefix = "SimpMusic_receipt",
+        fileNamePrefix = "PRVN_Music_receipt",
         onDismiss = onDismiss,
+        belowImage = { contentColor ->
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Show listener name",
+                        color = contentColor,
+                        style = TextStyle(fontSize = 14.sp),
+                    )
+                    Switch(
+                        checked = showName,
+                        onCheckedChange = { showName = it },
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Show listening time",
+                        color = contentColor,
+                        style = TextStyle(fontSize = 14.sp),
+                    )
+                    Switch(
+                        checked = showListeningTime,
+                        onCheckedChange = { showListeningTime = it },
+                    )
+                }
+            }
+        },
     ) { captureModifier ->
         // The shadow sits outside the captured node: it belongs to the sheet, not to the image.
         ListeningReceiptPaper(receipt = receipt, modifier = Modifier.shadow(16.dp).then(captureModifier))
@@ -170,6 +222,8 @@ internal fun ReceiptEntryCard(
 private fun listeningReceipt(
     uiState: AnalyticsUiState,
     accountName: String?,
+    showName: Boolean = true,
+    showListeningTime: Boolean = true,
 ): ListeningReceipt {
     val top = uiState.topTracks.data.orEmpty().take(RECEIPT_LINES)
     val start = uiState.periodStart
@@ -183,13 +237,18 @@ private fun listeningReceipt(
             formatPeriodSpan(start, end)
         }
     val printedOn = remember { now().date }
+    val topSongTitle = top.firstOrNull()?.second?.title
+    val topArtistName = uiState.topArtists.data.orEmpty().firstOrNull()?.second?.name
     return ListeningReceipt(
         period = period,
-        orderNumber = uiState.stats.data?.plays ?: top.sumOf { it.first.playCount.toLong() },
         name = accountName,
         printedOn = printedOn,
         lines = top.map { (played, song) -> song.toReceiptLine(played.playCount) },
+        topSong = topSongTitle,
+        topArtist = topArtistName,
         seed = fnv1a(top.joinToString("|") { it.second.title }),
+        showName = showName,
+        showListeningTime = showListeningTime,
     )
 }
 
@@ -265,7 +324,6 @@ private fun ListeningReceiptPaper(
             lineHeight = 20.sp,
             color = Ink,
         )
-    val order = receipt.orderNumber.toString().padStart(4, '0')
     val date = receipt.printedOn
     Column(
         modifier =
@@ -276,7 +334,7 @@ private fun ListeningReceiptPaper(
                 .padding(start = 20.dp, top = 40.dp, end = 20.dp, bottom = 16.dp),
     ) {
         Text(
-            text = "SIMPMUSIC",
+            text = "PRVN MUSIC",
             modifier = Modifier.fillMaxWidth(),
             style =
                 TextStyle(
@@ -301,13 +359,9 @@ private fun ListeningReceiptPaper(
                 ),
         )
         Spacer(modifier = Modifier.height(36.dp))
-        val orderLine =
-            if (receipt.name != null) {
-                stringResource(Res.string.receipt_order, order, receipt.name)
-            } else {
-                stringResource(Res.string.receipt_order_anonymous, order)
-            }
-        Text(text = orderLine.uppercase(), style = mono)
+        if (receipt.showName && !receipt.name.isNullOrBlank()) {
+            Text(text = "LISTENER: ${receipt.name.uppercase()}", style = mono)
+        }
         Text(
             text =
                 stringResource(
@@ -337,20 +391,30 @@ private fun ListeningReceiptPaper(
         }
         DashedRule()
         SumRow(stringResource(Res.string.receipt_item_count), receipt.itemCount.toString(), mono)
-        SumRow(stringResource(Res.string.receipt_total), receiptTotal(receipt.totalSeconds), mono)
+        if (receipt.showListeningTime) {
+            SumRow(stringResource(Res.string.receipt_total), receiptTotal(receipt.totalSeconds), mono)
+        }
         DashedRule()
-        Text(
-            text = stringResource(Res.string.receipt_card, date.year).uppercase(),
-            modifier = Modifier.padding(top = 14.dp),
-            style = mono,
-        )
-        Text(text = stringResource(Res.string.receipt_auth_code, receipt.authCode).uppercase(), style = mono)
-        if (receipt.name != null) {
-            Text(text = stringResource(Res.string.receipt_cardholder, receipt.name).uppercase(), style = mono)
+        receipt.topSong?.let { song ->
+            Text(
+                text = "TOP SONG: ${song.uppercase()}",
+                modifier = Modifier.padding(top = 10.dp),
+                style = mono,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        receipt.topArtist?.let { artist ->
+            Text(
+                text = "TOP ARTIST: ${artist.uppercase()}",
+                style = mono,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Text(
             text = stringResource(Res.string.receipt_thanks).uppercase(),
-            modifier = Modifier.fillMaxWidth().padding(top = 26.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 22.dp),
             style = mono.copy(textAlign = TextAlign.Center),
         )
         Barcode(
@@ -358,7 +422,7 @@ private fun ListeningReceiptPaper(
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 4.dp),
         )
         Text(
-            text = "simpmusic.org",
+            text = "PRVN Music",
             modifier = Modifier.fillMaxWidth(),
             style = mono.copy(fontSize = 14.sp, lineHeight = 18.sp, textAlign = TextAlign.Center),
         )

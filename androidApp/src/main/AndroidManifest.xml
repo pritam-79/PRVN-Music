@@ -179,6 +179,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data android:scheme="simpmusic" />
+                <data android:scheme="prvnmusic" />
             </intent-filter>
 
             <!-- Last.fm auth callback. The scheme is fixed by the callback URL registered on the

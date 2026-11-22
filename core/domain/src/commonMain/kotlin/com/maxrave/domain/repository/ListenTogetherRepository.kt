@@ -42,6 +42,8 @@ interface ListenTogetherRepository {
 
     fun rejectSuggestion(suggestionId: String)
 
+    fun voteSuggestion(suggestionId: String, userId: String)
+
     fun kickUser(userId: String)
 
     fun transferHost(userId: String)

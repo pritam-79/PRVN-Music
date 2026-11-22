@@ -108,14 +108,14 @@ fun CreditScreen(
             fontSize = 13.sp,
         )
 
-        // Developer - clickable, opens dev blog
+        // Developer - clickable, opens github
         Text(
-            text = stringResource(Res.string.maxrave_dev),
+            text = "PRVN",
             style = typo().bodyMedium,
             textDecoration = TextDecoration.Underline,
             modifier =
                 Modifier.clickable {
-                    openUrl("https://maxrave.dev")
+                    openUrl("https://github.com/pritam-79/PRVN-Music")
                 },
         )
 
@@ -138,7 +138,7 @@ fun CreditScreen(
             // Website button
             TextButton(
                 onClick = {
-                    openUrl("https://simpmusic.org")
+                    openUrl("https://github.com/pritam-79/PRVN-Music")
                 },
                 modifier =
                     Modifier
@@ -152,7 +152,7 @@ fun CreditScreen(
             // Developer blog button
             TextButton(
                 onClick = {
-                    openUrl("https://www.simpmusic.org/blogs")
+                    openUrl("https://github.com/pritam-79/PRVN-Music/releases")
                 },
                 modifier =
                     Modifier
@@ -172,7 +172,7 @@ fun CreditScreen(
             // GitHub button
             TextButton(
                 onClick = {
-                    openUrl("https://github.com/maxrave-dev/SimpMusic")
+                    openUrl("https://github.com/pritam-79/PRVN-Music")
                 },
                 modifier =
                     Modifier
@@ -186,7 +186,7 @@ fun CreditScreen(
             // Issue tracker button
             TextButton(
                 onClick = {
-                    openUrl("https://github.com/maxrave-dev/SimpMusic/issues")
+                    openUrl("https://github.com/pritam-79/PRVN-Music/issues")
                 },
                 modifier =
                     Modifier
@@ -195,20 +195,6 @@ fun CreditScreen(
                         .defaultMinSize(minHeight = 1.dp, minWidth = 1.dp),
             ) {
                 Text(text = stringResource(Res.string.issue_tracker))
-            }
-
-            // Buy me a coffee button
-            TextButton(
-                onClick = {
-                    openUrl("https://github.com/sponsors/maxrave-dev")
-                },
-                modifier =
-                    Modifier
-                        .align(Alignment.Start)
-                        .padding(horizontal = 25.dp)
-                        .defaultMinSize(minHeight = 1.dp, minWidth = 1.dp),
-            ) {
-                Text(text = stringResource(Res.string.buy_me_a_coffee))
             }
         }
 

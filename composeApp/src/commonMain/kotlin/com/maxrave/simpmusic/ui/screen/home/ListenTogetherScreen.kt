@@ -94,9 +94,12 @@ import com.maxrave.simpmusic.ui.icon.Check
 import com.maxrave.simpmusic.ui.icon.Close
 import com.maxrave.simpmusic.ui.icon.ContentCopy
 import com.maxrave.simpmusic.ui.icon.Logout
+import com.maxrave.simpmusic.ui.icon.MusicNote
 import com.maxrave.simpmusic.ui.icon.Settings
 import com.maxrave.simpmusic.ui.icon.Share
 import com.maxrave.simpmusic.ui.icon.SimpIcons
+import com.maxrave.simpmusic.ui.icon.ThumbUp
+import com.maxrave.simpmusic.ui.icon.ThumbUpOutline
 import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherSettingsDestination
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.viewModel.ListenTogetherViewModel
@@ -375,9 +378,16 @@ private fun ColumnScope.WorkArea(
                     JoinRequests(state.joinRequests, viewModel::approveJoin, viewModel::rejectJoin)
                 }
             }
-            AnimatedVisibility(visible = state.isHost && state.suggestions.isNotEmpty()) {
+            AnimatedVisibility(visible = state.suggestions.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Suggestions(state.suggestions, viewModel::approveSuggestion, viewModel::rejectSuggestion)
+                    Suggestions(
+                        suggestions = state.suggestions,
+                        selfId = state.selfUserId,
+                        isHost = state.isHost,
+                        onVote = viewModel::voteSuggestion,
+                        onApprove = viewModel::approveSuggestion,
+                        onReject = viewModel::rejectSuggestion,
+                    )
                 }
             }
             Members(
@@ -776,11 +786,15 @@ private fun JoinRequests(
 @Composable
 private fun Suggestions(
     suggestions: List<RoomSuggestion>,
+    selfId: String,
+    isHost: Boolean,
+    onVote: (String) -> Unit,
     onApprove: (String) -> Unit,
     onReject: (String) -> Unit,
 ) {
-    SectionHeader(stringResource(Res.string.lt_suggestions), suggestions.size)
+    SectionHeader("Vote for Next Song", suggestions.size)
     suggestions.forEach { suggestion ->
+        val hasVoted = suggestion.votes.contains(selfId)
         Surface {
             Row(
                 Modifier.fillMaxWidth().padding(12.dp),
@@ -792,7 +806,15 @@ private fun Suggestions(
                         .size(44.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = SimpIcons.MusicNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
                 Column(Modifier.weight(1f)) {
                     Text(
                         suggestion.track.title,
@@ -802,14 +824,22 @@ private fun Suggestions(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${suggestion.fromUsername} suggested",
+                        "${suggestion.fromUsername} · ${suggestion.voteCount} ${if (suggestion.voteCount == 1) "vote" else "votes"}",
                         style = typo().bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (hasVoted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
                 }
-                ActionGlyph(SimpIcons.Check, MaterialTheme.colorScheme.primary) { onApprove(suggestion.suggestionId) }
-                ActionGlyph(SimpIcons.Close, MaterialTheme.colorScheme.error) { onReject(suggestion.suggestionId) }
+                ActionGlyph(
+                    icon = if (hasVoted) SimpIcons.ThumbUp else SimpIcons.ThumbUpOutline,
+                    tint = if (hasVoted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                ) {
+                    onVote(suggestion.suggestionId)
+                }
+                if (isHost) {
+                    ActionGlyph(SimpIcons.Check, MaterialTheme.colorScheme.primary) { onApprove(suggestion.suggestionId) }
+                    ActionGlyph(SimpIcons.Close, MaterialTheme.colorScheme.error) { onReject(suggestion.suggestionId) }
+                }
             }
         }
     }

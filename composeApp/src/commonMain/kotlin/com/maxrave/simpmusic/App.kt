@@ -257,7 +257,7 @@ fun App(
                 Logger.d("MainActivity", "Discord callback, code present: ${!data.getQueryParameter("code").isNullOrEmpty()}")
                 viewModel.setIntent(null)
                 viewModel.completeDiscordLogin(data.toString())
-            } else if (data.host == "simpmusic.org" || data.scheme == "simpmusic") {
+            } else if (data.host == "simpmusic.org" || data.scheme == "simpmusic" || data.scheme == "prvnmusic") {
                 // https://simpmusic.org/app/watch?v=VIDEO_ID
                 // https://simpmusic.org/app/playlist?list=PLAYLIST_ID
                 // https://simpmusic.org/app/channel/CHANNEL_ID
@@ -266,9 +266,9 @@ fun App(
                 // simpmusic://channel/CHANNEL_ID
                 val segments = data.pathSegments
                 // For simpmusic.org: segments = ["app", "watch"] → appPath = segments[1]
-                // For simpmusic://: host IS the appPath (e.g. host="watch"), segments = []
+                // For simpmusic:// or prvnmusic://: host IS the appPath (e.g. host="watch"), segments = []
                 val appPath =
-                    if (data.scheme == "simpmusic") {
+                    if (data.scheme == "simpmusic" || data.scheme == "prvnmusic") {
                         data.host
                     } else {
                         segments.getOrNull(1)

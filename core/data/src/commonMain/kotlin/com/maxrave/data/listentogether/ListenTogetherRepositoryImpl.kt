@@ -87,6 +87,10 @@ class ListenTogetherRepositoryImpl(
         session.rejectSuggestion(suggestionId)
     }
 
+    override fun voteSuggestion(suggestionId: String, userId: String) {
+        session.voteSuggestion(suggestionId, userId)
+    }
+
     override fun kickUser(userId: String) {
         session.kickUser(userId)
     }
@@ -148,6 +152,7 @@ private fun PendingSuggestion.toDomain() =
         suggestionId = suggestionId,
         fromUsername = fromUsername,
         track = track.toDomain(),
+        votes = votes,
     )
 
 private fun TrackInfo.toDomain() =

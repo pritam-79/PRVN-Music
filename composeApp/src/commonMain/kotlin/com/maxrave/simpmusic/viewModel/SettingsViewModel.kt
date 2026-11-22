@@ -39,13 +39,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.lastOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.singleOrNull
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -198,6 +201,18 @@ class SettingsViewModel(
 
     private var _backupDownloaded: MutableStateFlow<Boolean> = MutableStateFlow(false)
     val backupDownloaded: StateFlow<Boolean> = _backupDownloaded
+
+    val displayName: StateFlow<String> =
+        dataStoreManager
+            .getString("DisplayName")
+            .map { it.orEmpty() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    fun setDisplayName(name: String) {
+        viewModelScope.launch {
+            dataStoreManager.putString("DisplayName", name.trim())
+        }
+    }
 
     private var _enableLiquidGlass: MutableStateFlow<Boolean> = MutableStateFlow(false)
     val enableLiquidGlass: StateFlow<Boolean> = _enableLiquidGlass

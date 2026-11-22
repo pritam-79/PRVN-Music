@@ -45,7 +45,10 @@ data class PendingSuggestion(
     val suggestionId: String,
     val fromUsername: String,
     val track: TrackInfo,
-)
+    val votes: Set<String> = emptySet(),
+) {
+    val voteCount: Int get() = votes.size
+}
 
 data class ListenTogetherState(
     val connection: ConnectionState = ConnectionState.Disconnected,
@@ -200,6 +203,27 @@ class ListenTogetherSession(
 
     fun suggestTrack(track: TrackInfo) =
         launch { client.send(MessageTypes.SUGGEST_TRACK, SuggestTrackPayload(trackInfo = track)) }
+
+    fun voteSuggestion(suggestionId: String, userId: String) {
+        _state.update { s ->
+            s.copy(
+                suggestions = s.suggestions.map {
+                    if (it.suggestionId == suggestionId) {
+                        val newVotes = if (it.votes.contains(userId)) it.votes - userId else it.votes + userId
+                        it.copy(votes = newVotes)
+                    } else it
+                }.sortedByDescending { it.voteCount }
+            )
+        }
+    }
+
+    fun popWinningCandidate(): PendingSuggestion? {
+        val candidate = _state.value.suggestions.maxByOrNull { it.voteCount }
+        if (candidate != null) {
+            approveSuggestion(candidate.suggestionId)
+        }
+        return candidate
+    }
 
     /**
      * Publishes one transport command to the room. Host only — the server ignores it from a guest.

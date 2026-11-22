@@ -98,9 +98,11 @@ import com.mohamedrejeb.ksoup.html.parser.KsoupHtmlParser
 import io.ktor.client.call.body
 import io.ktor.client.engine.ProxyBuilder
 import io.ktor.client.engine.http
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.URLBuilder
 import io.ktor.http.parseQueryString
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
@@ -148,6 +150,12 @@ class YouTube {
     private val tidalTokenMutex = Mutex()
     private var tidalAccessToken: String? = null
     private var tidalTokenExpiresAt: Long = 0L
+
+    private val tidalCacheMutex = Mutex()
+    private val tidalMetadataCache = mutableMapOf<String, TidalMetadataResult?>()
+    private val tidalInFlightRequests = mutableMapOf<String, CompletableDeferred<Result<TidalMetadataResult>>>()
+    private var tidalRateLimitUntil: Long = 0L
+    private var tidalConsecutive429s: Int = 0
 
     var cookiePath: Path?
         get() = ytMusic.cookiePath
@@ -2245,26 +2253,107 @@ class YouTube {
     /**
      * Search Tidal official API for metadata (bpm, key, keyScale).
      * Token is managed in-memory and auto-refreshed when expired.
+     * Includes in-memory LRU caching, in-flight request deduplication, and
+     * circuit-breaker exponential backoff on HTTP 429 rate-limiting.
      */
     suspend fun searchTidalMetadata(
         query: String,
         durationSeconds: Int,
-    ) = runCatching {
-        val token = ensureTidalToken()
-        val searchRes = ytMusic.searchTidalId(token, query).body<TidalSearchResponse>()
-        val matchedItem =
-            searchRes.tracks
-                ?.items
-                ?.filterNotNull()
-                ?.filter { it.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
-                ?.minByOrNull { abs((it.duration ?: 0) - durationSeconds) }
-                ?: throw Exception("No matching track found")
-        val attrs = matchedItem.audioAnalysisAttributes
-        TidalMetadataResult(
-            bpm = attrs?.bpm?.toDoubleOrNull()?.toInt(),
-            musicKey = attrs?.key,
-            keyScale = attrs?.keyScale,
-        )
+    ): Result<TidalMetadataResult> {
+        val cacheKey = "$query|$durationSeconds"
+        val now = Clock.System.now().toEpochMilliseconds()
+
+        var cachedResult: TidalMetadataResult? = null
+        var shouldReturnCached = false
+        var deferredToAwait: CompletableDeferred<Result<TidalMetadataResult>>? = null
+        var isDesignatedWorker = false
+
+        tidalCacheMutex.withLock {
+            if (tidalMetadataCache.containsKey(cacheKey)) {
+                cachedResult = tidalMetadataCache[cacheKey]
+                shouldReturnCached = true
+                return@withLock
+            }
+            if (now < tidalRateLimitUntil) {
+                val cooldownRemaining = (tidalRateLimitUntil - now) / 1000
+                Logger.d("Stream", "Tidal metadata lookup skipped due to active rate-limit cooldown (${cooldownRemaining}s remaining)")
+                shouldReturnCached = true
+                return@withLock
+            }
+            val inFlight = tidalInFlightRequests[cacheKey]
+            if (inFlight != null) {
+                deferredToAwait = inFlight
+            } else {
+                val newDeferred = CompletableDeferred<Result<TidalMetadataResult>>()
+                tidalInFlightRequests[cacheKey] = newDeferred
+                deferredToAwait = newDeferred
+                isDesignatedWorker = true
+            }
+        }
+
+        if (shouldReturnCached) {
+            return if (cachedResult != null) {
+                Result.success(cachedResult!!)
+            } else {
+                Result.failure(Exception("Tidal metadata unavailable (cached or rate-limited)"))
+            }
+        }
+
+        if (!isDesignatedWorker && deferredToAwait != null) {
+            return deferredToAwait!!.await()
+        }
+
+        val result: Result<TidalMetadataResult> = try {
+            val token = ensureTidalToken()
+            val searchRes = ytMusic.searchTidalId(token, query).body<TidalSearchResponse>()
+            val matchedItem =
+                searchRes.tracks
+                    ?.items
+                    ?.filterNotNull()
+                    ?.filter { it.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
+                    ?.minByOrNull { abs((it.duration ?: 0) - durationSeconds) }
+                    ?: throw Exception("No matching track found")
+            val attrs = matchedItem.audioAnalysisAttributes
+            val metadata = TidalMetadataResult(
+                bpm = attrs?.bpm?.toDoubleOrNull()?.toInt(),
+                musicKey = attrs?.key,
+                keyScale = attrs?.keyScale,
+            )
+            tidalCacheMutex.withLock {
+                tidalConsecutive429s = 0
+            }
+            Result.success(metadata)
+        } catch (e: ClientRequestException) {
+            if (e.response.status.value == 429) {
+                val retryAfterHeader = e.response.headers["Retry-After"]?.toLongOrNull()
+                tidalCacheMutex.withLock {
+                    val backoffSeconds = (retryAfterHeader ?: (60L * (1 shl minOf(tidalConsecutive429s, 4)))).coerceIn(30L, 600L)
+                    tidalConsecutive429s++
+                    tidalRateLimitUntil = Clock.System.now().toEpochMilliseconds() + (backoffSeconds * 1000L)
+                    Logger.w("Stream", "Tidal rate limited (HTTP 429). Exponential backoff activated for ${backoffSeconds}s")
+                }
+            } else {
+                Logger.w("Stream", "Tidal request failed: ${e.response.status.value} ${e.message}")
+            }
+            Result.failure(e)
+        } catch (e: Exception) {
+            Logger.w("Stream", "Tidal search error: ${e.message}")
+            Result.failure(e)
+        }
+
+        tidalCacheMutex.withLock {
+            if (tidalMetadataCache.size >= 250) {
+                val oldestKey = tidalMetadataCache.keys.firstOrNull()
+                if (oldestKey != null) {
+                    tidalMetadataCache.remove(oldestKey)
+                }
+            }
+            tidalMetadataCache[cacheKey] = result.getOrNull()
+            tidalInFlightRequests.remove(cacheKey)
+        }
+
+        deferredToAwait?.complete(result)
+        return result
     }
 
     // Any format carrying a signatureCipher would do; medium Opus is the one YouTube returns for

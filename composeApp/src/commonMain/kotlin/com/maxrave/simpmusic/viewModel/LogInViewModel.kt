@@ -31,17 +31,24 @@ class LogInViewModel(
 
     fun saveSpotifySpdc(cookie: String): Job =
         viewModelScope.launch {
-            cookie
-                .split("; ")
-                .filter { it.isNotEmpty() }
-                .associate {
-                    val (key, value) = it.split("=")
-                    key to value
-                }.let {
-                    if (it["sp_dc"].isNullOrEmpty()) Logger.w("Auth", "Spotify: sign-in finished without an sp_dc cookie")
-                    dataStoreManager.setSpdc(it["sp_dc"] ?: "")
-                    _spotifyStatus.value = true
-                }
+            val map =
+                cookie
+                    .split(";")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && it.contains("=") }
+                    .associate {
+                        val parts = it.split("=", limit = 2)
+                        parts[0].trim() to parts[1].trim()
+                    }
+            val spdc = map["sp_dc"]
+            if (spdc.isNullOrBlank()) {
+                Logger.w("Auth", "Spotify: sign-in finished without an sp_dc cookie")
+                _spotifyStatus.value = false
+            } else {
+                Logger.i("Auth", "Spotify: valid sp_dc cookie captured successfully")
+                dataStoreManager.setSpdc(spdc)
+                _spotifyStatus.value = true
+            }
         }
 
     fun setVisitorData(visitorData: String) {

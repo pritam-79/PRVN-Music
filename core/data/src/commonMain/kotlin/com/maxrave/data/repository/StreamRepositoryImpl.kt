@@ -227,7 +227,7 @@ internal class StreamRepositoryImpl(
                                 tidalMusicKey = metadata.musicKey
                                 tidalKeyScale = metadata.keyScale
                             }.onFailure {
-                                Logger.e("Stream", "Tidal metadata error: ${it.message}", it)
+                                Logger.w("Stream", "Tidal metadata unavailable: ${it.message}")
                             }
                     }
                     insertNewFormat(

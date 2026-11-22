@@ -48,7 +48,10 @@ data class RoomSuggestion(
     val suggestionId: String,
     val fromUsername: String,
     val track: RoomTrack,
-)
+    val votes: Set<String> = emptySet(),
+) {
+    val voteCount: Int get() = votes.size
+}
 
 data class ListenTogetherRoom(
     val connection: RoomConnection = RoomConnection.Disconnected,

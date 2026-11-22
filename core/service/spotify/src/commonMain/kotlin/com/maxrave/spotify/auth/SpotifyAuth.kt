@@ -38,6 +38,9 @@ class SpotifyAuth(
      */
     suspend fun refreshToken(spDc: String): Result<PersonalTokenResponse> =
         runCatching {
+            if (spDc.isBlank()) {
+                throw IllegalArgumentException("Spotify sp_dc token is blank. Please sign in to Spotify.")
+            }
             if (totpSecret == null) {
                 // Fetch the latest TOTP secret if not already fetched
                 getTotpSecret().onSuccess {
