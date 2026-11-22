@@ -2183,6 +2183,17 @@ class SharedViewModel(
         }
     }
 
+    val appIcon: StateFlow<String> = dataStoreManager.getString("selected_app_icon")
+        .map { it ?: com.maxrave.simpmusic.expect.getActiveLauncherIcon() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.maxrave.simpmusic.expect.getActiveLauncherIcon())
+
+    fun setAppIcon(logoId: String) {
+        viewModelScope.launch {
+            com.maxrave.simpmusic.expect.setLauncherIcon(logoId)
+            dataStoreManager.putString("selected_app_icon", logoId)
+        }
+    }
+
     fun setNowPlayingStyle(style: String) {
         viewModelScope.launch {
             dataStoreManager.setNowPlayingStyle(style)

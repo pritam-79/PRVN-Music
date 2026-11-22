@@ -211,6 +211,263 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- Dynamic Launcher Icon Aliases for PRVN Music 17 Official Logo Collection -->
+        <activity-alias
+            android:name=".MainActivityAliasLogo01"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_01"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_01"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo02"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_02"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_02"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo03"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_03"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_03"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo04"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_04"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_04"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo05"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_05"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_05"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo06"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_06"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_06"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo07"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_07"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_07"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo08"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_08"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_08"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo09"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_09"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_09"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo10"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_10"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_10"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo11"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_11"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_11"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo12"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_12"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_12"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo14"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_14"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_14"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo15"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_15"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_15"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo16"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_16"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_16"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasLogo17"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_prvn_logo_17"
+            android:roundIcon="@mipmap/ic_launcher_round_prvn_logo_17"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

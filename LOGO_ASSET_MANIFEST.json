@@ -1,0 +1,334 @@
+{
+  "product": "PRVN Music",
+  "version": "0.14.0",
+  "versionCode": 18,
+  "applicationId": "com.prvn.music",
+  "updatedAt": "2026-11-22T21:00:00Z",
+  "primaryDefaultLogoId": "prvn_logo_13",
+  "totalLogos": 17,
+  "logos": [
+    {
+      "id": "prvn_logo_13",
+      "displayName": "V1 — Minimal Neon",
+      "sourceSheet": 2,
+      "sheetRow": 0,
+      "sheetCol": 0,
+      "cropCoordinates": { "x": 57, "y": 35, "width": 254, "height": 252 },
+      "isDefault": true,
+      "isSpecial": false,
+      "launcherAlias": "com.maxrave.simpmusic.MainActivity",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_13/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_13/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_13/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_13/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_13.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_13.png"
+      }
+    },
+    {
+      "id": "prvn_logo_14",
+      "displayName": "V2 — Audio Wave",
+      "sourceSheet": 2,
+      "sheetRow": 0,
+      "sheetCol": 1,
+      "cropCoordinates": { "x": 384, "y": 35, "width": 254, "height": 252 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo14",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_14/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_14/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_14/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_14/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_14.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_14.png"
+      }
+    },
+    {
+      "id": "prvn_logo_15",
+      "displayName": "V3 — Vinyl Classic",
+      "sourceSheet": 2,
+      "sheetRow": 0,
+      "sheetCol": 2,
+      "cropCoordinates": { "x": 712, "y": 35, "width": 254, "height": 252 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo15",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_15/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_15/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_15/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_15/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_15.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_15.png"
+      }
+    },
+    {
+      "id": "prvn_logo_16",
+      "displayName": "V4 — Play & Wave",
+      "sourceSheet": 2,
+      "sheetRow": 1,
+      "sheetCol": 0,
+      "cropCoordinates": { "x": 57, "y": 346, "width": 254, "height": 254 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo16",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_16/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_16/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_16/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_16/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_16.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_16.png"
+      }
+    },
+    {
+      "id": "prvn_logo_17",
+      "displayName": "V5 — Premium Crown",
+      "sourceSheet": 2,
+      "sheetRow": 1,
+      "sheetCol": 1,
+      "cropCoordinates": { "x": 384, "y": 346, "width": 254, "height": 254 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo17",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_17/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_17/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_17/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_17/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_17.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_17.png"
+      }
+    },
+    {
+      "id": "prvn_logo_01",
+      "displayName": "V1 — Aurora Play",
+      "sourceSheet": 1,
+      "sheetRow": 0,
+      "sheetCol": 0,
+      "cropCoordinates": { "x": 56, "y": 12, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo01",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_01/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_01/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_01/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_01/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_01.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_01.png"
+      }
+    },
+    {
+      "id": "prvn_logo_02",
+      "displayName": "V2 — Headphone Pulse",
+      "sourceSheet": 1,
+      "sheetRow": 0,
+      "sheetCol": 1,
+      "cropCoordinates": { "x": 312, "y": 12, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo02",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_02/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_02/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_02/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_02/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_02.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_02.png"
+      }
+    },
+    {
+      "id": "prvn_logo_03",
+      "displayName": "V3 — Waveform Circle",
+      "sourceSheet": 1,
+      "sheetRow": 0,
+      "sheetCol": 2,
+      "cropCoordinates": { "x": 568, "y": 12, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo03",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_03/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_03/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_03/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_03/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_03.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_03.png"
+      }
+    },
+    {
+      "id": "prvn_logo_04",
+      "displayName": "V4 — Vinyl Player",
+      "sourceSheet": 1,
+      "sheetRow": 0,
+      "sheetCol": 3,
+      "cropCoordinates": { "x": 824, "y": 12, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo04",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_04/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_04/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_04/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_04/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_04.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_04.png"
+      }
+    },
+    {
+      "id": "prvn_logo_05",
+      "displayName": "V5 — Minimal P",
+      "sourceSheet": 1,
+      "sheetRow": 1,
+      "sheetCol": 0,
+      "cropCoordinates": { "x": 56, "y": 240, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo05",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_05/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_05/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_05/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_05/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_05.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_05.png"
+      }
+    },
+    {
+      "id": "prvn_logo_06",
+      "displayName": "V6 — Equalizer",
+      "sourceSheet": 1,
+      "sheetRow": 1,
+      "sheetCol": 1,
+      "cropCoordinates": { "x": 312, "y": 240, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo06",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_06/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_06/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_06/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_06/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_06.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_06.png"
+      }
+    },
+    {
+      "id": "prvn_logo_07",
+      "displayName": "V7 — Infinity Sound",
+      "sourceSheet": 1,
+      "sheetRow": 1,
+      "sheetCol": 2,
+      "cropCoordinates": { "x": 568, "y": 240, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo07",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_07/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_07/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_07/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_07/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_07.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_07.png"
+      }
+    },
+    {
+      "id": "prvn_logo_08",
+      "displayName": "V8 — Neon Ring",
+      "sourceSheet": 1,
+      "sheetRow": 1,
+      "sheetCol": 3,
+      "cropCoordinates": { "x": 824, "y": 240, "width": 176, "height": 176 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo08",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_08/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_08/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_08/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_08/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_08.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_08.png"
+      }
+    },
+    {
+      "id": "prvn_logo_09",
+      "displayName": "V9 — Glassmorphism",
+      "sourceSheet": 1,
+      "sheetRow": 2,
+      "sheetCol": 0,
+      "cropCoordinates": { "x": 56, "y": 449, "width": 176, "height": 180 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo09",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_09/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_09/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_09/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_09/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_09.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_09.png"
+      }
+    },
+    {
+      "id": "prvn_logo_10",
+      "displayName": "V10 — Liquid Glass (Special)",
+      "sourceSheet": 1,
+      "sheetRow": 2,
+      "sheetCol": 1,
+      "cropCoordinates": { "x": 312, "y": 449, "width": 176, "height": 180 },
+      "isDefault": false,
+      "isSpecial": true,
+      "launcherAlias": "MainActivityAliasLogo10",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_10/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_10/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_10/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_10/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_10.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_10.png"
+      }
+    },
+    {
+      "id": "prvn_logo_11",
+      "displayName": "V11 — Cosmic",
+      "sourceSheet": 1,
+      "sheetRow": 2,
+      "sheetCol": 2,
+      "cropCoordinates": { "x": 568, "y": 449, "width": 176, "height": 180 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo11",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_11/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_11/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_11/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_11/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_11.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_11.png"
+      }
+    },
+    {
+      "id": "prvn_logo_12",
+      "displayName": "V12 — Premium Metal",
+      "sourceSheet": 1,
+      "sheetRow": 2,
+      "sheetCol": 3,
+      "cropCoordinates": { "x": 824, "y": 449, "width": 176, "height": 180 },
+      "isDefault": false,
+      "isSpecial": false,
+      "launcherAlias": "MainActivityAliasLogo12",
+      "assets": {
+        "master": "assets/branding/logos/prvn_logo_12/master.png",
+        "size1024": "assets/branding/logos/prvn_logo_12/logo_1024.png",
+        "size512": "assets/branding/logos/prvn_logo_12/logo_512.png",
+        "thumb96": "assets/branding/logos/prvn_logo_12/thumb_96.png",
+        "composeResource": "composeApp/src/commonMain/composeResources/drawable/prvn_logo_12.png",
+        "androidMipmap": "androidApp/src/main/res/mipmap-*/ic_launcher_prvn_logo_12.png"
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.maxrave.simpmusic.ui.navigation.destination.home.AppIconDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.AppLogDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.CreditDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherDestination
@@ -12,6 +13,7 @@ import com.maxrave.simpmusic.ui.navigation.destination.home.ListenTogetherSettin
 import com.maxrave.simpmusic.ui.navigation.destination.home.MoodDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.NotificationDestination
 import com.maxrave.simpmusic.ui.navigation.destination.home.SettingsDestination
+import com.maxrave.simpmusic.ui.screen.home.AppIconScreen
 import com.maxrave.simpmusic.ui.screen.home.ListenTogetherScreen
 import com.maxrave.simpmusic.ui.screen.home.ListenTogetherSettingsScreen
 import com.maxrave.simpmusic.ui.screen.home.MoodScreen
@@ -34,6 +36,12 @@ fun NavGraphBuilder.homeScreenGraph(
         AppLogScreen(
             paddingValues = innerPadding,
             navController = navController,
+        )
+    }
+    composable<AppIconDestination> {
+        AppIconScreen(
+            navController = navController,
+            paddingValues = innerPadding,
         )
     }
     composable<MoodDestination> { entry ->

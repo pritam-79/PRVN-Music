@@ -600,6 +600,7 @@ fun SettingScreen(
     val customThemeColorHex by sharedViewModel.getCustomThemeColor().collectAsStateWithLifecycle(DataStoreManager.DEFAULT_THEME_COLOR_HEX)
     val nowPlayingStyle by sharedViewModel.getNowPlayingStyle().collectAsStateWithLifecycle(DataStoreManager.NOW_PLAYING_STYLE_SPOTIFY)
     val lyricsStyle by sharedViewModel.getLyricsStyle().collectAsStateWithLifecycle(DataStoreManager.LYRICS_STYLE_CLASSIC)
+    val activeAppIconId by sharedViewModel.appIcon.collectAsStateWithLifecycle(com.maxrave.simpmusic.model.AppLogos.DEFAULT_LOGO_ID)
     val romanizationStored by sharedViewModel.getRomanizationLanguages().collectAsStateWithLifecycle("")
     val japaneseDictionaryState by viewModel.japaneseDictionaryState.collectAsStateWithLifecycle()
     var showColorPickerDialog by rememberSaveable { mutableStateOf(false) }
@@ -1006,6 +1007,13 @@ fun SettingScreen(
                         subtitle = stringResource(Res.string.enable_liquid_glass_effect_description),
                         smallSubtitle = true,
                         switch = (enableLiquidGlass to { viewModel.setEnableLiquidGlass(it) }),
+                    )
+                    SettingItem(
+                        title = "App Icon",
+                        subtitle = com.maxrave.simpmusic.model.AppLogos.find(activeAppIconId).name,
+                        onClick = {
+                            navController.navigate(com.maxrave.simpmusic.ui.navigation.destination.home.AppIconDestination)
+                        },
                     )
                 }
             }
