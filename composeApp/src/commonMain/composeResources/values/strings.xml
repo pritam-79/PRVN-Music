@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="Song_and_artist_name">Song • %1$s</string>
     <string name="playlist_and_author">Playlist • %1$s</string>
@@ -139,13 +139,13 @@
     <string name="about_us">About us</string>
     <string name="version">Version</string>
     <string name="github">Github</string>
-    <string name="maxrave_dev">PRVN</string>
+    <string name="pritam-79">PRVN</string>
     <string name="follow_me_on_x">Follow me on X</string>
     <string name="buy_me_a_coffee">Buy me a coffee</string>
     <string name="developer_blog">Developer Blog</string>
     <string name="developer_blog_tagline">Read dev notes, tutorials &amp; behind-the-scenes</string>
     <string name="blog_promo_title">Something new from the dev</string>
-    <string name="blog_promo_message">I just launched the SimpMusic blog at simpmusic.org — sharing the story behind SimpMusic, music-tech deep dives, and engineering notes. Give it a read if you're curious ✨</string>
+    <string name="blog_promo_message">I just launched the PRVN Music blog at prvn.music — sharing the story behind PRVN Music, music-tech deep dives, and engineering notes. Give it a read if you're curious ✨</string>
     <string name="visit_blog">Visit blog</string>
     <string name="paypal">PayPal</string>
     <string name="title">Title</string>
@@ -313,7 +313,7 @@
     <string name="older_first">Older First</string>
     <string name="newer_first">Newer First</string>
     <string name="added_date">Added date</string>
-    <string name="credit_app">A modern music app powered by YouTube Music\n\nPRVN Music is an open source project to stream music from YouTube and YouTube Music ad-free with full background playback. Features include:\n\n - 3 Player Styles (Classic, Material 3, Apple Music)\n - 10-Band Equalizer &amp; AutoEq\n - Word-by-word Synced Lyrics\n - Listen Together Synchronization\n - SponsorBlock &amp; Last.fm\n\nPRVN Music is built on SimpMusic (maxrave-dev) under GPL-3.0</string>
+    <string name="credit_app">A modern music app powered by YouTube Music\n\nPRVN Music is an open source project to stream music from YouTube and YouTube Music ad-free with full background playback. Features include:\n\n - 3 Player Styles (Classic, Material 3, Apple Music)\n - 10-Band Equalizer &amp; AutoEq\n - Word-by-word Synced Lyrics\n - Listen Together Synchronization\n - SponsorBlock &amp; Last.fm\n\nPRVN Music is built on PRVN Music (maxrave-dev) under GPL-3.0</string>
     <string name="issue_tracker">Issue Tracker</string>
     <string name="copyright" translatable="false">©2023-%1$s Tuan Minh Nguyen Duc (maxrave-dev)</string>
     <string name="featured_playlists">Featured Playlists</string>
@@ -564,7 +564,7 @@
     <string name="if_you_love_my_work_consider">"If you love my work, consider "</string>
     <string name="buying_me_a_coffee">buying me a coffee.</string>
     <string name="footguns_promo_title">Every trap I fell into</string>
-    <string name="footguns_promo_message">SimpMusic cost me a lot of nights on Kotlin and Compose traps that no doc ever warned me about. I wrote every one of them down in kotlin-footguns, so you don't lose the same nights. If it saves even one of yours, a star would mean a lot to me.</string>
+    <string name="footguns_promo_message">PRVN Music cost me a lot of nights on Kotlin and Compose traps that no doc ever warned me about. I wrote every one of them down in kotlin-footguns, so you don't lose the same nights. If it saves even one of yours, a star would mean a lot to me.</string>
     <string name="fade_audio_effect">Fade audio effect</string>
     <string name="disabled">Disable</string>
     <string name="fade_audio_effect_duration">Fade audio effect duration (ms) (Set to 0 for disable)</string>

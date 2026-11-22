@@ -913,7 +913,11 @@ fun App(
                     InAppUpdateDialog(
                         state = inAppUpdateState,
                         onDownload = { data -> viewModel.startInAppUpdate(data) },
+                        onPause = { viewModel.pauseInAppUpdate() },
+                        onResume = { viewModel.resumeInAppUpdate() },
+                        onCancel = { viewModel.cancelInAppUpdate() },
                         onInstall = { filePath -> viewModel.installApkNow(filePath) },
+                        onRequestPermission = { viewModel.requestInstallPermission() },
                         onOpenBrowser = { tag ->
                             val cleanTag = if (tag.startsWith("v")) tag else "v$tag"
                             openUrl("https://github.com/pritam-79/PRVN-Music/releases/tag/$cleanTag")
@@ -925,9 +929,7 @@ fun App(
                             viewModel.showedUpdateDialog = false
                         },
                         onRetry = {
-                            (inAppUpdateState as? SharedViewModel.InAppUpdateState.Error)?.let {
-                                updateData?.let { data -> viewModel.startInAppUpdate(data) }
-                            }
+                            updateData?.let { data -> viewModel.startInAppUpdate(data) }
                         },
                     )
                 }

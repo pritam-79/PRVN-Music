@@ -2,11 +2,13 @@ package com.maxrave.simpmusic.expect
 
 import com.maxrave.logger.Logger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
+import java.security.MessageDigest
 
 private const val TAG = "InstallApkJvm"
 
@@ -34,10 +36,64 @@ actual fun getAppCacheDir(): String {
     return System.getProperty("java.io.tmpdir") ?: "."
 }
 
+actual fun checkInstallPermission(): Boolean = true
+
+actual fun openInstallPermissionSettings() = Unit
+
+private fun computeFileSha256(file: File): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    file.inputStream().buffered().use { input ->
+        val buffer = ByteArray(32768)
+        var read: Int
+        while (input.read(buffer).also { read = it } != -1) {
+            md.update(buffer, 0, read)
+        }
+    }
+    return md.digest().joinToString("") { "%02x".format(it) }
+}
+
+actual fun verifyApk(filePath: String, expectedSha256: String?): ApkVerificationResult {
+    val file = File(filePath)
+    if (!file.exists() || file.length() <= 0L) {
+        return ApkVerificationResult(
+            isValid = false,
+            isSignatureMatch = false,
+            isPackageMatch = false,
+            isVersionValid = false,
+            isSha256Match = false,
+            errorMessage = "File missing or empty."
+        )
+    }
+
+    if (!expectedSha256.isNullOrBlank()) {
+        val actualSha = computeFileSha256(file)
+        if (!actualSha.equals(expectedSha256.trim(), ignoreCase = true)) {
+            return ApkVerificationResult(
+                isValid = false,
+                isSignatureMatch = false,
+                isPackageMatch = false,
+                isVersionValid = false,
+                isSha256Match = false,
+                errorMessage = "Checksum mismatch: expected $expectedSha256, actual $actualSha"
+            )
+        }
+    }
+
+    return ApkVerificationResult(
+        isValid = true,
+        isSignatureMatch = true,
+        isPackageMatch = true,
+        isVersionValid = true,
+        isSha256Match = true,
+    )
+}
+
 actual suspend fun downloadFileWithProgress(
     url: String,
     targetPath: String,
-    onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit,
+    onProgress: (bytesDownloaded: Long, totalBytes: Long, speedBps: Long, etaSeconds: Long) -> Unit,
+    isCancelled: () -> Boolean,
+    isPaused: () -> Boolean,
 ): Boolean = withContext(Dispatchers.IO) {
     try {
         val targetFile = File(targetPath)
@@ -89,16 +145,57 @@ actual suspend fun downloadFileWithProgress(
         var bytesDownloaded = 0L
         var bytesRead: Int
 
-        while (input.read(buffer).also { bytesRead = it } != -1) {
+        var lastProgressTime = System.currentTimeMillis()
+        var bytesSinceLastCheck = 0L
+        var currentSpeed = 0L
+
+        while (true) {
+            if (isCancelled()) {
+                output.close()
+                input.close()
+                connection.disconnect()
+                targetFile.delete()
+                return@withContext false
+            }
+
+            while (isPaused()) {
+                if (isCancelled()) {
+                    output.close()
+                    input.close()
+                    connection.disconnect()
+                    targetFile.delete()
+                    return@withContext false
+                }
+                delay(200)
+                lastProgressTime = System.currentTimeMillis()
+                bytesSinceLastCheck = 0L
+            }
+
+            bytesRead = input.read(buffer)
+            if (bytesRead == -1) break
+
             output.write(buffer, 0, bytesRead)
             bytesDownloaded += bytesRead
-            onProgress(bytesDownloaded, totalBytes)
+            bytesSinceLastCheck += bytesRead
+
+            val now = System.currentTimeMillis()
+            val timeDiff = now - lastProgressTime
+            if (timeDiff >= 350) {
+                currentSpeed = if (timeDiff > 0) (bytesSinceLastCheck * 1000L) / timeDiff else 0L
+                lastProgressTime = now
+                bytesSinceLastCheck = 0L
+                val remainingBytes = if (totalBytes > bytesDownloaded) totalBytes - bytesDownloaded else 0L
+                val etaSeconds = if (currentSpeed > 0) remainingBytes / currentSpeed else -1L
+                onProgress(bytesDownloaded, totalBytes, currentSpeed, etaSeconds)
+            }
         }
 
         output.flush()
         output.close()
         input.close()
         connection.disconnect()
+
+        onProgress(bytesDownloaded, totalBytes, currentSpeed, 0L)
         Logger.i(TAG, "Download finished successfully: $targetPath ($bytesDownloaded bytes)")
         true
     } catch (e: Exception) {

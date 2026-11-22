@@ -1,10 +1,10 @@
 {
-  "versionName": "0.14.1",
-  "versionCode": 18,
+  "versionName": "0.15.0",
+  "versionCode": 19,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.14.1/PRVN-Music-0.14.0-arm64-v8a-release.apk",
-  "size": 30505890,
-  "sha256": "0a44e2e5f08dfb5e74a39844b2b80b9b2e067353085fd6383257bb72f3d1008b",
-  "releaseNotes": "PRVN Music v0.14.0 (Build 18): Native In-App Updater with background download, progress bar & FileProvider installer; eliminated Tidal HTTP 429 errors with LRU cache and circuit-breaker; Spotify auth session guard; authentic listening receipts with real statistics and privacy toggles; Listen Together community queue voting; complete PRVN Music branding.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.15.0/PRVN-Music-0.15.0-arm64-v8a-release.apk",
+  "size": 35090958,
+  "sha256": "9f1c5c708cdaea19fd2c2ff0f308e0b6eeab84b0e522c3c01c905a8190e04847",
+  "releaseNotes": "PRVN Music v0.15.0 (Build 19):\n- Universal Native In-App Updater with background download, byte counters, speed, ETA, pause/resume, cancel & SHA-256 integrity verification.\n- High-contrast button typography across dark and liquid glass themes.\n- Full 16-state in-app update machine with unknown app installation permission handling.\n- Complete eradication of upstream SimpMusic branding leaks across all screens, receipts, and localized languages.\n- Elimination of Tidal HTTP 429 errors via LRU cache, deduplication, and circuit-breaker backoff.\n- All 17 official reference logos preserved with in-app launcher icon switching.\n- Production keystore pipeline with v1/v2/v3 signing schemes enabled.",
   "forceUpdate": false
 }

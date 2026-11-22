@@ -72,10 +72,13 @@ import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.LogLevel
 import com.maxrave.logger.Logger
 import com.maxrave.simpmusic.Platform
+import com.maxrave.simpmusic.expect.checkInstallPermission
 import com.maxrave.simpmusic.expect.downloadFileWithProgress
 import com.maxrave.simpmusic.expect.getAppCacheDir
 import com.maxrave.simpmusic.expect.getDownloadFolderPath
 import com.maxrave.simpmusic.expect.installDownloadedApk
+import com.maxrave.simpmusic.expect.openInstallPermissionSettings
+import com.maxrave.simpmusic.expect.verifyApk
 import kotlinx.coroutines.IO
 import com.maxrave.simpmusic.expect.isOnUnmeteredNetwork
 import com.maxrave.simpmusic.expect.ui.toByteArray
@@ -1248,10 +1251,33 @@ class SharedViewModel(
 
     sealed class InAppUpdateState {
         data object Idle : InAppUpdateState()
+        data object Checking : InAppUpdateState()
         data class UpdateAvailable(val updateData: UpdateData) : InAppUpdateState()
+        data class Downloading(
+            val bytesDownloaded: Long,
+            val totalBytes: Long,
+            val progress: Float,
+            val speedBps: Long = 0L,
+            val etaSeconds: Long = -1L,
+            val updateData: UpdateData,
+        ) : InAppUpdateState()
+        data class Paused(
+            val bytesDownloaded: Long,
+            val totalBytes: Long,
+            val progress: Float,
+            val updateData: UpdateData,
+        ) : InAppUpdateState()
+        data class Verifying(val statusText: String = "Verifying APK integrity & signature...") : InAppUpdateState()
+        data class DownloadComplete(val filePath: String, val updateData: UpdateData) : InAppUpdateState()
+        data class InstallPermissionRequired(val filePath: String, val updateData: UpdateData) : InAppUpdateState()
+        data class InstallReady(val filePath: String, val updateData: UpdateData) : InAppUpdateState()
+        data class Installing(val filePath: String) : InAppUpdateState()
+        data object InstallSuccess : InAppUpdateState()
+        data class InstallFailed(val reason: String, val filePath: String) : InAppUpdateState()
         data class UpToDate(val versionName: String) : InAppUpdateState()
-        data class Downloading(val bytesDownloaded: Long, val totalBytes: Long, val progress: Float) : InAppUpdateState()
-        data class ReadyToInstall(val filePath: String) : InAppUpdateState()
+        data class NetworkError(val message: String) : InAppUpdateState()
+        data class InvalidApk(val reason: String, val filePath: String? = null) : InAppUpdateState()
+        data class SignatureMismatch(val installedCert: String, val apkCert: String, val filePath: String) : InAppUpdateState()
         data class Error(val message: String) : InAppUpdateState()
     }
 
@@ -1262,11 +1288,16 @@ class SharedViewModel(
     val inAppUpdateState: StateFlow<InAppUpdateState> = _inAppUpdateState
 
     private var updateDownloadJob: Job? = null
+    private var isDownloadPaused = false
+    private var isDownloadCancelled = false
 
     fun checkForUpdate(isManual: Boolean = false) {
         // Raised before the coroutine starts, so Home's launch banner, which reads it right after
         // startup, can never miss a check that is already under way but not yet marked.
         _isCheckingUpdate.value = true
+        if (isManual) {
+            _inAppUpdateState.value = InAppUpdateState.Checking
+        }
         viewModelScope.launch {
             val updateChannel = dataStoreManager.updateChannel.first()
             dataStoreManager.putString(
@@ -1289,7 +1320,7 @@ class SharedViewModel(
                     else -> {
                         log("Check for update error: ${response.message}", LogLevel.WARN)
                         if (isManual) {
-                            _inAppUpdateState.value = InAppUpdateState.Error(response.message ?: "Could not check for update")
+                            _inAppUpdateState.value = InAppUpdateState.NetworkError(response.message ?: "Could not check for update")
                         }
                     }
                 }
@@ -1313,34 +1344,124 @@ class SharedViewModel(
         }
         val targetPath = "${getAppCacheDir()}/PRVN-Music-${updateData.tagName}.apk"
 
+        isDownloadPaused = false
+        isDownloadCancelled = false
         updateDownloadJob?.cancel()
         updateDownloadJob = viewModelScope.launch(Dispatchers.IO) {
-            _inAppUpdateState.value = InAppUpdateState.Downloading(0L, updateData.size ?: -1L, 0f)
+            _inAppUpdateState.value = InAppUpdateState.Downloading(
+                bytesDownloaded = 0L,
+                totalBytes = updateData.size ?: -1L,
+                progress = 0f,
+                speedBps = 0L,
+                etaSeconds = -1L,
+                updateData = updateData,
+            )
             val success = downloadFileWithProgress(
                 url = downloadUrl,
                 targetPath = targetPath,
-                onProgress = { downloaded, total ->
+                onProgress = { downloaded, total, speed, eta ->
                     val progress = if (total > 0) downloaded.toFloat() / total.toFloat() else 0f
-                    _inAppUpdateState.value = InAppUpdateState.Downloading(downloaded, total, progress)
+                    if (!isDownloadPaused) {
+                        _inAppUpdateState.value = InAppUpdateState.Downloading(
+                            bytesDownloaded = downloaded,
+                            totalBytes = total,
+                            progress = progress,
+                            speedBps = speed,
+                            etaSeconds = eta,
+                            updateData = updateData,
+                        )
+                    }
                 },
+                isCancelled = { isDownloadCancelled },
+                isPaused = { isDownloadPaused },
             )
 
             if (success) {
-                _inAppUpdateState.value = InAppUpdateState.ReadyToInstall(targetPath)
-                installDownloadedApk(targetPath)
-            } else {
-                _inAppUpdateState.value = InAppUpdateState.Error("Download failed. Tap to retry or open in browser.")
+                _inAppUpdateState.value = InAppUpdateState.Verifying()
+                val verifyResult = verifyApk(targetPath)
+                if (!verifyResult.isValid) {
+                    if (!verifyResult.isSignatureMatch) {
+                        _inAppUpdateState.value = InAppUpdateState.SignatureMismatch(
+                            installedCert = verifyResult.installedCert,
+                            apkCert = verifyResult.apkCert,
+                            filePath = targetPath,
+                        )
+                    } else {
+                        _inAppUpdateState.value = InAppUpdateState.InvalidApk(
+                            reason = verifyResult.errorMessage ?: "APK integrity or compatibility validation failed",
+                            filePath = targetPath,
+                        )
+                    }
+                    return@launch
+                }
+
+                _inAppUpdateState.value = InAppUpdateState.DownloadComplete(targetPath, updateData)
+
+                if (!checkInstallPermission()) {
+                    _inAppUpdateState.value = InAppUpdateState.InstallPermissionRequired(targetPath, updateData)
+                } else {
+                    _inAppUpdateState.value = InAppUpdateState.InstallReady(targetPath, updateData)
+                    installDownloadedApk(targetPath)
+                }
+            } else if (!isDownloadCancelled) {
+                _inAppUpdateState.value = InAppUpdateState.NetworkError("Download failed. Tap to retry or verify network.")
             }
         }
     }
 
+    fun pauseInAppUpdate() {
+        val current = _inAppUpdateState.value
+        if (current is InAppUpdateState.Downloading) {
+            isDownloadPaused = true
+            _inAppUpdateState.value = InAppUpdateState.Paused(
+                bytesDownloaded = current.bytesDownloaded,
+                totalBytes = current.totalBytes,
+                progress = current.progress,
+                updateData = current.updateData,
+            )
+        }
+    }
+
+    fun resumeInAppUpdate() {
+        val current = _inAppUpdateState.value
+        if (current is InAppUpdateState.Paused) {
+            isDownloadPaused = false
+            _inAppUpdateState.value = InAppUpdateState.Downloading(
+                bytesDownloaded = current.bytesDownloaded,
+                totalBytes = current.totalBytes,
+                progress = current.progress,
+                speedBps = 0L,
+                etaSeconds = -1L,
+                updateData = current.updateData,
+            )
+        }
+    }
+
+    fun cancelInAppUpdate() {
+        isDownloadCancelled = true
+        isDownloadPaused = false
+        updateDownloadJob?.cancel()
+        _inAppUpdateState.value = InAppUpdateState.Idle
+    }
+
+    fun requestInstallPermission() {
+        openInstallPermissionSettings()
+    }
+
     fun installApkNow(filePath: String) {
-        installDownloadedApk(filePath)
+        if (!checkInstallPermission()) {
+            openInstallPermissionSettings()
+        } else {
+            _inAppUpdateState.value = InAppUpdateState.Installing(filePath)
+            val launched = installDownloadedApk(filePath)
+            if (!launched) {
+                _inAppUpdateState.value = InAppUpdateState.InstallFailed("Failed to launch package installer", filePath)
+            }
+        }
     }
 
     fun resetInAppUpdateState() {
-        updateDownloadJob?.cancel()
-        _inAppUpdateState.value = InAppUpdateState.Idle
+        cancelInAppUpdate()
     }
 
     /**

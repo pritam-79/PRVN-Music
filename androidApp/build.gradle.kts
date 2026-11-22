@@ -83,6 +83,35 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreFile = System.getenv("PRVN_KEYSTORE_FILE") ?: project.findProperty("PRVN_KEYSTORE_FILE") as? String
+            val keystorePassword = System.getenv("PRVN_KEYSTORE_PASSWORD") ?: project.findProperty("PRVN_KEYSTORE_PASSWORD") as? String
+            val keyAlias = System.getenv("PRVN_KEY_ALIAS") ?: project.findProperty("PRVN_KEY_ALIAS") as? String
+            val keyPassword = System.getenv("PRVN_KEY_PASSWORD") ?: project.findProperty("PRVN_KEY_PASSWORD") as? String
+
+            if (!keystoreFile.isNullOrEmpty() && file(keystoreFile).exists()) {
+                storeFile = file(keystoreFile)
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            } else {
+                storeFile = signingConfigs.getByName("debug").storeFile
+                storePassword = signingConfigs.getByName("debug").storePassword
+                this.keyAlias = signingConfigs.getByName("debug").keyAlias
+                this.keyPassword = signingConfigs.getByName("debug").keyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -99,7 +128,7 @@ android {
                     include(*abis)
                 }
             }
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false

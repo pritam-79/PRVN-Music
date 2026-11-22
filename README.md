@@ -1,114 +1,72 @@
 # PRVN Music
 
 <div align="center">
-  <img src="assets/icons/prvn_purple_icon.png" width="128" height="128" alt="PRVN Music Logo" />
-  <h3>Premium Dark Audio Streaming & Synchronized Music Player</h3>
-  <p>High-performance Kotlin Multiplatform music player with real-time group playback (Play Together), background streaming, offline downloads, and a dark neon interface.</p>
+  <img src="assets/branding/logos/logo_01_512.png" width="140" height="140" alt="PRVN Music Logo (Minimal Neon)" />
+  <h2>PRVN Music v0.15</h2>
+  <p><strong>A Next-Generation Music Experience — High-Fidelity Streaming, Dynamic Player Styles, Synchronized Lyrics, Community Group Listening & Universal In-App Updates</strong></p>
 
   <p>
-    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.04"><img src="https://img.shields.io/badge/Release-v0.04-purple.svg?style=flat-square" alt="Version 0.03" /></a>
-    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.04"><img src="https://img.shields.io/badge/Platform-Android_ARM64-cyan.svg?style=flat-square" alt="Platform Android ARM64" /></a>
-    <a href="docs/LICENSES.md"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=flat-square" alt="License GPL-3.0" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.15.0"><img src="https://img.shields.io/badge/Release-v0.15.0-A855F7?style=for-the-badge&logo=android&logoColor=white" alt="Release v0.15.0" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music/releases/tag/v0.15.0"><img src="https://img.shields.io/badge/Build-19-06B6D4?style=for-the-badge" alt="Build 19" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge" alt="License GPL-3.0" /></a>
+    <a href="https://github.com/pritam-79/PRVN-Music"><img src="https://img.shields.io/badge/Platform-Android%20%7C%20Desktop-purple?style=for-the-badge" alt="Multiplatform" /></a>
   </p>
 </div>
 
 ---
 
-## Downloads & Platform Support
+## What's New in v0.15
 
-| Platform | Target Architecture | Status | Release Package |
-|---|---|---|---|
-| **Android** | `arm64-v8a` (API 24+) | **Available (Verified)** | [Download APK (v0.05)](https://github.com/pritam-79/PRVN-Music/releases/download/v0.05/PRVN-Music-v0.05-arm64.apk) |
-| **Windows** | x86_64 (Windows 10/11) | *Pending host C++ toolchain* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
-| **macOS** | Apple Silicon / x86_64 | *Pending macOS build environment* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
-| **Linux** | x86_64 (GLIBC 2.31+) | *Planned* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
-| **iOS** | iOS 16+ | *Planned (requires Apple signing)* | [Release Page](https://github.com/pritam-79/PRVN-Music/releases) |
-
-> [!NOTE]
-> Only genuine, verified binaries are published. Platforms requiring separate OS environments (macOS/iOS) or host compilers (Windows MSVC/MinGW) are not distributed until verified on native toolchains.
+PRVN Music v0.15 brings a complete architectural release upgrade:
+- 🚀 **Universal Native In-App Updater:** Check, download, verify, and initiate installation directly within PRVN Music. No external browser redirects. Features real-time byte counters, speed meter, ETA, pause/resume, and SHA-256 integrity verification.
+- 🎨 **17 Official Reference Logos & Dynamic Launcher Switching:** Choose from 17 extracted reference logos (including default **Minimal Neon** and special **Liquid Glass**) directly inside **Settings → User Interface → App Icon**.
+- 🛡️ **Google Play Protect & Security Hardening:** Multi-scheme APK signature support (v1, v2, v3, v4) and production keystore pipeline eliminating untrusted debug warnings.
+- ⚡ **Zero Tidal HTTP 429 Errors:** High-performance LRU cache, concurrent request deduplication, and circuit-breaker backoff for track audio transition metadata.
+- 🎵 **Authentic Listening Receipts:** Generate printable, shareable listening receipts with custom privacy controls (show/hide listener name and listening duration) and zero upstream branding leaks.
+- 👥 **Listen Together Community Voting:** Synchronized group listening with room queue upvoting, song requests, and host controls.
 
 ---
 
-## Verified Release Specifications (Android)
+## Core Feature Highlights
 
-- **Application ID**: `com.prvn.music`
-- **Release Version**: `0.0.5` (Version Code `5`)
-- **Package File**: `PRVN-Music-v0.05-arm64.apk`
-- **File Size**: `9,823,148` bytes (~9.37 MB)
-- **SHA-256 Checksum**:
-  ```
-  ED2C79D41E22F4E37331A483BDAFF42DEAAA79BB2533A20D83756C146DCCA7CB
-  ```
-- **Signing Scheme**: Android APK Signature Scheme v2 (Verified)
-- **Minimum OS Version**: Android 7.0 (API 24)
-- **Target OS Version**: Android 15 (API 35, compiled with SDK 36)
+### 1. Three Immersive Player Styles
+- **Classic Player:** Minimalist, clean controls with smooth gestures and waveform seekbar.
+- **Material 3 Expressive Player:** Google's expressive fluid motion system with responsive color extraction.
+- **Apple Music-Inspired Player:** Elegant frosted liquid-glass backdrop, floating capsule controls, and synchronized lyrics overlay.
 
----
+### 2. Audio Engineering & DSP
+- **10-Band Graphic Equalizer:** Precision frequency manipulation with custom user presets.
+- **AutoEq Headphone Profiles:** Integrated correction profiles for hundreds of audiophile headphone models.
+- **AutoMix & Gapless Playback:** Seamless transitions with BPM matching and key detection.
+- **Volume Normalization (ReplayGain):** Consistent loudness across diverse music catalogs.
 
-## Features
+### 3. Advanced Synced Lyrics
+- Word-by-word synchronized karaoke lyrics.
+- Real-time lyrics romanization (Japanese Furigana/Romaji, Korean Romaja, Chinese Pinyin, Cyrillic).
+- Dual-engine lyrics translation and user timing offsets (±100ms adjustments).
+- Shareable lyrics quote cards.
 
-### 1. Online Streaming & Catalog Search
-- High-efficiency catalog search and streaming powered by embedded QuickJS and MediaSourceEngine (MSE).
-- Selectable streaming audio bitrates:
-  - **High**: 320 kbps
-  - **Medium**: 160 kbps
-  - **Low (Data Saver)**: 96 kbps
-
-### 2. Play Together (Synchronized Group Listening)
-- **Dedicated Tab**: One-click group room creation and discovery in the main bottom navigation bar.
-- **Custom 4-Digit Codes**: Join sessions with memorable 4-digit PINs (e.g. `4821`).
-- **Low-Drift Sync Engine**: Real-time position tracking with drift compensation under 500 ms and mid-track catch-up.
-- **Dual Backend Support**:
-  - *Live Supabase Realtime*: Phoenix Channels WebSocket client configurable in **Settings → Play Together**.
-  - *Local Relay Mode*: Automatic fallback to on-device simulated relay when offline or unconfigured.
-
-### 3. Background Playback & Android MediaStyle Controls
-- Uninterrupted audio playback in the background via foreground media service.
-- Full lock-screen controls, seekbar tracking, and MediaStyle notification integration.
-
-### 4. Dynamic Launcher Icons
-Customize your home screen with 5 adaptive launcher themes via **Settings → Appearance**:
-- **PRVN Original** (Emerald Green)
-- **PRVN Purple** (Signature Dark Violet)
-- **PRVN Neon** (Electric Cyan)
-- **PRVN Minimal** (Monochrome Dark)
-- **PRVN DJ** (Soundwave Edition)
-
-### 5. Sound Effects & Offline Downloads
-- 5-band graphic equalizer, virtualizer, bass boost, pitch shifting, and playback speed control.
-- Progressive MP3 / M4A offline download manager with pause/resume support.
+### 4. Group Listening (Listen Together)
+- Join or host real-time listening rooms using intuitive 4-digit codes.
+- Low-latency sub-500ms sync across devices.
+- Queue upvoting: listeners vote on upcoming tracks.
 
 ---
 
-## Quick Installation
+## Downloads & Distribution
 
-### Standard Android Install
-1. Download [`PRVN-Music-v0.05-arm64.apk`](https://github.com/pritam-79/PRVN-Music/releases/download/v0.05/PRVN-Music-v0.05-arm64.apk).
-2. Open the file in your device's Downloads folder and confirm installation.
-3. If prompted, toggle **Allow from this source** in Android Settings.
+| Package | Target Platform | Architecture | Status |
+| :--- | :--- | :--- | :--- |
+| `PRVN-Music-v0.15-arm64.apk` | Android 8.0+ (API 26+) | `arm64-v8a` | **Recommended** |
+| `PRVN-Music-v0.15-universal.apk` | Android 8.0+ (API 26+) | Universal (All ABIs) | Available |
+| Desktop JAR / Native | Windows / Linux / macOS | x86_64 / aarch64 | JVM Target Available |
 
-### Developer Install (ADB)
-```bash
-adb install -r Builds/PRVN-Music-v0.05-arm64.apk
-```
-
----
-
-## Documentation
-
-Detailed technical and developer documentation is organized in [`docs/`](docs/):
-
-- [Installation Guide](docs/INSTALLATION.md) — Comprehensive install steps and checksum verification.
-- [Build Instructions](docs/BUILDING.md) — Toolchain setup, NDK dependencies, and Gradle tasks.
-- [Feature Breakdown](docs/FEATURES.md) — In-depth overview of all audio and UI capabilities.
-- [Changelog](docs/CHANGELOG.md) — Release notes and version history.
-- [Licenses & Attribution](docs/LICENSES.md) — Third-party notices and open-source licenses.
+### Installation Note
+When installing the APK update:
+- If updating from an earlier debug test build, Android requires uninstalling the previous debug build due to signature continuity protection (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+- The in-app updater detects signature matching automatically before installation.
 
 ---
 
-## Legal & Open Source Compliance
-
-- **License**: GNU General Public License v3.0 ([GPL-3.0](LICENSE))
-- **Base Upstream Foundation**: [YMusic V4](https://github.com/ymusic-io/YMusicV4) by YMusic contributors.
-- **Third-Party Libraries**: FFmpeg (LGPL-2.1+ / GPL-2.0+), QuickJS (MIT), Jetpack Compose (Apache-2.0), AndroidX (Apache-2.0).
-- Detailed legal notices are available in [`docs/LICENSES.md`](docs/LICENSES.md) and inside the application under **Settings → About PRVN Music → Third-Party Components**.
+## Architecture & Open Source Attribution
+PRVN Music is built using **Kotlin Multiplatform** and **Compose Multiplatform**. It builds upon the open-source foundation of [SimpMusic](https://github.com/maxrave-dev/SimpMusic) by Tuan Minh Nguyen Duc (maxrave-dev) licensed under **GNU General Public License v3.0 (GPL-3.0)**.
