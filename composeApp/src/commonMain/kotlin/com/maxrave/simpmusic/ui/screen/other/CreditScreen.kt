@@ -110,7 +110,7 @@ fun CreditScreen(
 
         // Developer - clickable, opens github
         Text(
-            text = "PRVN",
+            text = "Developed by Pritam",
             style = typo().bodyMedium,
             textDecoration = TextDecoration.Underline,
             modifier =

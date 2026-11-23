@@ -1,0 +1,253 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9B0000012C00000100000001 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0000022C00000100000001 /* iOSApp.swift */; };
+		9B0000032C00000100000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0000042C00000100000001 /* ContentView.swift */; };
+		9B0000052C00000100000001 /* IosAudioSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0000062C00000100000001 /* IosAudioSessionManager.swift */; };
+		9B0000072C00000100000001 /* NowPlayingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0000082C00000100000001 /* NowPlayingManager.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		9B0000002C00000100000001 /* PRVN Music.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "PRVN Music.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B0000022C00000100000001 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
+		9B0000042C00000100000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		9B0000062C00000100000001 /* IosAudioSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosAudioSessionManager.swift; sourceTree = "<group>"; };
+		9B0000082C00000100000001 /* NowPlayingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingManager.swift; sourceTree = "<group>"; };
+		9B0000092C00000100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9B00000A2C00000100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		9B00000B2C00000100000001 = {
+			isa = PBXGroup;
+			children = (
+				9B00000C2C00000100000001 /* iosApp */,
+				9B00000D2C00000100000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9B00000C2C00000100000001 /* iosApp */ = {
+			isa = PBXGroup;
+			children = (
+				9B0000022C00000100000001 /* iOSApp.swift */,
+				9B0000042C00000100000001 /* ContentView.swift */,
+				9B00000E2C00000100000001 /* Audio */,
+				9B0000092C00000100000001 /* Info.plist */,
+			);
+			path = iosApp;
+			sourceTree = "<group>";
+		};
+		9B00000E2C00000100000001 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				9B0000062C00000100000001 /* IosAudioSessionManager.swift */,
+				9B0000082C00000100000001 /* NowPlayingManager.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		9B00000D2C00000100000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9B0000002C00000100000001 /* PRVN Music.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		9B00000F2C00000100000001 /* iosApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9B0000102C00000100000001 /* Build configuration list for PBXNativeTarget "iosApp" */;
+			buildPhases = (
+				9B0000112C00000100000001 /* Sources */,
+				9B00000A2C00000100000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iosApp;
+			productName = iosApp;
+			productReference = 9B0000002C00000100000001 /* PRVN Music.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9B0000122C00000100000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1530;
+				LastUpgradeCheck = 1530;
+				TargetAttributes = {
+					9B00000F2C00000100000001 = {
+						CreatedOnToolsVersion = 15.3;
+					};
+				};
+			};
+			buildConfigurationList = 9B0000132C00000100000001 /* Build configuration list for PBXProject "iosApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 9B00000B2C00000100000001;
+			productRefGroup = 9B00000D2C00000100000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9B00000F2C00000100000001 /* iosApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9B0000112C00000100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9B0000012C00000100000001 /* iOSApp.swift in Sources */,
+				9B0000032C00000100000001 /* ContentView.swift in Sources */,
+				9B0000052C00000100000001 /* IosAudioSessionManager.swift in Sources */,
+				9B0000072C00000100000001 /* NowPlayingManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		9B0000142C00000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		9B0000152C00000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		9B0000162C00000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = iosApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.01;
+				PRODUCT_BUNDLE_IDENTIFIER = com.prvn.music;
+				PRODUCT_NAME = "PRVN Music";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9B0000172C00000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = iosApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.01;
+				PRODUCT_BUNDLE_IDENTIFIER = com.prvn.music;
+				PRODUCT_NAME = "PRVN Music";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9B0000132C00000100000001 /* Build configuration list for PBXProject "iosApp" */;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+			buildConfigurations = (
+				9B0000142C00000100000001 /* Debug */,
+				9B0000152C00000100000001 /* Release */,
+			);
+		};
+		9B0000102C00000100000001 /* Build configuration list for PBXNativeTarget "iosApp" */;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+			buildConfigurations = (
+				9B0000162C00000100000001 /* Debug */,
+				9B0000172C00000100000001 /* Release */,
+			);
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 9B0000122C00000100000001 /* Project object */;
+}

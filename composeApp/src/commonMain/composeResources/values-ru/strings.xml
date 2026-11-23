@@ -141,7 +141,7 @@
     <string name="about_us">О нас</string>
     <string name="version">Версия</string>
     <string name="github">Github</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="follow_me_on_x">Следите за мной на X</string>
     <string name="buy_me_a_coffee">Купите мне кофе</string>
     <string name="developer_blog">Блог разработчика</string>
@@ -306,7 +306,7 @@
     <string name="older_first">Сначала старые</string>
     <string name="newer_first">Сначала новые</string>
     <string name="added_date">Дата добавления</string>
-    <string name="credit_app">Простое музыкальное приложение, использующее YouTube Music в качестве серверной части. \n\nPRVN Music — это проект с открытым исходным кодом для потоковой передачи музыки с YouTube и YouTube Music без рекламы и отслеживания. PRVN Music предоставляет множество функций:\n\n - Потоковое воспроизведение музыки \n - Синхронизированные тексты песен\n - Персонализация данных\n - и т. д. \n\nPRVN Music бесплатен и без рекламы\n\nСоздал с ❤️ Туан Минь Нгуен Дык (maxrave-dev)</string>
+    <string name="credit_app">Простое музыкальное приложение, использующее YouTube Music в качестве серверной части. \n\nPRVN Music — это проект с открытым исходным кодом для потоковой передачи музыки с YouTube и YouTube Music без рекламы и отслеживания. PRVN Music предоставляет множество функций:\n\n - Потоковое воспроизведение музыки \n - Синхронизированные тексты песен\n - Персонализация данных\n - и т. д. \n\nPRVN Music бесплатен и без рекламы\n\nСоздал с ❤️ Туан Минь Нгуен Дык (pritam-79)</string>
     <string name="issue_tracker">Трекер проблем</string>
     <string name="featured_playlists">Избранные плейлисты</string>
     <string name="featured_inArtist">Где встречается</string>
@@ -526,8 +526,6 @@
     <string name="if_you_enjoy_using_simpmusic_star_simpmusic_on_github_or_leave_a_review_on">Если вам нравится пользоваться PRVN Music, оцените PRVN Music на GitHub или оставьте свой отзыв на</string>
     <string name="if_you_love_my_work_consider">"Если вам нравится моя работа, рассмотрите "</string>
     <string name="buying_me_a_coffee">купить мне кофе.</string>
-    <string name="footguns_promo_title">Все ловушки, в которые я попал</string>
-    <string name="footguns_promo_message">Я потратил много ночей, борясь с проблемами Kotlin и Compose, о которых не было написано нигде в документации, ради PRVN Music. Я задокументировал каждую из них в kotlin-footguns, чтобы вам не пришлось тратить на эти проблемы столько же. Если это помогло сохранить хотя бы одну из ваших ночей, поставьте, пожалуйста, звезду. Я буду очень признателен.</string>
     <string name="fade_audio_effect">Эффект затухания звука</string>
     <string name="disabled">Отключить</string>
     <string name="fade_audio_effect_duration">Продолжительность эффекта затухания звука (мс) (Установите 0 для отключения)</string>

@@ -28,6 +28,7 @@ data class RoomMember(
     val isConnected: Boolean,
     /** True while this member has not reported the current track as ready. */
     val isBuffering: Boolean = false,
+    val hasControlAccess: Boolean = false,
 )
 
 data class RoomJoinRequest(
@@ -42,6 +43,7 @@ data class RoomTrack(
     val album: String = "",
     val durationMs: Long = 0L,
     val thumbnail: String = "",
+    val addedByUsername: String = "",
 )
 
 data class RoomSuggestion(
@@ -72,9 +74,13 @@ data class ListenTogetherRoom(
     /** The code we asked to join and have not heard back about. */
     val pendingJoinCode: String? = null,
     val error: String? = null,
+    val roomPermission: String = "host_only",
+    val approvedControlUserIds: Set<String> = emptySet(),
 ) {
     val inRoom: Boolean get() = roomCode != null
     val isConnected: Boolean get() = connection is RoomConnection.Connected
+    val canControlPlayback: Boolean
+        get() = isHost || roomPermission == "everyone" || (roomPermission == "approved" && selfUserId in approvedControlUserIds)
 
     /** Names, not ids — "Waiting for Long" is the only useful phrasing of the barrier. */
     val waitingForNames: List<String>

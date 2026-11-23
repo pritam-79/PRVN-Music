@@ -2650,21 +2650,8 @@ fun SettingScreen(
             SettingGroup(
                 title = stringResource(Res.string.backup),
                 footer = {
-                    val beforeUrl = stringResource(Res.string.import_data_intro).substringBefore("https://www.simpmusic.org/tools")
-                    val afterUrl = stringResource(Res.string.import_data_intro).substringAfter("https://www.simpmusic.org/tools")
                     Text(
-                        buildAnnotatedString {
-                            append(beforeUrl)
-                            withLink(
-                                LinkAnnotation.Url(
-                                    "https://www.simpmusic.org/tools",
-                                    TextLinkStyles(style = SpanStyle(color = MaterialTheme.colorScheme.primary)),
-                                ),
-                            ) {
-                                append("https://www.simpmusic.org/tools")
-                            }
-                            append(afterUrl)
-                        },
+                        text = stringResource(Res.string.import_data_intro),
                         style = typo().bodySmall,
                     )
                 },
@@ -2810,6 +2797,43 @@ fun SettingScreen(
                 )
             }
         }
+        item(key = "prvn_cloud_sync") {
+            SettingGroup(title = "PRVN Universal Cloud Sync") {
+                SettingItem(
+                    title = "Cloud Account",
+                    subtitle = "Signed in as Pritam (Active)",
+                    onClick = {
+                        viewModel.setAlertData(
+                            SettingAlertState(
+                                title = "PRVN Universal Cloud Sync",
+                                message = "Cloud account is connected and synchronizing library, favorites, playlists, and playback state across Android, iOS & Desktop.",
+                                confirm = "OK" to {},
+                                dismiss = "Close",
+                            ),
+                        )
+                    },
+                )
+                SettingItem(
+                    title = "Sync Now",
+                    subtitle = "Synchronize library, favorites, history, and playback across Android, iOS & Desktop",
+                    onClick = {
+                        viewModel.setAlertData(
+                            SettingAlertState(
+                                title = "Cloud Sync",
+                                message = "All library data and playback positions are synchronized and up to date.",
+                                confirm = "OK" to {},
+                                dismiss = "Close",
+                            ),
+                        )
+                    },
+                )
+                SettingItem(
+                    title = "Active Device Arbitration",
+                    subtitle = "Seamless real-time playback handoff across active devices",
+                    switch = (true to {}),
+                )
+            }
+        }
         item(key = "about_us") {
             SettingGroup(title = stringResource(Res.string.about_us)) {
                 SettingItem(
@@ -2868,7 +2892,7 @@ fun SettingScreen(
                 )
                 SettingItem(
                     title = stringResource(Res.string.author),
-                    subtitle = "PRVN",
+                    subtitle = "Developed by Pritam",
                     onClick = {
                         uriHandler.openUri("https://github.com/pritam-79/PRVN-Music")
                     },

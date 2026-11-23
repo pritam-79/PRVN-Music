@@ -1,6 +1,13 @@
 # PRVN Music Release Checksums
 # Format: SHA-256  Filename
 
+# v0.16.2 (Build 22)
+e1c21237e3f7374567b7a6b5a5961cc8002de584cce18b2ba70af4772a9d930e  PRVN-Music-v0.16.2-arm64.apk
+e1c21237e3f7374567b7a6b5a5961cc8002de584cce18b2ba70af4772a9d930e  PRVN-Music-0.16.2-arm64-v8a-release.apk
+a878ddd6c54a365e70ae91376dc0deef745d208155f30311e26be21416ddaf83  PRVN-Music-v0.16.2-universal.apk
+a878ddd6c54a365e70ae91376dc0deef745d208155f30311e26be21416ddaf83  PRVN-Music-0.16.2-universal-release.apk
+0ca3487ab650d5bfdc8fa4c46a50b8768bfb600361d25a5cd740492cdc7da053  PRVN-Music-v0.16.2.aab
+
 # v0.16.1 (Build 21)
 c0a84b92d4cfc56efd017f528da3e1b741ec9dd6114d74385af23609f58c3373  PRVN-Music-v0.16.1-arm64.apk
 c0a84b92d4cfc56efd017f528da3e1b741ec9dd6114d74385af23609f58c3373  PRVN-Music-0.16.1-arm64-v8a-release.apk

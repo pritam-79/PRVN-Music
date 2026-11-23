@@ -140,7 +140,7 @@
     <string name="about_us">אודות</string>
     <string name="version">גרסה</string>
     <string name="github">Github</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="follow_me_on_x">עקוב אחריי ב-X</string>
     <string name="buy_me_a_coffee">קנה לי קפה</string>
     <string name="developer_blog">בלוג המפתח</string>
@@ -306,7 +306,7 @@
     <string name="newer_first">החדש ביותר תחילה</string>
     <string name="added_date">תאריך הוספה</string>
     <string name="credit_app">אפליקציית מוזיקה פשוטה המשתמשת ב-YouTube Music כבסיס. \n\nPRVN Music הוא פרויקט קוד פתוח להזרמת מוזיקה מ-YouTube ו-YouTube Music ללא פרסומות ומעקבים. PRVN Music מספקת תכונות רבות:\n\n - הזרמת מוזיקה \n - מילים מסונכרנות\n - התאמה אישית של נתונים\n - ועוד… \n\n
-PRVN Music תמיד בחינם וללא פרסומות \n\nנבנה ב-❤️ מאת Tuan Minh Nguyen Duc (maxrave-dev)</string>
+PRVN Music תמיד בחינם וללא פרסומות \n\nנבנה ב-❤️ מאת Pritam</string>
     <string name="issue_tracker">מעקב אחר בעיות</string>
     <string name="featured_playlists">פלייליסטים נבחרים</string>
     <string name="featured_inArtist">נבחר לככב</string>
@@ -525,8 +525,6 @@ PRVN Music תמיד בחינם וללא פרסומות \n\nנבנה ב-❤️ מ
     <string name="if_you_enjoy_using_simpmusic_star_simpmusic_on_github_or_leave_a_review_on">אם אתם נהנים מהשימוש ב-PRVN Music, סמנו את PRVN Music בכוכב ב-GitHub או השאירו חוות דעת ב</string>
     <string name="if_you_love_my_work_consider">"אם אתם אוהבים את העבודה שלי, תשקלו "</string>
     <string name="buying_me_a_coffee">לקנות לי קפה.</string>
-    <string name="footguns_promo_title">כל מלכודת שנפלתי בה</string>
-    <string name="footguns_promo_message">הפרויקט עלה לי הרבה לילות של מלכודות Kotlin ו-Compose שאף רופא לא הזהיר אותי לגביהן. כתבתי כל אחת מהן, שלא תאבדו את אותם הלילות כמוני. אם זה חסך לכם אפילו לילה אחד, סימון בכוכב יראה לי הערכה רבה.</string>
     <string name="fade_audio_effect">אפקט פייד לאודיו</string>
     <string name="disabled">השבת</string>
     <string name="fade_audio_effect_duration">אורך אפקט פייד לאודיו (מילישניות) (הגדר ל-0 כדי להשבית)</string>

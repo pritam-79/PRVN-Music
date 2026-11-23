@@ -135,7 +135,7 @@
     <string name="about_us">Về tôi</string>
     <string name="version">Phiên bản</string>
     <string name="github">Github</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="follow_me_on_x">Theo dõi tôi trên X</string>
     <string name="buy_me_a_coffee">Hỗ trợ tôi</string>
     <string name="developer_blog">Blog của nhà phát triển</string>
@@ -300,7 +300,7 @@
     <string name="older_first">Cũ trước</string>
     <string name="newer_first">Mới trước</string>
     <string name="added_date">Ngày thêm vào</string>
-    <string name="credit_app">Một ứng dụng âm nhạc đơn giản sử dụng dữ liệu từ YouTube Music \n\nPRVN Music là một dự án nguồn mở để phát nhạc từ YouTube và YouTube Music mà không bị quảng cáo và theo dõi. PRVN Music cung cấp nhiều tính năng:\n\n - Phát nhạc \n - Lời bài hát được đồng bộ hóa\n - Cá nhân hóa dữ liệu\n - v.v… \n\nPRVN Music luôn miễn phí và không có quảng cáo\n\nXây dựng với ❤️ bởi Nguyên Đức Tuấn Minh (maxrave-dev)</string>
+    <string name="credit_app">Một ứng dụng âm nhạc đơn giản sử dụng dữ liệu từ YouTube Music \n\nPRVN Music là một dự án nguồn mở để phát nhạc từ YouTube và YouTube Music mà không bị quảng cáo và theo dõi. PRVN Music cung cấp nhiều tính năng:\n\n - Phát nhạc \n - Lời bài hát được đồng bộ hóa\n - Cá nhân hóa dữ liệu\n - v.v… \n\nPRVN Music luôn miễn phí và không có quảng cáo\n\nXây dựng với ❤️ bởi Pritam</string>
     <string name="issue_tracker">Theo dõi lỗi</string>
     <string name="featured_playlists">Danh sách phát nổi bật</string>
     <string name="featured_inArtist">Nổi bật</string>
@@ -517,8 +517,6 @@
     <string name="if_you_enjoy_using_simpmusic_star_simpmusic_on_github_or_leave_a_review_on">Nếu bạn yêu thích PRVN Music, sao PRVN Music trên GitHub hoặc để lại một đánh giá trên</string>
     <string name="if_you_love_my_work_consider">"Nếu bạn cảm thấy yêu thích những gì tôi làm, có thể "</string>
     <string name="buying_me_a_coffee">mua cho tôi một ly cà phê.</string>
-    <string name="footguns_promo_title">Mỗi cái bẫy tôi rơi vào</string>
-    <string name="footguns_promo_message">PRVN Music đã khiến tôi mất rất nhiều đêm sử dụng bẫy Kotlin và Compose mà chưa có tài liệu nào cảnh báo tôi. Tôi đã viết từng điều trong số đó bằng kotlin-footguns, để bạn không bị thua trong những đêm tương tự. Nếu nó cứu được dù chỉ một người trong số các bạn, một ngôi sao sẽ có ý nghĩa rất lớn đối với tôi.</string>
     <string name="fade_audio_effect">Hiệu ứng làm mờ âm thanh</string>
     <string name="disabled">Tắt</string>
     <string name="fade_audio_effect_duration">Thời gian làm mờ âm thanh (ms) (Đưa về 0 để tắt)</string>

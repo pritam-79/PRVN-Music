@@ -332,6 +332,14 @@ fun ListenTogetherScreen(
                 viewModel.transferHost(member.userId)
                 managing = null
             },
+            onToggleControl = {
+                if (member.hasControlAccess) {
+                    viewModel.revokeControl(member.userId)
+                } else {
+                    viewModel.grantControl(member.userId)
+                }
+                managing = null
+            },
             onKick = {
                 viewModel.kickUser(member.userId)
                 managing = null
@@ -389,6 +397,12 @@ private fun ColumnScope.WorkArea(
                         onReject = viewModel::rejectSuggestion,
                     )
                 }
+            }
+            if (state.isHost) {
+                RoomPermissionsCard(
+                    currentPermission = state.roomPermission,
+                    onPermissionSelect = viewModel::setRoomPermission,
+                )
             }
             Members(
                 members = state.members,
@@ -899,6 +913,19 @@ private fun Members(
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }
+                        } else if (member.hasControlAccess) {
+                            Box(
+                                Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    "Can Control",
+                                    style = typo().labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
+                            }
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -995,9 +1022,66 @@ private fun TextAction(
 }
 
 @Composable
+private fun RoomPermissionsCard(
+    currentPermission: String,
+    onPermissionSelect: (String) -> Unit,
+) {
+    SectionHeader("Room Permissions", 0)
+    Surface {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                "Playback & Queue Control:",
+                style = typo().labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                listOf(
+                    "host_only" to "Host Only",
+                    "everyone" to "Everyone",
+                    "approved" to "Approved",
+                ).forEach { (mode, label) ->
+                    val selected = currentPermission == mode
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable { onPermissionSelect(mode) }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = label,
+                            style = typo().labelSmall,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MemberActionDialog(
     member: RoomMember,
     onTransferHost: () -> Unit,
+    onToggleControl: () -> Unit,
     onKick: () -> Unit,
     onBlock: () -> Unit,
     onDismiss: () -> Unit,
@@ -1023,6 +1107,12 @@ private fun MemberActionDialog(
             }
             Spacer(Modifier.height(16.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DialogAction(
+                    if (member.hasControlAccess) "Revoke Playback Control" else "Grant Playback Control",
+                    if (member.hasControlAccess) "Revoke control over playback and queue" else "Allow controlling playback, queue & tracks",
+                    if (member.hasControlAccess) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    onToggleControl,
+                )
                 DialogAction(
                     stringResource(Res.string.lt_transfer_host),
                     stringResource(Res.string.lt_transfer_host_desc),

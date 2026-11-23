@@ -137,7 +137,7 @@
     <string name="about_us">À propos de nous</string>
     <string name="version">Version</string>
     <string name="github">GitHub</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="follow_me_on_x">Suivez-moi sur X</string>
     <string name="buy_me_a_coffee">Offrez-moi un café ! ☕</string>
     <string name="developer_blog">Blog des développeurs</string>
@@ -302,7 +302,7 @@
     <string name="older_first">Les plus anciens en premier</string>
     <string name="newer_first">Les plus récents en premier</string>
     <string name="added_date">Date d'ajout</string>
-    <string name="credit_app">Une application musicale simple utilisant YouTube Music pour le backend \n\nPRVN Music est un projet open source pour diffuser de la musique à partir de YouTube et YouTube Music sans publicité ni suivi. PRVN Music offre de nombreuses fonctionnalités :\n\n - Streaming de musique \n - Paroles synchronisées\n - Personnaliser les données\n - etc… \n\nPRVN Music est toujours gratuit et sans publicité\n\nConstruit avec ❤️ de Tuan Minh Nguyen Duc (maxrave-dev)</string>
+    <string name="credit_app">Une application musicale simple utilisant YouTube Music pour le backend \n\nPRVN Music est un projet open source pour diffuser de la musique à partir de YouTube et YouTube Music sans publicité ni suivi. PRVN Music offre de nombreuses fonctionnalités :\n\n - Streaming de musique \n - Paroles synchronisées\n - Personnaliser les données\n - etc… \n\nPRVN Music est toujours gratuit et sans publicité\n\nConstruit avec ❤️ de Pritam</string>
     <string name="issue_tracker">Suivi des problèmes</string>
     <string name="featured_playlists">Playlists à la une</string>
     <string name="featured_inArtist">Présenté sur</string>
@@ -520,8 +520,6 @@
     <string name="if_you_enjoy_using_simpmusic_star_simpmusic_on_github_or_leave_a_review_on">Si vous appréciez PRVN Music, ajoutez-le à vos favoris sur GitHub ou laissez un avis sur</string>
     <string name="if_you_love_my_work_consider">"Si vous appréciez mon travail, pensez à "</string>
     <string name="buying_me_a_coffee">m'offrir un café.</string>
-    <string name="footguns_promo_title">Tous les pièges dans lesquels je suis tombé</string>
-    <string name="footguns_promo_message">PRVN Music m'a coûté de nombreuses nuits passées à me débattre avec les pièges de Kotlin et de Compose dont aucune documentation ne m'avait jamais prévenu. Je les ai tous répertoriés dans « kotlin-footguns », pour que vous n'ayez pas à passer les mêmes nuits blanches. Si cela vous en épargne ne serait-ce qu'une seule, une étoile signifierait beaucoup pour moi.</string>
     <string name="fade_audio_effect">Effet audio de fondu</string>
     <string name="disabled">Désactiver</string>
     <string name="fade_audio_effect_duration">Durée de l'effet de fondu audio (ms) (Régler sur 0 pour le désactiver)</string>

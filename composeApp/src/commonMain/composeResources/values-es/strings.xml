@@ -127,7 +127,7 @@
     <string name="about_us">Sobre nosotros</string>
     <string name="version">Versión</string>
     <string name="github">GitHub</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="follow_me_on_x">Sigueme en X</string>
     <string name="buy_me_a_coffee">Cómprame un café</string>
     <string name="developer_blog"></string>
@@ -289,7 +289,7 @@
     <string name="older_first">Primero antiguo</string>
     <string name="newer_first">Primero nuevo</string>
     <string name="added_date">Fecha añadida</string>
-    <string name="credit_app">Una aplicación de música sencilla que utiliza YouTube Music como backend \n\nPRVN Music es un proyecto de código abierto para transmitir música desde YouTube y YouTube Music sin anuncios ni seguimiento. PRVN Music ofrece muchas funciones:\n\n - Transmisión de música \n - Letras sincronizadas\n - Personalizar datos\n - etc... \n\nPRVN Music es siempre gratuito y sin anuncios\n\nCompilado con ❤️ de Tuan Minh Nguyen Duc (maxrave-dev)</string>
+    <string name="credit_app">Una aplicación de música sencilla que utiliza YouTube Music como backend \n\nPRVN Music es un proyecto de código abierto para transmitir música desde YouTube y YouTube Music sin anuncios ni seguimiento. PRVN Music ofrece muchas funciones:\n\n - Transmisión de música \n - Letras sincronizadas\n - Personalizar datos\n - etc... \n\nPRVN Music es siempre gratuito y sin anuncios\n\nCompilado con ❤️ de Pritam</string>
     <string name="issue_tracker">Rastreador de errores</string>
     <string name="featured_playlists">Listas de reproducción destacadas</string>
     <string name="featured_inArtist">Destacado en</string>
@@ -500,7 +500,6 @@
     <string name="if_you_enjoy_using_simpmusic_star_simpmusic_on_github_or_leave_a_review_on">Si te gusta usar PRVN Music, da una estrella a PRVN Music en gituhb o deja una reseña</string>
     <string name="if_you_love_my_work_consider">"Si amas mi trabajo, considera "</string>
     <string name="buying_me_a_coffee">comprame un café.</string>
-    <string name="footguns_promo_title">Every trap I fell into</string>
     <string name="fade_audio_effect">Efecto de desvanecimiento de audio</string>
     <string name="disabled">Desactivar</string>
     <string name="fade_audio_effect_duration">Duración del efecto de fundido (ms) (Establecer a 0 para desactivar)</string>

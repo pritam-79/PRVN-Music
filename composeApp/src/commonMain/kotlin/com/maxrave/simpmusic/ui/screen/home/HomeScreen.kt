@@ -133,14 +133,12 @@ import com.maxrave.simpmusic.extension.mouseDragScroll
 import com.maxrave.simpmusic.extension.rgbFactor
 import com.maxrave.simpmusic.extension.ultraThinBarStyle
 import com.maxrave.simpmusic.getPlatform
-import com.maxrave.simpmusic.ui.component.BlogPromoDialog
 import com.maxrave.simpmusic.ui.component.CenterLoadingBox
 import com.maxrave.simpmusic.ui.component.Chip
 import com.maxrave.simpmusic.ui.component.CreateActions
 import com.maxrave.simpmusic.ui.component.DropdownButton
 import com.maxrave.simpmusic.ui.component.EndOfPage
 import com.maxrave.simpmusic.ui.component.ExpandableChip
-import com.maxrave.simpmusic.ui.component.FootgunsStarDialog
 import com.maxrave.simpmusic.ui.component.HomeDiscoverSection
 import com.maxrave.simpmusic.ui.component.HomeItem
 import com.maxrave.simpmusic.ui.component.HomeItemContentPlaylist
@@ -152,10 +150,7 @@ import com.maxrave.simpmusic.ui.component.LocalUserStarted
 import com.maxrave.simpmusic.ui.component.MoodMomentAndGenreHomeItem
 import com.maxrave.simpmusic.ui.component.NowPlayingBottomSheet
 import com.maxrave.simpmusic.ui.component.OfflineErrorState
-import com.maxrave.simpmusic.ui.component.PromoBanner
-import com.maxrave.simpmusic.ui.component.PromoBannerData
 import com.maxrave.simpmusic.ui.component.QuickPicksItem
-import com.maxrave.simpmusic.ui.component.ReviewDialog
 import com.maxrave.simpmusic.ui.component.SectionHeaderButton
 import com.maxrave.simpmusic.ui.component.ShareSavedLyricsDialog
 import com.maxrave.simpmusic.ui.component.homeCardAspectRatio
@@ -178,9 +173,6 @@ import com.maxrave.simpmusic.ui.theme.LocalLiquidGlassEnabled
 import com.maxrave.simpmusic.ui.theme.desktopPanelDark
 import com.maxrave.simpmusic.ui.theme.typo
 import com.maxrave.simpmusic.utils.VersionManager
-import com.maxrave.simpmusic.utils.eligiblePromos
-import com.maxrave.simpmusic.utils.osRequirementOf
-import com.maxrave.simpmusic.viewModel.FOOTGUNS_STAR_KEY
 import com.maxrave.simpmusic.viewModel.HomeViewModel
 import com.maxrave.simpmusic.viewModel.HomeViewModel.Companion.HOME_PARAMS_COMMUTE
 import com.maxrave.simpmusic.viewModel.HomeViewModel.Companion.HOME_PARAMS_ENERGIZE
@@ -374,28 +366,8 @@ fun HomeScreen(
         }
     }
 
-    var showReviewDialog by rememberSaveable {
-        mutableStateOf(false)
-    }
     var showRequestShareLyricsPermissions by rememberSaveable {
         mutableStateOf(false)
-    }
-    var showBlogPromoDialog by rememberSaveable {
-        mutableStateOf(false)
-    }
-    var showFootgunsDialog by rememberSaveable {
-        mutableStateOf(false)
-    }
-    // Decided once per launch (saveable, so a rotation does not count as a new launch).
-    var promoLaunchDecided by rememberSaveable {
-        mutableStateOf(false)
-    }
-    var promoBanner by remember {
-        mutableStateOf<PromoBannerData?>(null)
-    }
-    // The banner that has gone a moment with nothing keeping it off screen; see where it is drawn.
-    var promoClearFor by remember {
-        mutableStateOf<PromoBannerData?>(null)
     }
 
     var topAppBarHeightPx by rememberSaveable {
@@ -454,25 +426,9 @@ fun HomeScreen(
     }
     LaunchedEffect(openAppTime, shareLyricsPermissions) {
         Logger.w("HomeScreen", "openAppTime: $openAppTime, shareLyricsPermissions: $shareLyricsPermissions")
-        if (openAppTime >= 10 && openAppTime % 10 == 0 && openAppTime <= 50) {
-            showReviewDialog = true
-        } else if ((openAppTime == 1 || openAppTime % 15 == 0) && openAppTime <= 60 && !shareLyricsPermissions) {
+        if ((openAppTime == 1 || openAppTime % 15 == 0) && openAppTime <= 60 && !shareLyricsPermissions) {
             showRequestShareLyricsPermissions = true
-        } else if (openAppTime == 5) {
-            // Blog promo: one-shot after 5 app opens, bump key suffix to re-promote later
-            if (sharedViewModel.getString(BLOG_PROMO_KEY) != "true") {
-                showBlogPromoDialog = true
-            }
-        } else if (openAppTime % 10 == 6 &&
-            openAppTime <= 46 &&
-            sharedViewModel.getString(FOOTGUNS_STAR_KEY) != "true"
-        ) {
-            // kotlin-footguns star prompt: 6, 16, 26, 36, 46 - one open after each review milestone,
-            // and clear of the share-lyrics (15, 45) and blog-promo (5) milestones
-            showFootgunsDialog = true
         } else {
-            showReviewDialog = false
-            showFootgunsDialog = false
             showRequestShareLyricsPermissions = false
         }
     }
@@ -509,53 +465,6 @@ fun HomeScreen(
 //        )
 //    }
 
-    if (showReviewDialog) {
-        ReviewDialog(
-            onDismissRequest = {
-                sharedViewModel.onDoneReview(
-                    isDismissOnly = true,
-                )
-                showReviewDialog = false
-            },
-            onDoneReview = {
-                sharedViewModel.onDoneReview(
-                    isDismissOnly = false,
-                )
-                showReviewDialog = false
-            },
-        )
-    }
-
-    if (showFootgunsDialog) {
-        FootgunsStarDialog(
-            onDismissRequest = {
-                // "Later" advances OPEN_APP_TIME, the same way the review and share-lyrics dialogs do.
-                // Home's launch effect runs again every time Home re-enters composition, reading the
-                // stored count; leaving it untouched kept the milestone condition true, so the prompt
-                // came back on every return to Home until the app was restarted.
-                showFootgunsDialog = false
-                sharedViewModel.onDoneReview(isDismissOnly = true)
-            },
-            onDoneStar = {
-                sharedViewModel.putString(FOOTGUNS_STAR_KEY, "true")
-                showFootgunsDialog = false
-            },
-        )
-    }
-
-    if (showBlogPromoDialog) {
-        BlogPromoDialog(
-            onDismissRequest = {
-                sharedViewModel.putString(BLOG_PROMO_KEY, "true")
-                showBlogPromoDialog = false
-            },
-            onVisitBlog = {
-                sharedViewModel.putString(BLOG_PROMO_KEY, "true")
-                showBlogPromoDialog = false
-            },
-        )
-    }
-
     if (showRequestShareLyricsPermissions) {
         ShareSavedLyricsDialog(
             onDismissRequest = {
@@ -568,119 +477,6 @@ fun HomeScreen(
                 sharedViewModel.onDoneRequestingShareLyrics(
                     contributor,
                 )
-            },
-        )
-    }
-
-    val otherDialogOpen =
-        appDialogOpen || showReviewDialog || showRequestShareLyricsPermissions || showBlogPromoDialog ||
-            showFootgunsDialog || shouldShowLogInAlert
-    // The launch banner, decided once per launch. It waits for Home to settle on its own dialogs (the
-    // open count and the lyrics-sharing flag load just after the first frame) and for the update check
-    // started at launch, however long that takes, so an update dialog comes first. Then it takes the
-    // first banner this version has not shown yet.
-    LaunchedEffect(Unit) {
-        if (promoLaunchDecided) return@LaunchedEffect
-        // Marked at the start, not the end: leaving Home cancels this for good (by then the user is
-        // busy elsewhere), and a value written while Home is being left would not be saved.
-        promoLaunchDecided = true
-        snapshotFlow { openAppTime }.first { it > 0 }
-        delay(PROMO_SETTLE_MS)
-        sharedViewModel.isCheckingUpdate.first { !it }
-        if (userStarted) {
-            Logger.i("Promo", "Skipped: the user started before the banner's turn")
-            return@LaunchedEffect
-        }
-        val localTracking = sharedViewModel.getLocalTrackingEnabled().first() == TRUE
-        val youTubeLoggedIn = sharedViewModel.getYouTubeLoggedIn().first() == TRUE
-        val shown = sharedViewModel.shownPromos()
-        val promos = sharedViewModel.cachedPromos().first()
-        val os = osRequirementOf(getPlatform().osName())
-        val eligible = eligiblePromos(promos, VersionManager.getVersionName(), language, localTracking, youTubeLoggedIn, os)
-        val banner =
-            eligible
-                .firstOrNull { (promo, _) -> promo.id.orEmpty() !in shown }
-                ?.let { (promo, url) -> PromoBannerData(id = promo.id.orEmpty(), imageUrl = url, link = promo.link.orEmpty()) }
-        when {
-            banner == null ->
-                Logger.i(
-                    "Promo",
-                    "Nothing to show: ${eligible.size} of ${promos.size} banners usable here " +
-                        "(local tracking ${if (localTracking) "on" else "off"}, " +
-                        "YouTube ${if (youTubeLoggedIn) "signed in" else "signed out"}), " +
-                        "already shown in ${VersionManager.getVersionName()}: $shown",
-                )
-
-            userStarted -> Logger.i("Promo", "Skipped ${banner.id}: the user started before its turn")
-
-            else -> {
-                Logger.i("Promo", "Picked ${banner.id}, waiting for its turn")
-                promoBanner = banner
-            }
-        }
-    }
-    // Everything that keeps the banner off screen: any other dialog (it waits its turn behind them),
-    // Now Playing, and Home not being in front. On Desktop that only asks for a showing window: one
-    // opened from a terminal or an IDE may start without focus, and the click that focuses it would
-    // count as the user starting, so the banner would never get its turn.
-    val homeInFront =
-        homeLifecycle.isAtLeast(
-            if (getPlatform() == Platform.Desktop) Lifecycle.State.STARTED else Lifecycle.State.RESUMED,
-        )
-    val promoBlocked = otherDialogOpen || nowPlayingOpen || !homeInFront
-    // It draws only once the banner has gone a moment unblocked since it was decided. The wait belongs
-    // to that banner, so nothing left over from before it arrived can let it through early: it never
-    // flashes in the gap between two dialogs, and the update dialog, raised a frame after its check
-    // ends, still gets there first.
-    LaunchedEffect(promoBlocked, promoBanner) {
-        val banner = promoBanner
-        promoClearFor = null
-        if (!promoBlocked && banner != null) {
-            delay(PROMO_CLEAR_MS)
-            promoClearFor = banner
-        }
-    }
-    // Whatever the user starts before the banner's turn puts it off to a later launch, uncounted.
-    LaunchedEffect(userStarted) {
-        val pending = promoBanner
-        if (userStarted && pending != null) {
-            Logger.i("Promo", "Put off ${pending.id}: the user started before its turn")
-            promoBanner = null
-        }
-    }
-    promoBanner?.takeIf { it == promoClearFor && !promoBlocked }?.let { banner ->
-        LaunchedEffect(banner.id) { Logger.i("Promo", "On screen: ${banner.id}") }
-        PromoBanner(
-            banner = banner,
-            onOpen = {
-                Logger.i("Promo", "Opened ${banner.id}: ${banner.link}")
-                promoBanner = null
-                sharedViewModel.markPromoShown(banner.id)
-                val link = banner.link
-                when {
-                    // The same router as links from the web and the widgets.
-                    link.startsWith("simpmusic://") -> {
-                        runCatching { Uri.parse(link) }.getOrNull()?.let {
-                            sharedViewModel.setIntent(GenericIntent(data = it))
-                        }
-                    }
-
-                    // openUrl rather than LocalUriHandler, which throws where no browser answers.
-                    link.startsWith("https://", ignoreCase = true) -> {
-                        runCatching { openUrl(link) }
-                    }
-                    // Anything else is a mistake in the config: ignoring it beats crashing on a tap.
-                }
-            },
-            onClose = {
-                Logger.i("Promo", "Closed ${banner.id}")
-                promoBanner = null
-                sharedViewModel.markPromoShown(banner.id)
-            },
-            // No picture, no banner: closed without counting, so a later launch tries again.
-            onFailed = {
-                Logger.w("Promo", "Picture failed to load for ${banner.id}; closed without counting it")
-                promoBanner = null
             },
         )
     }

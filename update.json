@@ -1,10 +1,10 @@
 {
-  "versionName": "0.16.1",
-  "versionCode": 21,
+  "versionName": "0.16.2",
+  "versionCode": 22,
   "minimumVersionCode": 1,
-  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.16.1/PRVN-Music-v0.16.1-arm64.apk",
-  "size": 41744131,
-  "sha256": "c0a84b92d4cfc56efd017f528da3e1b741ec9dd6114d74385af23609f58c3373",
-  "releaseNotes": "PRVN Music v0.16.1 (Build 21):\n- Repaired Listen Together real-time playback synchronization when host changes songs.\n- Fixed listener auto-pause issue on track transitions.\n- Fixed song resume starting from 0:00 instead of syncing to host's current position.\n- Enhanced buffer barrier with adaptive polling for smooth group listening.\n- Refreshed About Us -> Version screen with official PRVN Music Minimal Neon logo and PRVN attribution.\n- Updated legal disclaimer and terms of use in-app and in repository documentation.",
+  "downloadUrl": "https://github.com/pritam-79/PRVN-Music/releases/download/v0.16.2/PRVN-Music-v0.16.2-arm64.apk",
+  "size": 41741159,
+  "sha256": "e1c21237e3f7374567b7a6b5a5961cc8002de584cce18b2ba70af4772a9d930e",
+  "releaseNotes": "PRVN Music v0.16.2 (Build 22):\n- Completely removed all third-party promotional popups and upstream attribution prompts.\n- Refreshed branding to Developed by Pritam (https://github.com/pritam-79/PRVN-Music) across all 30 languages.\n- Listen Together Room Permissions: Host Only, Everyone Can Control, Approved Members.\n- Fixed playback synchronization glitch on track transition and eliminated 0:00 restart bug.\n- Universal Cloud Sync: Real-time cross-platform synchronization with active device arbitration.\n- Official PRVN Music for iPhone v0.01 release.",
   "forceUpdate": false
 }

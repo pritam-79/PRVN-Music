@@ -113,6 +113,9 @@ internal class MessageCodec(
             MessageTypes.SUGGESTION_RECEIVED -> decode(SuggestionReceivedPayload.serializer(), payloadBytes)
             MessageTypes.SUGGESTION_APPROVED -> decode(SuggestionApprovedPayload.serializer(), payloadBytes)
             MessageTypes.SUGGESTION_REJECTED -> decode(SuggestionRejectedPayload.serializer(), payloadBytes)
+            MessageTypes.SET_ROOM_PERMISSION -> decode(SetRoomPermissionPayload.serializer(), payloadBytes)
+            MessageTypes.GRANT_CONTROL -> decode(GrantControlPayload.serializer(), payloadBytes)
+            MessageTypes.REVOKE_CONTROL -> decode(RevokeControlPayload.serializer(), payloadBytes)
 
             MessageTypes.SERVER_CAPABILITIES -> decode(ServerCapabilities.serializer(), payloadBytes)
 
@@ -136,6 +139,9 @@ internal class MessageCodec(
             is RejectSuggestionPayload -> proto.encodeToByteArray(RejectSuggestionPayload.serializer(), payload)
             is ReconnectPayload -> proto.encodeToByteArray(ReconnectPayload.serializer(), payload)
             is ClientCapabilities -> proto.encodeToByteArray(ClientCapabilities.serializer(), payload)
+            is SetRoomPermissionPayload -> proto.encodeToByteArray(SetRoomPermissionPayload.serializer(), payload)
+            is GrantControlPayload -> proto.encodeToByteArray(GrantControlPayload.serializer(), payload)
+            is RevokeControlPayload -> proto.encodeToByteArray(RevokeControlPayload.serializer(), payload)
             else -> ByteArray(0)
         }
 

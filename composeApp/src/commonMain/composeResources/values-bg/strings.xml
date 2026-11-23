@@ -121,7 +121,7 @@
     <string name="about_us">За нас</string>
     <string name="version">Версия</string>
     <string name="github">Github</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="buy_me_a_coffee">Buy me a coffee</string>
     <string name="paypal">PayPal</string>
     <string name="title">Заглавие</string>
@@ -272,7 +272,7 @@
     <string name="older_first">Най-стари</string>
     <string name="newer_first">Най-нови</string>
     <string name="added_date">Дата на добавяне</string>
-    <string name="credit_app">Опростено приложение за музика, което използва YouTube Music за бекенд \n\nPRVN Music е проект с отворен код, който стриймва музика от YouTube и YouTube Music без реклами и проследяване. PRVN Music идва с много функции:\n\n - Стрийминг \n - Текстове\n - Персонализиране на данните\n - и т. н… \n\nPRVN Music е безплатен и без реклами\n\nBuild с ❤️ от Tuan Minh Nguyen Duc (maxrave-dev)</string>
+    <string name="credit_app">Опростено приложение за музика, което използва YouTube Music за бекенд \n\nPRVN Music е проект с отворен код, който стриймва музика от YouTube и YouTube Music без реклами и проследяване. PRVN Music идва с много функции:\n\n - Стрийминг \n - Текстове\n - Персонализиране на данните\n - и т. н… \n\nPRVN Music е безплатен и без реклами\n\nBuild с ❤️ от Pritam</string>
     <string name="issue_tracker">Тракър на задачи</string>
     <string name="featured_playlists">Избрани плейлисти</string>
     <string name="featured_inArtist">Участва в</string>

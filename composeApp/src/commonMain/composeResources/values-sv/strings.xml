@@ -137,7 +137,7 @@
     <string name="about_us">Om oss</string>
     <string name="version">Version</string>
     <string name="github">GitHub</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="follow_me_on_x">Följ mig på X</string>
     <string name="buy_me_a_coffee">Bjud mig på en kaffe</string>
     <string name="developer_blog">Utvecklarblogg</string>
@@ -302,7 +302,7 @@
     <string name="older_first">Äldre först</string>
     <string name="newer_first">Nyare först</string>
     <string name="added_date">Datum då den lades till</string>
-    <string name="credit_app">En enkel musikapp som använder YouTube Music som datakälla \n\nPRVN Music är ett projekt med öppen källkod för att strömma musik från YouTube och YouTube Music utan annonser och spårning. PRVN Music har många funktioner:\n\n - Strömma musik \n - Synkroniserade låttexter\n - Personanpassade data\n - med mera … \n\nPRVN Music är alltid gratis och utan annonser\n\nSkapad med ❤️ av Tuan Minh Nguyen Duc (maxrave-dev)</string>
+    <string name="credit_app">En enkel musikapp som använder YouTube Music som datakälla \n\nPRVN Music är ett projekt med öppen källkod för att strömma musik från YouTube och YouTube Music utan annonser och spårning. PRVN Music har många funktioner:\n\n - Strömma musik \n - Synkroniserade låttexter\n - Personanpassade data\n - med mera … \n\nPRVN Music är alltid gratis och utan annonser\n\nSkapad med ❤️ av Pritam</string>
     <string name="issue_tracker">Ärendehantering</string>
     <string name="featured_playlists">Utvalda spellistor</string>
     <string name="featured_inArtist">Medverkar på</string>
@@ -520,8 +520,6 @@
     <string name="if_you_enjoy_using_simpmusic_star_simpmusic_on_github_or_leave_a_review_on">Om du gillar PRVN Music kan du ge projektet en stjärna på GitHub eller lämna en recension på</string>
     <string name="if_you_love_my_work_consider">"Om du uppskattar mitt arbete kan du överväga att "</string>
     <string name="buying_me_a_coffee">bjuda mig på en kaffe.</string>
-    <string name="footguns_promo_title">Alla fallgropar jag hamnade i</string>
-    <string name="footguns_promo_message">PRVN Music kostade mig många nätter på grund av fallgropar i Kotlin och Compose som ingen dokumentation varnade för. Jag skrev ned dem alla i kotlin-footguns, så att du slipper förlora lika många nätter. Om det sparar dig ens en enda natt skulle en stjärna betyda mycket för mig.</string>
     <string name="fade_audio_effect">Toningseffekt för ljud</string>
     <string name="disabled">Inaktivera</string>
     <string name="fade_audio_effect_duration">Toningseffektens längd (ms) (ange 0 för att inaktivera)</string>

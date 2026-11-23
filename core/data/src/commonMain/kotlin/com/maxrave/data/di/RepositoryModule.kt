@@ -132,4 +132,13 @@ val repositoryModule =
         single<TasteRepository> {
             TasteRepositoryImpl(get(), get())
         }
+
+        single<com.maxrave.domain.repository.UniversalCloudSyncRepository>(createdAtStart = true) {
+            com.maxrave.data.cloudsync.UniversalCloudSyncRepositoryImpl(
+                dataStoreManager = get(),
+                songRepository = get(),
+                localPlaylistRepository = get(),
+                scope = get(named(SERVICE_SCOPE)),
+            )
+        }
     }

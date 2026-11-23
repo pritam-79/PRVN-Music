@@ -72,6 +72,8 @@ class ListenTogetherPlaybackBridge(
 ) {
     private var started = false
     private var applyingRemote = false
+    @Volatile
+    private var remoteTrackLoading = false
     private var lastPublishedTrackId: String? = null
     private var lastAppliedTrackId: String? = null
     private var lastAppliedQueueIds: List<String> = emptyList()
@@ -141,7 +143,7 @@ class ListenTogetherPlaybackBridge(
             .distinctUntilChanged()
             .collect { locallyPlaying ->
                 val room = repository.room.value
-                if (!room.inRoom || room.isHost || applyingRemote) return@collect
+                if (!room.inRoom || room.isHost || applyingRemote || remoteTrackLoading) return@collect
                 if (!locallyPlaying) {
                     Logger.i(TAG, "Guest paused locally — leaving the room running")
                     return@collect
@@ -186,6 +188,7 @@ class ListenTogetherPlaybackBridge(
                     val playing = if (trackChanged && !isPlaying) (lastRoomPlaying || repository.room.value.isPlaying) else isPlaying
                     lastRoomPlaying = playing
                     if (trackChanged && track != null) {
+                        remoteTrackLoading = true
                         val sameTrack = track.id == lastAppliedTrackId
                         lastAppliedTrackId = track.id
                         lastAppliedQueueIds = queueIds
@@ -198,9 +201,6 @@ class ListenTogetherPlaybackBridge(
                         val startAt =
                             when {
                                 sameTrack -> handler.player.currentPosition
-                                // change_track carries position 0, and 0 means "from the top" —
-                                // running it through the clock correction turns it into however
-                                // long ago the last command was, which can seek past the end.
                                 position <= 0L -> 0L
                                 else -> session.positionAt(position, playing)
                             }
@@ -209,6 +209,10 @@ class ListenTogetherPlaybackBridge(
                             withContext(Dispatchers.Main) {
                                 handler.player.play()
                             }
+                        }
+                        scope.launch {
+                            delay(1500L)
+                            remoteTrackLoading = false
                         }
                     }
                     applyTransport(playing, position)
@@ -238,7 +242,9 @@ class ListenTogetherPlaybackBridge(
         if (isPlaying && !handler.player.playWhenReady) {
             handler.player.play()
         } else if (!isPlaying && handler.player.playWhenReady) {
-            handler.player.pause()
+            if (!remoteTrackLoading) {
+                handler.player.pause()
+            }
         }
     }
 
@@ -352,7 +358,7 @@ class ListenTogetherPlaybackBridge(
             .distinctUntilChanged()
             .collect { ids ->
                 val state = repository.room.value
-                if (!state.inRoom || !state.isHost || applyingRemote || ids.isEmpty()) return@collect
+                if (!state.inRoom || !state.canControlPlayback || applyingRemote || remoteTrackLoading || ids.isEmpty()) return@collect
                 publishQueue()
             }
     }
@@ -395,7 +401,7 @@ class ListenTogetherPlaybackBridge(
             .distinctUntilChanged { old, new -> old.mediaId == new.mediaId }
             .collect { item ->
                 val state = repository.room.value
-                if (!state.inRoom || !state.isHost || applyingRemote) return@collect
+                if (!state.inRoom || !state.canControlPlayback || applyingRemote || remoteTrackLoading) return@collect
                 if (item.mediaId == lastPublishedTrackId) return@collect
                 lastPublishedTrackId = item.mediaId
                 Logger.i(TAG, "Host publishing track change: ${item.mediaId}")
@@ -408,17 +414,14 @@ class ListenTogetherPlaybackBridge(
                     queue = data?.listTracks.orEmpty().map { it.toTrackInfo() },
                     queueTitle = data?.playlistName.orEmpty(),
                 )
-                // change_track alone leaves the room paused: the server sets IsPlaying=false on
-                // every track change. The host's own controlState does NOT change when one playing
-                // track follows another, so nothing else would ever send this and guests would load
-                // each new track and sit there stopped.
-                //
-                // Whether the host is actually going to play this, decided by WAITING rather than
-                // by sampling. Reading playWhenReady inline was wrong twice over: it is false while
-                // a next-track buffers, and false again for a moment while the player is rebuilt
-                // for a track the host picked from a list — so the PLAY that guests depend on was
-                // dropped on exactly the transitions it exists for. A host who is genuinely paused
-                // simply never satisfies this and the room stays paused.
+                if (handler.player.playWhenReady || handler.player.isPlaying) {
+                    session.sendPlaybackAction(
+                        action = PlaybackActions.PLAY,
+                        trackId = item.mediaId,
+                        position = handler.player.currentPosition,
+                        trackInfo = null,
+                    )
+                }
                 val started =
                     withTimeoutOrNull(5_000L) {
                         while (!handler.player.playWhenReady && !handler.player.isPlaying) {
@@ -443,7 +446,7 @@ class ListenTogetherPlaybackBridge(
             .distinctUntilChanged()
             .collect { isPlaying ->
                 val state = repository.room.value
-                if (!state.inRoom || !state.isHost || applyingRemote) return@collect
+                if (!state.inRoom || !state.canControlPlayback || applyingRemote || remoteTrackLoading) return@collect
                 // A host that merely buffers reports isPlaying=false, indistinguishable from a
                 // user pause — and publishing it stops the WHOLE room on one device's hiccup.
                 // playWhenReady carries the intent, so a dip where the two disagree is not news.
@@ -483,7 +486,7 @@ class ListenTogetherPlaybackBridge(
             lastAt = now
 
             val state = repository.room.value
-            if (!state.inRoom || !state.isHost || applyingRemote) return@collect
+            if (!state.inRoom || !state.canControlPlayback || applyingRemote || remoteTrackLoading) return@collect
             if (previousAt == 0L) return@collect
 
             val elapsed = now - previousAt

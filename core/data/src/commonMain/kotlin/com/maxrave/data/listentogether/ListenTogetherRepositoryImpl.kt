@@ -99,6 +99,18 @@ class ListenTogetherRepositoryImpl(
         session.transferHost(userId)
     }
 
+    override fun setRoomPermission(permission: String) {
+        session.setRoomPermission(permission)
+    }
+
+    override fun grantControl(userId: String) {
+        session.grantControl(userId)
+    }
+
+    override fun revokeControl(userId: String) {
+        session.revokeControl(userId)
+    }
+
     override fun suggestTrack(track: RoomTrack) {
         session.suggestTrack(track.toProtocol())
     }
@@ -127,6 +139,8 @@ private fun ListenTogetherState.toDomain() =
         waitingFor = waitingFor,
         pendingJoinCode = pendingJoinCode,
         error = error,
+        roomPermission = roomPermission,
+        approvedControlUserIds = approvedControlUserIds,
     )
 
 private fun ConnectionState.toDomain(): RoomConnection =
@@ -144,6 +158,7 @@ private fun ProtocolMember.toDomain() =
         isHost = isHost,
         isConnected = isConnected,
         isBuffering = isBuffering,
+        hasControlAccess = hasControlAccess,
     )
 
 private fun PendingJoin.toDomain() = RoomJoinRequest(userId = userId, username = username)

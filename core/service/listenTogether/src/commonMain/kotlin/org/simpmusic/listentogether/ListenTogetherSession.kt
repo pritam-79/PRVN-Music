@@ -34,6 +34,7 @@ data class RoomMember(
     val isConnected: Boolean,
     /** True while this member has not answered `buffer_ready` for the current track. */
     val isBuffering: Boolean = false,
+    val hasControlAccess: Boolean = false,
 )
 
 data class PendingJoin(
@@ -85,9 +86,13 @@ data class ListenTogetherState(
     val pendingJoinCode: String? = null,
     /** Set once and cleared by the UI, so a transient failure cannot wedge the screen. */
     val error: String? = null,
+    val roomPermission: String = RoomPermissions.HOST_ONLY,
+    val approvedControlUserIds: Set<String> = emptySet(),
 ) {
     val inRoom: Boolean get() = roomCode != null
     val isConnected: Boolean get() = connection is ConnectionState.Connected
+    val canControlPlayback: Boolean
+        get() = isHost || roomPermission == RoomPermissions.EVERYONE || (roomPermission == RoomPermissions.APPROVED_MEMBERS && selfUserId in approvedControlUserIds)
 
     /** Names, not ids — "Waiting for Long" is the only useful phrasing of the barrier. */
     val waitingForNames: List<String>
@@ -225,8 +230,35 @@ class ListenTogetherSession(
         return candidate
     }
 
+    fun setRoomPermission(permission: String) {
+        _state.update { it.copy(roomPermission = permission) }
+        launch { client.send(MessageTypes.SET_ROOM_PERMISSION, SetRoomPermissionPayload(permission = permission)) }
+    }
+
+    fun grantControl(userId: String) {
+        _state.update { s ->
+            s.copy(
+                approvedControlUserIds = s.approvedControlUserIds + userId,
+                members = s.members.map { if (it.userId == userId) it.copy(hasControlAccess = true) else it },
+            )
+        }
+        launch { client.send(MessageTypes.GRANT_CONTROL, GrantControlPayload(userId = userId)) }
+    }
+
+    fun revokeControl(userId: String) {
+        _state.update { s ->
+            s.copy(
+                approvedControlUserIds = s.approvedControlUserIds - userId,
+                members = s.members.map { if (it.userId == userId) it.copy(hasControlAccess = false) else it },
+            )
+        }
+        launch { client.send(MessageTypes.REVOKE_CONTROL, RevokeControlPayload(userId = userId)) }
+    }
+
+    fun canControlPlayback(): Boolean = _state.value.canControlPlayback
+
     /**
-     * Publishes one transport command to the room. Host only — the server ignores it from a guest.
+     * Publishes one transport command to the room. Host or members with control permission.
      *
      * `capturedAtServerTime` is what lets a late-arriving PLAY still land on the right position:
      * the receiver advances [position] by however long the frame spent in flight, measured on the
@@ -493,6 +525,31 @@ class ListenTogetherSession(
                     } else {
                         s.copy(suggestions = s.suggestions + PendingSuggestion(p.suggestionId, p.fromUsername, track))
                     }
+                }
+            }
+
+            MessageTypes.SET_ROOM_PERMISSION -> {
+                val p = payload as? SetRoomPermissionPayload ?: return
+                _state.update { it.copy(roomPermission = p.permission) }
+            }
+
+            MessageTypes.GRANT_CONTROL -> {
+                val p = payload as? GrantControlPayload ?: return
+                _state.update { s ->
+                    s.copy(
+                        approvedControlUserIds = s.approvedControlUserIds + p.userId,
+                        members = s.members.map { if (it.userId == p.userId) it.copy(hasControlAccess = true) else it },
+                    )
+                }
+            }
+
+            MessageTypes.REVOKE_CONTROL -> {
+                val p = payload as? RevokeControlPayload ?: return
+                _state.update { s ->
+                    s.copy(
+                        approvedControlUserIds = s.approvedControlUserIds - p.userId,
+                        members = s.members.map { if (it.userId == p.userId) it.copy(hasControlAccess = false) else it },
+                    )
                 }
             }
 

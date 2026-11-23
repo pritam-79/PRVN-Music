@@ -130,7 +130,7 @@
     <string name="about_us">關於我們</string>
     <string name="version">版本</string>
     <string name="github">Github</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="follow_me_on_x">在X上追蹤我</string>
     <string name="buy_me_a_coffee">求贊助QAQ</string>
     <string name="developer_blog">部落格</string>
@@ -292,7 +292,7 @@
     <string name="older_first">由舊至新</string>
     <string name="newer_first">最新作品</string>
     <string name="added_date">已添加日期</string>
-    <string name="credit_app">PRVN Music是一個開放原始碼、零廣告、使用YouTube Music作為後端的簡單音樂應用程式 \n\n用於從YouTube和YouTube Music串流音樂。PRVN Music提供許多功能：\n\n - 串流音樂\n - 同步歌詞\n - 個人化資料\n - 等等... \n\nPRVN Music總是免費，無廣告\n\n由Tuan Minh Nguyen Duc (maxrave) 開發 ❤️</string>
+    <string name="credit_app">PRVN Music是一個開放原始碼、零廣告、使用YouTube Music作為後端的簡單音樂應用程式 \n\n用於從YouTube和YouTube Music串流音樂。PRVN Music提供許多功能：\n\n - 串流音樂\n - 同步歌詞\n - 個人化資料\n - 等等... \n\nPRVN Music總是免費，無廣告\n\n由Pritam (maxrave) 開發 ❤️</string>
     <string name="issue_tracker">回報問題</string>
     <string name="featured_playlists">精選播放清單</string>
     <string name="featured_inArtist">已發布</string>
@@ -503,8 +503,6 @@
     <string name="if_you_enjoy_using_simpmusic_star_simpmusic_on_github_or_leave_a_review_on">如果你享受使用PRVN Music，就在GitHub給個星或者評論吧</string>
     <string name="if_you_love_my_work_consider">"若你認可我的工作，考慮 "</string>
     <string name="buying_me_a_coffee">請我喝杯咖啡。</string>
-    <string name="footguns_promo_title">我跌入的每個陷阱</string>
-    <string name="footguns_promo_message">PRVN Music讓我浪費了無數個夜晚在Kotlin和Compose的陷阱上，而這些陷阱沒有任何文件警告過我。我把它們全都記錄在了 kotlin-footguns裡，這樣你們就不會白白浪費時間了。如果它能幫你們節省哪怕一個夜晚，我都會非常感激。</string>
     <string name="fade_audio_effect">淡入/淡出音頻效果</string>
     <string name="disabled">停用</string>
     <string name="fade_audio_effect_duration">音訊淡入淡出效果持續時間（毫秒）（設為 0 表示停用）</string>

@@ -121,7 +121,7 @@
     <string name="about_us">Hakkımızda</string>
     <string name="version">Sürüm</string>
     <string name="github">GitHub</string>
-    <string name="pritam-79">maxrave-dev</string>
+    <string name="pritam-79">Pritam</string>
     <string name="buy_me_a_coffee">Bana bir kahve ısmarla</string>
     <string name="paypal">PayPal</string>
     <string name="title">Başlık</string>
@@ -274,7 +274,7 @@
     <string name="older_first">Eskiden Yeniye</string>
     <string name="newer_first">Yeniden Eskiye</string>
     <string name="added_date">Tarih eklendi</string>
-    <string name="credit_app">Arka uç olarak YouTube Music'i kullanan basit bir müzik uygulaması \n\nPRVN Music, reklamlar ve izleme olmadan YouTube ve YouTube Music'ten müzik akışı sağlayan açık kaynaklı bir projedir. PRVN Music birçok özellik sunar:\n\n - Müzik akışı \n - Senkronize şarkı sözleri\n - Verileri kişiselleştirin\n - vb… \n\nPRVN Music her zaman ücretsizdir ve reklam içermez\n\nTuan Minh Nguyen Duc'tan ❤️ ile oluşturun (maxrave-dev)</string>
+    <string name="credit_app">Arka uç olarak YouTube Music'i kullanan basit bir müzik uygulaması \n\nPRVN Music, reklamlar ve izleme olmadan YouTube ve YouTube Music'ten müzik akışı sağlayan açık kaynaklı bir projedir. PRVN Music birçok özellik sunar:\n\n - Müzik akışı \n - Senkronize şarkı sözleri\n - Verileri kişiselleştirin\n - vb… \n\nPRVN Music her zaman ücretsizdir ve reklam içermez\n\nPritam'tan ❤️ ile oluşturun (pritam-79)</string>
     <string name="issue_tracker">Sorun Takibi</string>
     <string name="featured_playlists">Öne Çıkan Oynatma Listeleri</string>
     <string name="featured_inArtist">Bulunduğu listeler</string>

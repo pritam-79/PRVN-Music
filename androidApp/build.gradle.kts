@@ -122,7 +122,8 @@ android {
             )
             splits {
                 abi {
-                    isEnable = true
+                    val isBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
+                    isEnable = !isBundle
                     reset()
                     isUniversalApk = true
                     include(*abis)

@@ -67,8 +67,20 @@ object MessageTypes {
     const val SUGGESTION_APPROVED = "suggestion_approved"
     const val SUGGESTION_REJECTED = "suggestion_rejected"
 
+    // Room Permissions
+    const val SET_ROOM_PERMISSION = "set_room_permission"
+    const val GRANT_CONTROL = "grant_control"
+    const val REVOKE_CONTROL = "revoke_control"
+
     /** The server's half of the handshake — see [CLIENT_CAPABILITIES]. */
     const val SERVER_CAPABILITIES = "server_capabilities"
+}
+
+/** Permission levels for who can control room playback. */
+object RoomPermissions {
+    const val HOST_ONLY = "host_only"
+    const val EVERYONE = "everyone"
+    const val APPROVED_MEMBERS = "approved"
 }
 
 /** Values of [PlaybackActionPayload.action]. */
@@ -243,6 +255,21 @@ data class RejectSuggestionPayload(
 @Serializable
 data class ReconnectPayload(
     @ProtoNumber(1) val sessionToken: String = "",
+)
+
+@Serializable
+data class SetRoomPermissionPayload(
+    @ProtoNumber(1) val permission: String = RoomPermissions.HOST_ONLY,
+)
+
+@Serializable
+data class GrantControlPayload(
+    @ProtoNumber(1) val userId: String = "",
+)
+
+@Serializable
+data class RevokeControlPayload(
+    @ProtoNumber(1) val userId: String = "",
 )
 
 // ───────────────────────────── server → client ─────────────────────────────

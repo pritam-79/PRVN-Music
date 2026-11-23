@@ -48,6 +48,12 @@ interface ListenTogetherRepository {
 
     fun transferHost(userId: String)
 
+    fun setRoomPermission(permission: String)
+
+    fun grantControl(userId: String)
+
+    fun revokeControl(userId: String)
+
     fun suggestTrack(track: RoomTrack)
 
     /** Re-syncs a guest with the room after it has driven its own transport. */

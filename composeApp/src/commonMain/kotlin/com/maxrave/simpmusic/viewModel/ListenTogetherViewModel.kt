@@ -146,6 +146,18 @@ class ListenTogetherViewModel(
         repository.transferHost(userId)
     }
 
+    fun setRoomPermission(permission: String) {
+        repository.setRoomPermission(permission)
+    }
+
+    fun grantControl(userId: String) {
+        repository.grantControl(userId)
+    }
+
+    fun revokeControl(userId: String) {
+        repository.revokeControl(userId)
+    }
+
     fun cancelJoin() = repository.cancelJoin()
 
     fun clearError() = repository.clearError()
