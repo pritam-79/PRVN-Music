@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -355,6 +356,17 @@ class HomeViewModel(
 
     fun setParams(params: String?) {
         _params.value = params
+    }
+
+    suspend fun shouldShowReleaseUpdates(): Boolean {
+        val lastSeen = dataStoreManager.getString("last_seen_release_version_code").firstOrNull()?.toIntOrNull() ?: 0
+        return lastSeen < 22
+    }
+
+    fun markReleaseUpdatesSeen() {
+        viewModelScope.launch {
+            dataStoreManager.putString("last_seen_release_version_code", "22")
+        }
     }
 
     override fun onCleared() {

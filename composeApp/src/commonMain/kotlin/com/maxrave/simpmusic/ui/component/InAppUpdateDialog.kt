@@ -26,6 +26,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -708,34 +712,60 @@ fun InAppUpdateDialog(
         }
 
         is InAppUpdateState.UpToDate -> {
-            AlertDialog(
-                onDismissRequest = onDismiss,
-                containerColor = DarkDialogBg,
-                title = {
-                    Text(
-                        text = stringResource(Res.string.up_to_date_title),
-                        style = typo().titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = HighContrastTextPrimary,
-                    )
-                },
-                text = {
-                    Text(
-                        text = stringResource(Res.string.up_to_date_message, state.versionName),
-                        style = typo().bodyMedium,
-                        color = HighContrastTextSecondary,
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandPurple, contentColor = Color.White),
-                        shape = RoundedCornerShape(10.dp),
-                    ) {
-                        Text(stringResource(Res.string.ok), fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                },
-            )
+            var showReleaseUpdates by remember { mutableStateOf(false) }
+            if (showReleaseUpdates) {
+                ReleaseUpdatesDialog(
+                    versionName = state.versionName,
+                    onDismiss = {
+                        showReleaseUpdates = false
+                        onDismiss()
+                    },
+                )
+            } else {
+                AlertDialog(
+                    onDismissRequest = onDismiss,
+                    containerColor = DarkDialogBg,
+                    title = {
+                        Text(
+                            text = stringResource(Res.string.up_to_date_title),
+                            style = typo().titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = HighContrastTextPrimary,
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = stringResource(Res.string.up_to_date_message, state.versionName),
+                                style = typo().bodyMedium,
+                                color = HighContrastTextSecondary,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "You are on the latest PRVN Music build with all new features and security improvements.",
+                                style = typo().bodySmall,
+                                color = BrandCyan,
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandPurple, contentColor = Color.White),
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Text(stringResource(Res.string.ok), fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showReleaseUpdates = true },
+                        ) {
+                            Text("What's New", color = BrandCyan, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                )
+            }
         }
 
         is InAppUpdateState.Error -> {

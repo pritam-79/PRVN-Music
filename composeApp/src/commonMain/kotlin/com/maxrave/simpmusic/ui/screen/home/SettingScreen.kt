@@ -133,6 +133,7 @@ import com.maxrave.simpmusic.ui.component.AmbientThemeGlow
 import com.maxrave.simpmusic.ui.component.CenterLoadingBox
 import com.maxrave.simpmusic.ui.component.EndOfPage
 import com.maxrave.simpmusic.ui.component.LoadingDialog
+import com.maxrave.simpmusic.ui.component.ReleaseUpdatesDialog
 import com.maxrave.simpmusic.ui.component.RippleIconButton
 import com.maxrave.simpmusic.ui.component.SettingGroup
 import com.maxrave.simpmusic.ui.component.SettingItem
@@ -603,6 +604,7 @@ fun SettingScreen(
     val romanizationStored by sharedViewModel.getRomanizationLanguages().collectAsStateWithLifecycle("")
     val japaneseDictionaryState by viewModel.japaneseDictionaryState.collectAsStateWithLifecycle()
     var showColorPickerDialog by rememberSaveable { mutableStateOf(false) }
+    var showReleaseUpdatesDialog by rememberSaveable { mutableStateOf(false) }
     val discordLoggedIn by viewModel.discordLoggedIn.collectAsStateWithLifecycle()
     val loggedIn by viewModel.loggedIn.collectAsStateWithLifecycle()
     val syncFollowToYouTube by viewModel.syncFollowToYouTube.collectAsStateWithLifecycle()
@@ -2844,6 +2846,13 @@ fun SettingScreen(
                     },
                 )
                 SettingItem(
+                    title = "What's New in v${VersionManager.getVersionName()}",
+                    subtitle = "View after release updates and feature highlights",
+                    onClick = {
+                        showReleaseUpdatesDialog = true
+                    },
+                )
+                SettingItem(
                     title = stringResource(Res.string.auto_check_for_update),
                     subtitle = stringResource(Res.string.auto_check_for_update_description),
                     switch = (autoCheckUpdate to { viewModel.setAutoCheckUpdate(it) }),
@@ -2943,6 +2952,12 @@ fun SettingScreen(
         LoadingDialog(
             true,
             showLoadingDialog.second,
+        )
+    }
+    if (showReleaseUpdatesDialog) {
+        ReleaseUpdatesDialog(
+            versionName = VersionManager.getVersionName(),
+            onDismiss = { showReleaseUpdatesDialog = false },
         )
     }
     val basisAlertData by viewModel.basicAlertData.collectAsStateWithLifecycle()

@@ -30,6 +30,12 @@
 - Audio interruption and route change handling (auto-pause on headphone disconnect).
 - Ready for TestFlight and App Store distribution (`com.prvn.music`).
 
+### 5. After Release Updates & What's New System
+- Seamless post-update greeting dialog highlighting new features, improvements, and fixes upon first launch after an update.
+- Permanent access anytime from **Settings -> About Us -> What's New**.
+- Direct launch from update checker when the app is already on the newest build.
+- Direct link to full release notes on GitHub.
+
 ---
 
 ## 📦 Package Information

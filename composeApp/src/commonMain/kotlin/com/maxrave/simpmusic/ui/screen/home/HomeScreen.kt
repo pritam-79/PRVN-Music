@@ -151,6 +151,7 @@ import com.maxrave.simpmusic.ui.component.MoodMomentAndGenreHomeItem
 import com.maxrave.simpmusic.ui.component.NowPlayingBottomSheet
 import com.maxrave.simpmusic.ui.component.OfflineErrorState
 import com.maxrave.simpmusic.ui.component.QuickPicksItem
+import com.maxrave.simpmusic.ui.component.ReleaseUpdatesDialog
 import com.maxrave.simpmusic.ui.component.SectionHeaderButton
 import com.maxrave.simpmusic.ui.component.ShareSavedLyricsDialog
 import com.maxrave.simpmusic.ui.component.homeCardAspectRatio
@@ -424,6 +425,13 @@ fun HomeScreen(
             }
         }
     }
+    var showReleaseUpdatesDialog by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (viewModel.shouldShowReleaseUpdates()) {
+            showReleaseUpdatesDialog = true
+        }
+    }
+
     LaunchedEffect(openAppTime, shareLyricsPermissions) {
         Logger.w("HomeScreen", "openAppTime: $openAppTime, shareLyricsPermissions: $shareLyricsPermissions")
         if ((openAppTime == 1 || openAppTime % 15 == 0) && openAppTime <= 60 && !shareLyricsPermissions) {
@@ -477,6 +485,15 @@ fun HomeScreen(
                 sharedViewModel.onDoneRequestingShareLyrics(
                     contributor,
                 )
+            },
+        )
+    }
+
+    if (showReleaseUpdatesDialog) {
+        ReleaseUpdatesDialog(
+            onDismiss = {
+                showReleaseUpdatesDialog = false
+                viewModel.markReleaseUpdatesSeen()
             },
         )
     }
